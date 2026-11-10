@@ -934,7 +934,7 @@ function ConfirmDialog({ title, message, error, isBusy, onCancel, onConfirm }) {
   )
 }
 
-function JobEditor({ job, onClose, onSave, organization }) {
+function JobEditor({ job, onClose, onSave, organization, jobTypes }) {
   const [form, setForm] = useState(() => job ? {
     id: job.id,
     title: job.title,
@@ -958,7 +958,7 @@ function JobEditor({ job, onClose, onSave, organization }) {
     location: '',
     quota: 1,
     posted: '',
-    job_type: 'Full-time',
+    job_type: jobTypes[0]?.name || '',
     summary: '',
     is_open: true,
   })
@@ -1041,9 +1041,10 @@ function JobEditor({ job, onClose, onSave, organization }) {
           <label>Tanggal / waktu tayang <em>*</em><input name="posted" onChange={updateField} required value={form.posted} /></label>
           <label>Jenis pekerjaan <em>*</em>
             <select name="job_type" onChange={updateField} required value={form.job_type}>
-              <option>Full-time</option>
-              <option>Contract</option>
-              <option>Internship</option>
+              <option value="">Pilih jenis pekerjaan</option>
+              {jobTypes.map((jobType) => (
+                <option key={jobType.id} value={jobType.name}>{jobType.name}</option>
+              ))}
             </select>
           </label>
           <label className="admin-form-wide">Ringkasan tugas <em>*</em><textarea name="summary" onChange={updateField} placeholder="Ringkas tujuan posisi dan hasil utama yang diharapkan." required rows="3" value={form.summary} /></label>
@@ -1241,6 +1242,133 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
           onCancel={() => { setPendingDelete(null); setError('') }}
           onConfirm={() => void deleteItem()}
           title={`Delete ${definition.label.toLocaleLowerCase('id')}?`}
+        />
+      )}
+    </section>
+  )
+}
+
+function JobTypeManager({ jobTypes, isLoading, sessionToken, onRefresh }) {
+  const [name, setName] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  function resetForm() {
+    setName('')
+    setEditingId(null)
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    setIsSaving(true)
+    try {
+      await apiRequest(editingId ? `/admin/job-types/${editingId}` : '/admin/job-types', {
+        method: editingId ? 'PUT' : 'POST',
+        token: sessionToken,
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      setNotice(editingId ? 'Jenis pekerjaan berhasil disimpan.' : 'Jenis pekerjaan berhasil ditambahkan.')
+      resetForm()
+      onRefresh()
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function deleteItem() {
+    if (!pendingDelete) return
+    setError('')
+    setIsDeleting(true)
+    try {
+      await apiRequest(`/admin/job-types/${pendingDelete.id}`, { method: 'DELETE', token: sessionToken })
+      if (editingId === pendingDelete.id) resetForm()
+      setPendingDelete(null)
+      setNotice('Jenis pekerjaan berhasil dihapus.')
+      onRefresh()
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  function editItem(jobType) {
+    setEditingId(jobType.id)
+    setName(jobType.name)
+    setError('')
+    setNotice('')
+  }
+
+  return (
+    <section className="admin-organization-view">
+      <div className="admin-table-heading">
+        <div>
+          <h2>Kelola jenis pekerjaan</h2>
+          <p>{jobTypes.length} jenis pekerjaan terdaftar</p>
+        </div>
+      </div>
+      <form className="organization-form job-type-form" onSubmit={handleSubmit}>
+        <label>
+          Jenis pekerjaan <em>*</em>
+          <input maxLength={80} onChange={(event) => setName(event.target.value)} required value={name} />
+        </label>
+        <p className="organization-help">Daftar ini menjadi pilihan pada formulir tambah dan edit lowongan. Jenis yang sudah dipakai lowongan tidak dapat dihapus.</p>
+        {error && !pendingDelete && <p className="admin-alert error" role="alert">{error}</p>}
+        <div className="organization-form-actions">
+          {editingId && <button className="detail-button" onClick={resetForm} type="button">Batal edit</button>}
+          <button className="apply-button" disabled={isSaving || isLoading} type="submit">
+            {isSaving ? 'Menyimpan...' : editingId ? 'Simpan perubahan' : 'Tambah jenis pekerjaan'}
+          </button>
+        </div>
+      </form>
+      <div className="admin-table-scroll">
+        {isLoading ? (
+          <div className="admin-loading">Memuat jenis pekerjaan...</div>
+        ) : jobTypes.length ? (
+          <table className="admin-table organization-table">
+            <thead><tr><th>JENIS PEKERJAAN</th><th>LOWONGAN TERKAIT</th><th>AKSI</th></tr></thead>
+            <tbody>
+              {jobTypes.map((jobType) => (
+                <tr key={jobType.id}>
+                  <td className="position-name">{jobType.name}</td>
+                  <td>{jobType.job_count}</td>
+                  <td className="admin-row-actions">
+                    <button className="admin-small-button" onClick={() => editItem(jobType)} type="button">Edit</button>
+                    <button
+                      className="admin-small-button danger"
+                      disabled={jobType.job_count > 0}
+                      onClick={() => { setError(''); setPendingDelete(jobType) }}
+                      title={jobType.job_count > 0 ? 'Masih digunakan oleh lowongan' : undefined}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="admin-loading">Belum ada jenis pekerjaan.</div>
+        )}
+      </div>
+      <AdminToast message={notice} onClose={setNotice} />
+      {pendingDelete && (
+        <ConfirmDialog
+          error={error}
+          isBusy={isDeleting}
+          message={`Jenis pekerjaan "${pendingDelete.name}" akan dihapus permanen.`}
+          onCancel={() => { setPendingDelete(null); setError('') }}
+          onConfirm={() => void deleteItem()}
+          title="Delete jenis pekerjaan?"
         />
       )}
     </section>
@@ -1631,6 +1759,7 @@ function AdminDashboard({ session, onLogout }) {
   const [jobs, setJobs] = useState([])
   const [applications, setApplications] = useState([])
   const [organization, setOrganization] = useState({ divisions: [], departments: [], bureaus: [] })
+  const [jobTypes, setJobTypes] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [error, setError] = useState('')
@@ -1638,6 +1767,9 @@ function AdminDashboard({ session, onLogout }) {
   const [refreshKey, setRefreshKey] = useState(0)
   const [editorJob, setEditorJob] = useState(null)
   const [isCreatingJob, setIsCreatingJob] = useState(false)
+  const [pendingJobDelete, setPendingJobDelete] = useState(null)
+  const [jobDeleteError, setJobDeleteError] = useState('')
+  const [isDeletingJob, setIsDeletingJob] = useState(false)
   const [selectedApplication, setSelectedApplication] = useState(null)
   const [logoutError, setLogoutError] = useState('')
   const sessionToken = session.token
@@ -1649,13 +1781,15 @@ function AdminDashboard({ session, onLogout }) {
       apiRequest('/admin/jobs', { token: sessionToken }),
       apiRequest('/admin/applications', { token: sessionToken }),
       apiRequest('/admin/organization', { token: sessionToken }),
+      apiRequest('/admin/job-types', { token: sessionToken }),
     ])
-      .then(([dashboard, jobResponse, applicationResponse, organizationResponse]) => {
+      .then(([dashboard, jobResponse, applicationResponse, organizationResponse, jobTypeResponse]) => {
         if (!active) return
         setMetrics(dashboard)
         setJobs(jobResponse.data)
         setApplications(applicationResponse.data)
         setOrganization(organizationResponse)
+        setJobTypes(jobTypeResponse.data)
         setError('')
       })
       .catch((requestError) => {
@@ -1709,6 +1843,26 @@ function AdminDashboard({ session, onLogout }) {
     }
   }
 
+  async function deleteJob() {
+    if (!pendingJobDelete) return
+    setJobDeleteError('')
+    setIsDeletingJob(true)
+    try {
+      await apiRequest(`/admin/jobs/${encodeURIComponent(pendingJobDelete.id)}`, {
+        method: 'DELETE',
+        token: sessionToken,
+      })
+      setPendingJobDelete(null)
+      setNotice('Lowongan berhasil dihapus.')
+      setError('')
+      refresh()
+    } catch (requestError) {
+      setJobDeleteError(requestError.message)
+    } finally {
+      setIsDeletingJob(false)
+    }
+  }
+
   async function openApplication(applicationId) {
     setError('')
     try {
@@ -1747,6 +1901,7 @@ function AdminDashboard({ session, onLogout }) {
   const views = [
     { id: 'dashboard', label: 'Dashboard', icon: <Database size={17} /> },
     { id: 'jobs', label: 'Lowongan', icon: <BriefcaseBusiness size={17} /> },
+    { id: 'job-types', label: 'Jenis Pekerjaan', icon: <SlidersHorizontal size={17} /> },
     { id: 'applications', label: 'Lamaran', icon: <FileText size={17} /> },
     { id: 'accounts', label: 'Manajemen Akun', icon: <Users size={17} /> },
     { id: 'divisions', label: 'Divisi', icon: <Building2 size={17} /> },
@@ -1762,7 +1917,6 @@ function AdminDashboard({ session, onLogout }) {
           <Brand />
           <div className="admin-header-user">
             <span>{session.admin.name}<strong>{session.admin.email}</strong></span>
-            <button className="admin-logout" onClick={handleLogout} type="button">Portal</button>
             <button className="signed-in-user-button" onClick={handleLogout} title="Keluar dari admin"><LogOut size={17} /></button>
           </div>
         </div>
@@ -1809,30 +1963,50 @@ function AdminDashboard({ session, onLogout }) {
           <section className="admin-table-panel">
             <div className="admin-table-heading">
               <div><h2>Kelola lowongan</h2><p>{jobs.length} posisi terdaftar</p></div>
-              <button className="apply-button" onClick={() => setIsCreatingJob(true)} type="button"><Plus size={17} /> Tambah lowongan</button>
+              <button className="apply-button" disabled={isLoading || !jobTypes.length} onClick={() => setIsCreatingJob(true)} type="button"><Plus size={17} /> Tambah lowongan</button>
             </div>
             <div className="admin-table-scroll">
               <table className="admin-table">
                 <thead><tr><th>KODE</th><th>POSISI</th><th>DIVISI / UNIT</th><th>KUOTA</th><th>STATUS</th><th>AKSI</th></tr></thead>
                 <tbody>
-                  {jobs.map((job) => (
-                    <tr key={job.id}>
-                      <td className="position-code">{job.id}</td>
-                      <td className="position-name">{job.title}</td>
-                      <td>{job.division}<span className="admin-table-subtext">{job.unit}</span></td>
-                      <td>{job.quota}</td>
-                      <td><span className={job.is_open ? 'status-pill open' : 'status-pill closed'}>{job.is_open ? 'OPEN' : 'CLOSED'}</span></td>
-                      <td className="admin-row-actions">
-                        <button className="admin-small-button" onClick={() => setEditorJob(job)} type="button">Edit</button>
-                        <button className="admin-small-button" onClick={() => void toggleJob(job)} type="button">{job.is_open ? 'Tutup' : 'Buka'}</button>
-                      </td>
-                    </tr>
-                  ))}
+                  {jobs.map((job) => {
+                    const hasApplications = applications.some((application) => application.job_id === job.id)
+                    return (
+                      <tr key={job.id}>
+                        <td className="position-code">{job.id}</td>
+                        <td className="position-name">{job.title}</td>
+                        <td>{job.division}<span className="admin-table-subtext">{job.unit}</span></td>
+                        <td>{job.quota}</td>
+                        <td><span className={job.is_open ? 'status-pill open' : 'status-pill closed'}>{job.is_open ? 'OPEN' : 'CLOSED'}</span></td>
+                        <td className="admin-row-actions">
+                          <button className="admin-small-button" onClick={() => setEditorJob(job)} type="button">Edit</button>
+                          <button className="admin-small-button" onClick={() => void toggleJob(job)} type="button">{job.is_open ? 'Tutup' : 'Buka'}</button>
+                          <button
+                            className="admin-small-button danger"
+                            disabled={isLoading || hasApplications}
+                            onClick={() => { setJobDeleteError(''); setPendingJobDelete(job) }}
+                            title={hasApplications ? 'Lowongan yang sudah memiliki lamaran hanya dapat ditutup' : undefined}
+                            type="button"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
-            <p className="admin-table-note">Posisi yang sudah memiliki lamaran tidak dihapus permanen; gunakan aksi Tutup.</p>
+            <p className="admin-table-note">Lowongan yang sudah memiliki lamaran hanya dapat ditutup agar riwayat lamaran tetap terjaga.</p>
           </section>
+        )}
+        {activeView === 'job-types' && (
+          <JobTypeManager
+            isLoading={isLoading}
+            jobTypes={jobTypes}
+            onRefresh={refresh}
+            sessionToken={sessionToken}
+          />
         )}
         {activeView === 'applications' && (
           <section className="admin-table-panel">
@@ -1873,8 +2047,18 @@ function AdminDashboard({ session, onLogout }) {
         </div>
       </div>
       <AdminToast message={notice} onClose={setNotice} />
-      {isCreatingJob && <JobEditor key="new" onClose={() => setIsCreatingJob(false)} onSave={saveJob} organization={organization} />}
-      {editorJob && <JobEditor job={editorJob} key={editorJob.id} onClose={() => setEditorJob(null)} onSave={saveJob} organization={organization} />}
+      {isCreatingJob && <JobEditor jobTypes={jobTypes} key="new" onClose={() => setIsCreatingJob(false)} onSave={saveJob} organization={organization} />}
+      {editorJob && <JobEditor job={editorJob} jobTypes={jobTypes} key={editorJob.id} onClose={() => setEditorJob(null)} onSave={saveJob} organization={organization} />}
+      {pendingJobDelete && (
+        <ConfirmDialog
+          error={jobDeleteError}
+          isBusy={isDeletingJob}
+          message={`Lowongan "${pendingJobDelete.title}" akan dihapus permanen. Aksi ini hanya tersedia jika belum ada lamaran.`}
+          onCancel={() => { setPendingJobDelete(null); setJobDeleteError('') }}
+          onConfirm={() => void deleteJob()}
+          title="Delete lowongan?"
+        />
+      )}
       {selectedApplication && (
         <ApplicationReview
           application={selectedApplication}

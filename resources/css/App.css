@@ -321,7 +321,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .header-auth-button, .header-register-button { min-height: 40px; gap: 5px; padding: 0 8px; font-size: 11px; }
   .header-auth-button svg, .header-register-button svg { width: 14px; }
   .detail-button, .apply-button, .admin-small-button { min-height: 44px; }
-  .admin-logout, .signed-in-user-button, .icon-button { min-height: 44px; }
+  .signed-in-user-button, .icon-button { min-height: 44px; }
   .signed-in-user-button { width: 44px; }
   .signed-in-user { margin-left: auto; }
   .signed-in-user > span { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
@@ -348,9 +348,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .admin-header-user { display: flex; align-items: center; gap: 13px; color: #cbd5e1; font-size: 12px; }
 .admin-header-user > span { display: grid; gap: 2px; text-align: right; }
 .admin-header-user strong { color: #94a3b8; font-size: 11px; font-weight: 500; }
-.admin-logout, .signed-in-user-button { display: inline-flex; min-height: 35px; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; border: 1px solid #334155; border-radius: 8px; background: transparent; color: #cbd5e1; font-size: 12px; font-weight: 700; }
-.admin-logout:hover, .signed-in-user-button:hover { background: #1e293b; }
-.signed-in-user-button { width: 36px; padding: 0; }
+.signed-in-user-button { display: inline-flex; width: 36px; min-height: 35px; align-items: center; justify-content: center; padding: 0; border: 1px solid #334155; border-radius: 8px; background: transparent; color: #cbd5e1; }
+.signed-in-user-button:hover { background: #1e293b; }
 .admin-content { width: min(1520px, calc(100% - 48px)); min-height: calc(100vh - 72px); margin: 0 auto; padding: 34px 0 48px; }
 .admin-page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
 .admin-page-heading h1 { margin: 5px 0 0; color: #172033; font-size: 30px; letter-spacing: -.7px; }
@@ -424,7 +423,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .admin-header-inner { width: calc(100% - 30px); flex-wrap: wrap; gap: 8px; padding: 10px 0; }
   .admin-header-user { gap: 7px; font-size: 10px; }
   .admin-header-user > span { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
-  .admin-logout { min-height: 31px; padding: 0 8px; font-size: 10px; }
   .signed-in-user-button { min-height: 31px; width: 32px; }
   .admin-content { width: calc(100% - 30px); padding: 24px 0 35px; }
   .admin-page-heading h1 { font-size: 25px; }
@@ -453,6 +451,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .admin-organization-view { overflow: hidden; border: 1px solid var(--line); border-radius: 15px; background: white; box-shadow: 0 1px 3px #0f172a0b; }
 .organization-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 16px; padding: 18px 21px; border-bottom: 1px solid var(--line); }
 .organization-form > label { display: grid; gap: 6px; color: #475569; font-size: 12px; font-weight: 700; }
+.job-type-form > label em { color: #dc2626; font-style: normal; }
 .organization-form input, .organization-form select { width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; color: #1e293b; font: inherit; font-size: 13px; }
 .organization-form input:focus, .organization-form select:focus { border-color: #60a5fa; outline: 3px solid #dbeafe; }
 .organization-form-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 9px; }
@@ -514,7 +513,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .account-type-tab { flex: 1; justify-content: center; padding: 0 9px; font-size: 11px; }
   .organization-form-actions, .organization-form .admin-alert { grid-column: auto; }
   .header-auth-button, .header-register-button, .detail-button, .apply-button,
-  .admin-small-button, .admin-logout, .signed-in-user-button, .icon-button {
+  .admin-small-button, .signed-in-user-button, .icon-button {
     min-height: 44px;
   }
   .signed-in-user-button { width: 44px; }

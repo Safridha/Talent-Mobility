@@ -236,6 +236,11 @@ struct OrganizationNameRequest {
 }
 
 #[derive(Deserialize)]
+struct JobTypeNameRequest {
+    name: String,
+}
+
+#[derive(Deserialize)]
 struct CreateDepartmentRequest {
     division_id: i64,
     name: String,
@@ -265,6 +270,13 @@ struct BureauRecord {
     id: i64,
     department_id: i64,
     name: String,
+}
+
+#[derive(FromRow, Serialize)]
+struct JobTypeRecord {
+    id: i64,
+    name: String,
+    job_count: i64,
 }
 
 #[derive(Serialize)]
@@ -470,6 +482,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/admin/admin-accounts/{id}/status",
             patch(admin_set_admin_account_status),
         )
+        .route(
+            "/api/admin/job-types",
+            get(admin_list_job_types).post(admin_create_job_type),
+        )
+        .route(
+            "/api/admin/job-types/{id}",
+            put(admin_update_job_type).delete(admin_delete_job_type),
+        )
         .route("/api/admin/organization", get(admin_list_organization))
         .route("/api/admin/divisions", post(admin_create_division))
         .route(
@@ -490,7 +510,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/admin/jobs",
             get(admin_list_jobs).post(admin_create_job),
         )
-        .route("/api/admin/jobs/{id}", put(admin_update_job))
+        .route(
+            "/api/admin/jobs/{id}",
+            put(admin_update_job).delete(admin_delete_job),
+        )
         .route("/api/admin/jobs/{id}/status", patch(admin_set_job_status))
         .route("/api/admin/applications", get(admin_list_applications))
         .route("/api/admin/applications/{id}", get(admin_get_application))
@@ -751,7 +774,7 @@ async fn logout(
 
 async fn list_jobs(State(state): State<AppState>) -> Result<Json<JobsResponse>, ApiError> {
     let data = sqlx::query_as::<_, Job>(
-        "SELECT id, title, division, department, unit, bureau_id, location, quota, posted, job_type, summary, skills, responsibilities, is_open FROM job_postings WHERE is_open = TRUE ORDER BY id",
+        "SELECT job_postings.id, title, division, department, unit, bureau_id, location, quota, posted, job_types.name AS job_type, summary, skills, responsibilities, is_open FROM job_postings JOIN job_types ON job_types.id = job_postings.job_type_id WHERE is_open = TRUE ORDER BY job_postings.id",
     )
     .fetch_all(&state.pool)
     .await
@@ -765,7 +788,7 @@ async fn admin_list_jobs(
 ) -> Result<Json<JobsResponse>, ApiError> {
     authorized_admin(&state.pool, &headers).await?;
     let data = sqlx::query_as::<_, Job>(
-        "SELECT id, title, division, department, unit, bureau_id, location, quota, posted, job_type, summary, skills, responsibilities, is_open FROM job_postings ORDER BY id",
+        "SELECT job_postings.id, title, division, department, unit, bureau_id, location, quota, posted, job_types.name AS job_type, summary, skills, responsibilities, is_open FROM job_postings JOIN job_types ON job_types.id = job_postings.job_type_id ORDER BY job_postings.id",
     )
     .fetch_all(&state.pool)
     .await
@@ -783,8 +806,9 @@ async fn admin_create_job(
     let fields = request.fields;
     validate_admin_job(id, &fields)?;
     let organization = resolve_bureau_path(&state.pool, fields.bureau_id).await?;
+    let job_type_id = resolve_job_type_id(&state.pool, &fields.job_type).await?;
     let result = sqlx::query(
-        "INSERT INTO job_postings (id, title, division, department, unit, bureau_id, location, quota, posted, job_type, summary, skills, responsibilities, is_open) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+        "INSERT INTO job_postings (id, title, division, department, unit, bureau_id, location, quota, posted, job_type_id, summary, skills, responsibilities, is_open) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
     )
     .bind(id)
     .bind(fields.title.trim())
@@ -795,7 +819,7 @@ async fn admin_create_job(
     .bind(fields.location.trim())
     .bind(fields.quota)
     .bind(fields.posted.trim())
-    .bind(fields.job_type.trim())
+    .bind(job_type_id)
     .bind(fields.summary.trim())
     .bind(SqlJson(fields.skills))
     .bind(SqlJson(fields.responsibilities))
@@ -821,8 +845,9 @@ async fn admin_update_job(
     authorized_admin(&state.pool, &headers).await?;
     validate_admin_job(&id, &fields)?;
     let organization = resolve_bureau_path(&state.pool, fields.bureau_id).await?;
+    let job_type_id = resolve_job_type_id(&state.pool, &fields.job_type).await?;
     let result = sqlx::query(
-        "UPDATE job_postings SET title = $2, division = $3, department = $4, unit = $5, bureau_id = $6, location = $7, quota = $8, posted = $9, job_type = $10, summary = $11, skills = $12, responsibilities = $13, is_open = $14 WHERE id = $1",
+        "UPDATE job_postings SET title = $2, division = $3, department = $4, unit = $5, bureau_id = $6, location = $7, quota = $8, posted = $9, job_type_id = $10, summary = $11, skills = $12, responsibilities = $13, is_open = $14 WHERE id = $1",
     )
     .bind(&id)
     .bind(fields.title.trim())
@@ -833,7 +858,7 @@ async fn admin_update_job(
     .bind(fields.location.trim())
     .bind(fields.quota)
     .bind(fields.posted.trim())
-    .bind(fields.job_type.trim())
+    .bind(job_type_id)
     .bind(fields.summary.trim())
     .bind(SqlJson(fields.skills))
     .bind(SqlJson(fields.responsibilities))
@@ -845,6 +870,41 @@ async fn admin_update_job(
         return Err(ApiError::NotFound("Lowongan tidak ditemukan."));
     }
     Ok(Json(json!({ "message": "Lowongan berhasil diperbarui." })))
+}
+
+async fn admin_delete_job(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    authorized_admin(&state.pool, &headers).await?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let job_id =
+        sqlx::query_scalar::<_, String>("SELECT id FROM job_postings WHERE id = $1 FOR UPDATE")
+            .bind(&id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(internal_error)?
+            .ok_or(ApiError::NotFound("Lowongan tidak ditemukan."))?;
+    let has_applications: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM applications WHERE job_id = $1)")
+            .bind(&job_id)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(internal_error)?;
+    if has_applications {
+        return Err(ApiError::Conflict(
+            "Lowongan sudah memiliki lamaran dan hanya dapat ditutup.",
+        ));
+    }
+
+    sqlx::query("DELETE FROM job_postings WHERE id = $1")
+        .bind(job_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "message": "Lowongan berhasil dihapus." })))
 }
 
 async fn admin_set_job_status(
@@ -1313,6 +1373,93 @@ async fn admin_set_application_status(
     ))
 }
 
+async fn admin_list_job_types(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    authorized_admin(&state.pool, &headers).await?;
+    let data = sqlx::query_as::<_, JobTypeRecord>(
+        "SELECT job_types.id, job_types.name, COUNT(job_postings.id) AS job_count FROM job_types LEFT JOIN job_postings ON job_postings.job_type_id = job_types.id GROUP BY job_types.id ORDER BY lower(job_types.name), job_types.name",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(json!({ "data": data })))
+}
+
+async fn admin_create_job_type(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<JobTypeNameRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    authorized_admin(&state.pool, &headers).await?;
+    let name = validate_job_type_name(&request.name)?;
+    match sqlx::query("INSERT INTO job_types (name) VALUES ($1)")
+        .bind(name)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(_) => Ok(Json(
+            json!({ "message": "Jenis pekerjaan berhasil ditambahkan." }),
+        )),
+        Err(error) if is_unique_violation(&error) => Err(ApiError::Conflict(
+            "Jenis pekerjaan tersebut sudah terdaftar.",
+        )),
+        Err(error) => Err(internal_error(error)),
+    }
+}
+
+async fn admin_update_job_type(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(request): Json<JobTypeNameRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    authorized_admin(&state.pool, &headers).await?;
+    let name = validate_job_type_name(&request.name)?;
+    let result = sqlx::query("UPDATE job_types SET name = $2 WHERE id = $1")
+        .bind(id)
+        .bind(name)
+        .execute(&state.pool)
+        .await;
+    match result {
+        Ok(result) if result.rows_affected() == 0 => {
+            Err(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))
+        }
+        Ok(_) => Ok(Json(
+            json!({ "message": "Jenis pekerjaan berhasil diperbarui." }),
+        )),
+        Err(error) if is_unique_violation(&error) => Err(ApiError::Conflict(
+            "Jenis pekerjaan tersebut sudah terdaftar.",
+        )),
+        Err(error) => Err(internal_error(error)),
+    }
+}
+
+async fn admin_delete_job_type(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    authorized_admin(&state.pool, &headers).await?;
+    match sqlx::query("DELETE FROM job_types WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(result) if result.rows_affected() == 0 => {
+            Err(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))
+        }
+        Ok(_) => Ok(Json(
+            json!({ "message": "Jenis pekerjaan berhasil dihapus." }),
+        )),
+        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
+            "Jenis pekerjaan masih digunakan oleh lowongan. Ubah jenis pada lowongan terkait terlebih dahulu.",
+        )),
+        Err(error) => Err(internal_error(error)),
+    }
+}
+
 async fn admin_list_organization(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1621,6 +1768,27 @@ fn validate_organization_name(name: &str) -> Result<String, ApiError> {
         ));
     }
     Ok(name.to_owned())
+}
+
+fn validate_job_type_name(name: &str) -> Result<String, ApiError> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 80 {
+        return Err(ApiError::BadRequest(
+            "Nama jenis pekerjaan wajib diisi dan maksimal 80 karakter.",
+        ));
+    }
+    Ok(name.to_owned())
+}
+
+async fn resolve_job_type_id(pool: &PgPool, name: &str) -> Result<i64, ApiError> {
+    sqlx::query_scalar("SELECT id FROM job_types WHERE name = $1")
+        .bind(name.trim())
+        .fetch_optional(pool)
+        .await
+        .map_err(internal_error)?
+        .ok_or(ApiError::BadRequest(
+            "Pilih jenis pekerjaan dari daftar yang tersedia.",
+        ))
 }
 
 fn validate_admin_job(id: &str, fields: &AdminJobFields) -> Result<(), ApiError> {
@@ -2210,6 +2378,16 @@ mod tests {
         fields.skills = vec!["Internal experience".to_owned()];
         fields.responsibilities.clear();
         assert!(validate_admin_job("POS-2026-001", &fields).is_err());
+    }
+
+    #[test]
+    fn job_type_names_are_trimmed_and_limited() {
+        assert_eq!(
+            validate_job_type_name("  Part-time  ").unwrap(),
+            "Part-time"
+        );
+        assert!(validate_job_type_name("  ").is_err());
+        assert!(validate_job_type_name(&"x".repeat(81)).is_err());
     }
 
     #[test]

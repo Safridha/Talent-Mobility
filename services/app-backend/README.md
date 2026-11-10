@@ -40,11 +40,14 @@ To run the production-style build instead, use `npm run build` followed by `carg
 - `POST /api/admin/login` remains available as a legacy admin-only login endpoint.
 - `POST /api/admin/logout` revokes the admin bearer token.
 - `GET /api/admin/dashboard` returns position and application counts by status.
+- `GET /api/admin/job-types` lists managed job types; `POST` creates one, `PUT /api/admin/job-types/{id}` renames one, and `DELETE` removes an unused type.
 - `GET /api/admin/organization` returns the Divisi → Departemen → Biro hierarchy.
 - `POST /api/admin/divisions`, `/api/admin/departments`, and `/api/admin/bureaus` create organization records; matching `PUT` and `DELETE` routes manage them.
 - `GET /api/admin/jobs` lists all positions; `POST /api/admin/jobs` creates one.
+- `DELETE /api/admin/jobs/{id}` permanently deletes only a position with no applications; positions with application history can only be closed.
 - `POST /api/admin/jobs` and `PUT /api/admin/jobs/{id}` use `bureau_id`; hierarchy labels are resolved from its parent records.
-- `PATCH /api/admin/jobs/{id}/status` opens or closes a position. Positions are not hard-deleted.
+- Job posting `job_type` values must match a type from `/api/admin/job-types`; types used by existing jobs cannot be deleted.
+- `PATCH /api/admin/jobs/{id}/status` opens or closes a position.
 - `GET /api/admin/applications` lists applicant details; `GET /api/admin/applications/{id}` returns one application.
 - `GET /api/admin/applications/{id}/documents/{document_id}` downloads a private application PDF and requires an admin bearer token.
 - `PATCH /api/admin/applications/{id}/status` updates its review status.
