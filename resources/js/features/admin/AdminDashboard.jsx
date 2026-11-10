@@ -8,13 +8,14 @@ import { applicationStatusOptions } from '../applications/status'
 import { AccountSettingsPage } from '../account/AccountSettings'
 import { useAccountAvatar } from '../account/useAccountAvatar.ts'
 import { AdminTableToolbar, ConfirmDialog } from './AdminPrimitives'
-import { downloadTableCsv } from './downloadCsv'
+import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 import { JobEditor } from './JobEditor'
 import { OrganizationManager, JobTypeManager } from './OrganizationManagers'
 import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
 import { EmployeeDirectoryManager } from './EmployeeDirectoryManager'
+import { AdminAuditLog } from './AdminAuditLog'
 import { queryKeys } from '../../query/queryKeys'
 import { useHashRoute } from '../../useHashRoute'
 
@@ -28,17 +29,19 @@ const ADMIN_VIEW_ROUTES = {
   divisions: 'divisi',
   departments: 'departemen',
   bureaus: 'biro',
+  audit: 'audit-log',
 }
 const ADMIN_VIEW_PRESENTATION = {
   dashboard: { label: 'Dashboard', icon: Database },
   jobs: { label: 'Lowongan', icon: BriefcaseBusiness },
-  applications: { label: 'Lamaran', icon: FileText },
+  applications: { label: 'Lamaran Masuk', icon: FileText },
   'job-types': { label: 'Jenis Pekerjaan', icon: SlidersHorizontal },
   accounts: { label: 'Manajemen Akun', icon: Users },
   employees: { label: 'Karyawan', icon: Users },
   divisions: { label: 'Divisi', icon: Building2 },
   departments: { label: 'Departemen', icon: Building2 },
   bureaus: { label: 'Biro', icon: Wrench },
+  audit: { label: 'Riwayat Audit', icon: Shield },
 }
 const ADMIN_ROUTES = [
   ...Object.values(ADMIN_VIEW_ROUTES).map((view) => `admin/${view}`),
@@ -350,6 +353,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       divisions: isSuperAdmin,
       departments: isSuperAdmin,
       bureaus: isSuperAdmin,
+      audit: isSuperAdmin,
     }
     return Object.keys(ADMIN_VIEW_ROUTES).filter((view) => access[view])
   }, [canManageApplicantAccounts, canManageJobTypes, canViewApplications, canViewEmployees, canViewJobs, isSuperAdmin])
@@ -539,8 +543,9 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               search={jobSearch}
               searchPlaceholder="Cari kode, posisi, divisi, unit..."
               totalCount={jobs.length}
-              onDownloadCsv={() => downloadTableCsv(
+              onDownloadPdf={() => downloadTablePdf(
                 'lowongan',
+                'Daftar Lowongan',
                 ['Kode', 'Posisi', 'Divisi', 'Departemen', 'Unit', 'Lokasi', 'Kuota', 'Jenis pekerjaan', 'Status'],
                 filteredJobs.map((job) => [
                   job.id,
@@ -651,8 +656,9 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                 search={applicationSearch}
                 searchPlaceholder="Cari pelamar, email, NIP, posisi..."
                 totalCount={applications.length}
-                onDownloadCsv={() => downloadTableCsv(
+                onDownloadPdf={() => downloadTablePdf(
                   'lamaran',
+                  'Daftar Lamaran',
                   ['ID lamaran', 'Nama pelamar', 'Email', 'NIP', 'Divisi asal', 'Unit asal', 'Posisi', 'Kode posisi', 'Pendidikan', 'Bidang studi', 'Jumlah berkas', 'Status', 'Tanggal lamaran'],
                   filteredApplications.map((application) => [
                     application.id,
@@ -714,6 +720,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
           </section>
         )}
         {activeView === 'accounts' && <AccountManager key={sessionToken} organization={organization} session={session} />}
+        {activeView === 'audit' && isSuperAdmin && <AdminAuditLog key={sessionToken} sessionToken={sessionToken} />}
         {activeView === 'employees' && (
           <EmployeeDirectoryManager
             adminRole={adminRole}

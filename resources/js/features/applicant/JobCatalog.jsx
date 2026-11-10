@@ -7,6 +7,7 @@ import { ArrowLeft, Bell, Building2, FileText, LogIn, Megaphone, RotateCcw, Sear
 import { apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import SuccessPopup from '../../components/SuccessPopup'
+import ComingSoonPopup from '../../components/ComingSoonPopup'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
 import { AccountSettingsPage } from '../account/AccountSettings'
 import { useAccountAvatar } from '../account/useAccountAvatar.ts'
@@ -21,6 +22,7 @@ const APPLICANT_ROUTES = ['lowongan', 'lamaran', 'akun/profil', 'akun/keamanan']
 export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdated }) {
   const queryClient = useQueryClient()
   const [route, navigate] = useHashRoute('lowongan', APPLICANT_ROUTES)
+  const [isComingSoonOpen, setIsComingSoonOpen] = useState(true)
   const accountSection = route === 'akun/profil' ? 'profile' : route === 'akun/keamanan' ? 'security' : null
   const [accountReturnTab, setAccountReturnTab] = useState(route === 'lamaran' ? 'applications' : 'jobs')
   const activeTab = accountSection
@@ -36,6 +38,9 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   })
   const jobs = jobsQuery.data ?? EMPTY_JOBS
   const organization = organizationQuery.data ?? { divisions: [], departments: [], bureaus: [] }
+  const targetUnitCount = new Set(jobs.map((job) => (
+    `${job.target_level}:${job.division_id}:${job.department_id ?? ''}:${job.bureau_id ?? ''}`
+  ))).size
   const isLoading = jobsQuery.isPending || organizationQuery.isPending
   const jobsError = jobsQuery.error?.message || organizationQuery.error?.message || ''
   const [logoutError, setLogoutError] = useState('')
@@ -156,10 +161,14 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
         return (!divisionId || String(department?.division_id) === divisionId)
           && (!departmentId || String(bureau.department_id) === departmentId)
       })
-      .map((bureau) => ({
-        key: `bureau:${bureau.id}`,
-        label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
-      }))
+      .map((bureau) => {
+        const department = organization.departments.find((item) => item.id === bureau.department_id)
+        const division = organization.divisions.find((item) => item.id === department?.division_id)
+        return {
+          key: `bureau:${bureau.id}`,
+          label: `${division?.name ?? 'Divisi'} / ${department?.name ?? 'Departemen'} / ${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+        }
+      })
     return [...secretariats, ...bureaus]
   }, [departmentId, divisionId, organization.bureaus, organization.departments, organization.divisions])
   const filteredJobs = useMemo(() => {
@@ -372,7 +381,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
               </div>
               <div className="hero-stats" aria-label="Ringkasan lowongan">
                 <div><strong>{jobs.length}</strong><span>Posisi Aktif</span></div>
-                <div><strong>{new Set(jobs.map((job) => job.unit).filter(Boolean)).size}</strong><span>Biro/Bengkel</span></div>
+                <div><strong>{targetUnitCount}</strong><span>Unit Tujuan</span></div>
               </div>
             </section>
 
@@ -391,7 +400,10 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 <label>Departemen Tujuan
                   <select onChange={(event) => { setDepartmentId(event.target.value); setUnitTarget(''); setJobPage(1) }} value={departmentId}>
                     <option value="">Semua Departemen</option>
-                    {departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    {departments.map((item) => {
+                      const division = divisions.find((candidate) => candidate.id === item.division_id)
+                      return <option key={item.id} value={item.id}>{division ? `${division.name} / ` : ''}{item.name}</option>
+                    })}
                   </select>
                 </label>
                 <label>Sekretariat / Biro / Bengkel
@@ -548,13 +560,16 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
       )}
       {applicationFormOpen && pendingJob && session && (
         <ApplicationForm
-          divisions={[...new Set(jobs.map((job) => job.division))].sort()}
           isSubmitting={applyingJobId === pendingJob.id}
           job={pendingJob}
+          organization={organization}
           onClose={() => { setApplicationFormOpen(false); setPendingJob(null) }}
           onSubmit={handleApplicationSubmit}
           session={session}
         />
+      )}
+      {route === 'lowongan' && isComingSoonOpen && (
+        <ComingSoonPopup onClose={() => setIsComingSoonOpen(false)} />
       )}
     </main>
   )

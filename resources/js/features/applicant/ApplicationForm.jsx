@@ -1,27 +1,54 @@
 import { useState } from 'react'
 import { ArrowRight, UploadCloud, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
+import { getJobTargetLabels } from './jobTargetLabels'
 
 const MAX_APPLICATION_FILE_BYTES = 5 * 1024 * 1024
 const MAX_APPLICATION_DOCUMENTS = 5
 
-export default function ApplicationForm({ job, session, divisions, isSubmitting, onClose, onSubmit }) {
+export default function ApplicationForm({ job, session, organization, isSubmitting, onClose, onSubmit }) {
   const [form, setForm] = useState({
     employee_number: '',
     applicant_full_name: session.applicant.name,
     origin_division: '',
-    origin_unit: '',
     education_level: '',
     study_field: '',
     motivation: '',
   })
+  const [originDepartmentId, setOriginDepartmentId] = useState('')
+  const [originBureauId, setOriginBureauId] = useState('')
   const [supportingFiles, setSupportingFiles] = useState([])
   const [error, setError] = useState('')
 
   function updateField(event) {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: value }))
+    if (name === 'origin_division') {
+      setOriginDepartmentId('')
+      setOriginBureauId('')
+    }
   }
+
+  const selectedOriginDivision = organization.divisions.find(
+    (division) => division.name === form.origin_division,
+  )
+  const originDepartments = organization.departments.filter(
+    (department) => String(department.division_id) === String(selectedOriginDivision?.id),
+  )
+  const selectedOriginDepartment = originDepartments.find(
+    (department) => String(department.id) === originDepartmentId,
+  )
+  const originBureaus = organization.bureaus.filter(
+    (bureau) => String(bureau.department_id) === originDepartmentId,
+  )
+  const selectedOriginBureau = originBureaus.find(
+    (bureau) => String(bureau.id) === originBureauId,
+  )
+  const selectedOriginUnit = originDepartmentId === 'secretariat'
+    ? selectedOriginDivision?.secretariat_name
+    : selectedOriginDepartment && selectedOriginBureau
+      ? `${selectedOriginDepartment.name} / ${selectedOriginBureau.name}`
+      : selectedOriginDepartment?.name
 
   function updateFiles(event) {
     const files = Array.from(event.target.files ?? [])
@@ -45,12 +72,16 @@ export default function ApplicationForm({ job, session, divisions, isSubmitting,
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    if (!selectedOriginUnit) {
+      setError('Pilih departemen atau unit asal dari data master organisasi.')
+      return
+    }
     const body = new FormData()
     body.set('job_id', job.id)
     body.set('employee_number', form.employee_number)
     body.set('applicant_full_name', form.applicant_full_name)
     body.set('origin_division', form.origin_division)
-    body.set('origin_unit', form.origin_unit)
+    body.set('origin_unit', selectedOriginUnit)
     body.set('education_level', form.education_level)
     body.set('study_field', form.study_field)
     body.set('motivation', form.motivation)
@@ -88,7 +119,7 @@ export default function ApplicationForm({ job, session, divisions, isSubmitting,
             <div className="application-target-position">
               <strong>POSISI &amp; PENEMPATAN TUJUAN:</strong>
               <b>[{job.id}] {job.title}</b>
-              <span>{job.division} › {job.department} › {job.unit}</span>
+              <span>{getJobTargetLabels(job).join(' › ')}</span>
             </div>
             <div className="application-form-grid">
               <label htmlFor="application-employee-number">
@@ -101,14 +132,47 @@ export default function ApplicationForm({ job, session, divisions, isSubmitting,
               </label>
               <label htmlFor="application-origin-division">
                 <span className="application-form-label">Divisi Asal Saat Ini <em>*</em></span>
-                <select id="application-origin-division" name="origin_division" onChange={updateField} required value={form.origin_division}>
+                <select disabled={!organization.divisions.length} id="application-origin-division" name="origin_division" onChange={updateField} required value={form.origin_division}>
                   <option value="">-- Pilih Divisi Asal --</option>
-                  {divisions.map((division) => <option key={division} value={division}>{division}</option>)}
+                  {organization.divisions.map((division) => <option key={division.id} value={division.name}>{division.name}</option>)}
                 </select>
               </label>
-              <label htmlFor="application-origin-unit">
-                <span className="application-form-label">Departemen / Unit Asal <em>*</em></span>
-                <input id="application-origin-unit" maxLength={160} name="origin_unit" onChange={updateField} placeholder="Contoh: Dept. Quality Assurance" required value={form.origin_unit} />
+              <label htmlFor="application-origin-department">
+                <span className="application-form-label">Departemen / Sekretariat Asal <em>*</em></span>
+                <select
+                  disabled={!selectedOriginDivision}
+                  id="application-origin-department"
+                  onChange={(event) => {
+                    setOriginDepartmentId(event.target.value)
+                    setOriginBureauId('')
+                  }}
+                  required
+                  value={originDepartmentId}
+                >
+                  <option value="">-- Pilih Departemen / Sekretariat --</option>
+                  {selectedOriginDivision?.secretariat_name && (
+                    <option value="secretariat">Sekretariat — {selectedOriginDivision.secretariat_name}</option>
+                  )}
+                  {originDepartments.map((department) => (
+                    <option key={department.id} value={department.id}>{department.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label htmlFor="application-origin-bureau">
+                <span className="application-form-label">Biro / Bengkel Asal (opsional)</span>
+                <select
+                  disabled={!selectedOriginDepartment}
+                  id="application-origin-bureau"
+                  onChange={(event) => setOriginBureauId(event.target.value)}
+                  value={originBureauId}
+                >
+                  <option value="">Tidak ada / tingkat departemen</option>
+                  {originBureaus.map((bureau) => (
+                    <option key={bureau.id} value={bureau.id}>
+                      {bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — {bureau.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label htmlFor="application-education-level">
                 <span className="application-form-label">Jenjang Pendidikan <em>*</em></span>

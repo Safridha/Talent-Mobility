@@ -21,27 +21,41 @@ pub(super) async fn admin_create_account(
     headers: HeaderMap,
     Json(account): Json<AdminApplicantCreateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_operational_admin(&state.pool, &headers)
-        .await?
-        .require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    let admin = authorized_operational_admin(&state.pool, &headers).await?;
+    admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let name = account.name.trim();
     let email = account.email.trim().to_ascii_lowercase();
     validate_applicant_account(name, &email, &account.password)?;
 
     let password_hash = hash_password(&account.password)?;
-    match sqlx::query("INSERT INTO applicants (name, email, password_hash) VALUES ($1, $2, $3)")
-        .bind(name)
-        .bind(email)
-        .bind(password_hash)
-        .execute(&state.pool)
-        .await
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let id = match sqlx::query_scalar::<_, i64>(
+        "INSERT INTO applicants (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id",
+    )
+    .bind(name)
+    .bind(&email)
+    .bind(password_hash)
+    .fetch_one(&mut *transaction)
+    .await
     {
-        Ok(_) => Ok(Json(json!({ "message": "Akun berhasil ditambahkan." }))),
+        Ok(id) => id,
         Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("Email sudah terdaftar."))
+            return Err(ApiError::Conflict("Email sudah terdaftar."));
         }
-        Err(error) => Err(internal_error(error)),
-    }
+        Err(error) => return Err(internal_error(error)),
+    };
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "create",
+        "applicant_account",
+        &id.to_string(),
+        json!({ "name": name, "email": email }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "message": "Akun berhasil ditambahkan." })))
 }
 
 pub(super) async fn admin_update_account(
@@ -50,9 +64,8 @@ pub(super) async fn admin_update_account(
     Path(id): Path<i64>,
     Json(account): Json<AdminApplicantUpdateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_operational_admin(&state.pool, &headers)
-        .await?
-        .require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    let admin = authorized_operational_admin(&state.pool, &headers).await?;
+    admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let name = account.name.trim();
     let email = account.email.trim().to_ascii_lowercase();
     validate_applicant_name_and_email(name, &email)?;
@@ -61,11 +74,19 @@ pub(super) async fn admin_update_account(
     }
 
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous = sqlx::query_as::<_, (String, String)>(
+        "SELECT name, email FROM applicants WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Akun tidak ditemukan."))?;
     let result = if let Some(password) = account.password.as_deref() {
         let password_hash = hash_password(password)?;
         sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3 WHERE id = $4")
             .bind(name)
-            .bind(email)
+            .bind(&email)
             .bind(password_hash)
             .bind(id)
             .execute(&mut *transaction)
@@ -73,7 +94,7 @@ pub(super) async fn admin_update_account(
     } else {
         sqlx::query("UPDATE applicants SET name = $1, email = $2 WHERE id = $3")
             .bind(name)
-            .bind(email)
+            .bind(&email)
             .bind(id)
             .execute(&mut *transaction)
             .await
@@ -99,6 +120,20 @@ pub(super) async fn admin_update_account(
         .execute(&mut *transaction)
         .await
         .map_err(internal_error)?;
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "update",
+        "applicant_account",
+        &id.to_string(),
+        json!({
+            "before": { "name": previous.0, "email": previous.1 },
+            "after": { "name": name, "email": email },
+            "password_changed": account.password.is_some(),
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(
         json!({ "message": "Akun berhasil diperbarui. Sesi aktif akun tersebut telah diakhiri." }),
@@ -137,10 +172,16 @@ async fn set_applicant_account_status(
     id: i64,
     is_active: bool,
 ) -> Result<(), ApiError> {
-    authorized_operational_admin(pool, headers)
-        .await?
-        .require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    let admin = authorized_operational_admin(pool, headers).await?;
+    admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let mut transaction = pool.begin().await.map_err(internal_error)?;
+    let previous =
+        sqlx::query_scalar::<_, bool>("SELECT is_active FROM applicants WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(internal_error)?
+            .ok_or(ApiError::NotFound("Akun tidak ditemukan."))?;
     let result = sqlx::query("UPDATE applicants SET is_active = $1 WHERE id = $2")
         .bind(is_active)
         .bind(id)
@@ -161,6 +202,18 @@ async fn set_applicant_account_status(
             .execute(&mut *transaction)
             .await
             .map_err(internal_error)?;
+    }
+    if previous != is_active {
+        record_admin_audit(
+            &mut transaction,
+            admin.id,
+            if is_active { "activate" } else { "deactivate" },
+            "applicant_account",
+            &id.to_string(),
+            json!({ "is_active": is_active }),
+        )
+        .await
+        .map_err(internal_error)?;
     }
     transaction.commit().await.map_err(internal_error)?;
     Ok(())
@@ -185,7 +238,12 @@ pub(super) async fn admin_create_admin_account(
     headers: HeaderMap,
     Json(account): Json<AdminAccountCreateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
+    if account.admin_role == "super_admin" {
+        return Err(ApiError::BadRequest(
+            "Super Admin tidak dapat dibuat melalui Kelola Akun.",
+        ));
+    }
     let name = account.name.trim();
     let email = account.email.trim().to_ascii_lowercase();
     validate_admin_account(name, &email, &account.password)?;
@@ -229,6 +287,23 @@ pub(super) async fn admin_create_admin_account(
     .execute(&mut *transaction)
     .await
     .map_err(internal_error)?;
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "create",
+        "admin_account",
+        &admin_id.to_string(),
+        json!({
+            "name": name,
+            "email": account.email.trim().to_ascii_lowercase(),
+            "admin_role": account.admin_role,
+            "division_id": account.division_id,
+            "department_id": account.department_id,
+            "permissions": permissions,
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(
         json!({ "message": "Akun admin berhasil ditambahkan." }),
@@ -269,13 +344,27 @@ pub(super) async fn admin_update_admin_account(
     .fetch_all(&mut *transaction)
     .await
     .map_err(internal_error)?;
-    let current_role =
-        sqlx::query_scalar::<_, String>("SELECT admin_role FROM admins WHERE id = $1")
+    let previous = sqlx::query_as::<_, (String, String, String, Option<i64>, Option<i64>, Option<i64>)>(
+        "SELECT name, email, admin_role, division_id, department_id, bureau_id FROM admins WHERE id = $1 FOR UPDATE",
+    )
             .bind(id)
             .fetch_optional(&mut *transaction)
             .await
             .map_err(internal_error)?
             .ok_or(ApiError::NotFound("Akun admin tidak ditemukan."))?;
+    let current_role = previous.2.clone();
+    if account.admin_role == "super_admin" && current_role != "super_admin" {
+        return Err(ApiError::BadRequest(
+            "Super Admin tidak dapat dibuat melalui Kelola Akun.",
+        ));
+    }
+    let previous_permissions = sqlx::query_scalar::<_, Vec<String>>(
+        "SELECT COALESCE(array_agg(permission_key ORDER BY permission_key), ARRAY[]::TEXT[]) FROM admin_permissions WHERE admin_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(internal_error)?;
     let permissions = match account.permissions {
         Some(permissions) => permissions,
         None if current_role == account.admin_role => {
@@ -302,9 +391,9 @@ pub(super) async fn admin_update_admin_account(
         let password_hash = hash_password(password)?;
         sqlx::query("UPDATE admins SET name = $1, email = $2, password_hash = $3, admin_role = $4, division_id = $5, department_id = $6, bureau_id = $7 WHERE id = $8")
             .bind(name)
-            .bind(email)
+            .bind(&email)
             .bind(password_hash)
-            .bind(account.admin_role)
+            .bind(&account.admin_role)
             .bind(account.division_id)
             .bind(account.department_id)
             .bind(account.bureau_id)
@@ -314,8 +403,8 @@ pub(super) async fn admin_update_admin_account(
     } else {
         sqlx::query("UPDATE admins SET name = $1, email = $2, admin_role = $3, division_id = $4, department_id = $5, bureau_id = $6 WHERE id = $7")
             .bind(name)
-            .bind(email)
-            .bind(account.admin_role)
+            .bind(&email)
+            .bind(&account.admin_role)
             .bind(account.division_id)
             .bind(account.department_id)
             .bind(account.bureau_id)
@@ -344,6 +433,36 @@ pub(super) async fn admin_update_admin_account(
     .bind(id)
     .bind(&permissions)
     .execute(&mut *transaction)
+    .await
+    .map_err(internal_error)?;
+    record_admin_audit(
+        &mut transaction,
+        current_admin.id,
+        "update",
+        "admin_account",
+        &id.to_string(),
+        json!({
+            "before": {
+                "name": previous.0,
+                "email": previous.1,
+                "admin_role": previous.2,
+                "division_id": previous.3,
+                "department_id": previous.4,
+                "bureau_id": previous.5,
+                "permissions": previous_permissions,
+            },
+            "after": {
+                "name": name,
+                "email": email,
+                "admin_role": account.admin_role,
+                "division_id": account.division_id,
+                "department_id": account.department_id,
+                "bureau_id": account.bureau_id,
+                "permissions": permissions,
+            },
+            "password_changed": account.password.is_some(),
+        }),
+    )
     .await
     .map_err(internal_error)?;
     sqlx::query("DELETE FROM admin_tokens WHERE admin_id = $1")
@@ -407,15 +526,13 @@ async fn set_admin_account_status(
     .fetch_all(&mut *transaction)
     .await
     .map_err(internal_error)?;
-    let account_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM admins WHERE id = $1)")
+    let previous_active =
+        sqlx::query_scalar::<_, bool>("SELECT is_active FROM admins WHERE id = $1 FOR UPDATE")
             .bind(id)
-            .fetch_one(&mut *transaction)
+            .fetch_optional(&mut *transaction)
             .await
-            .map_err(internal_error)?;
-    if !account_exists {
-        return Err(ApiError::NotFound("Akun admin tidak ditemukan."));
-    }
+            .map_err(internal_error)?
+            .ok_or(ApiError::NotFound("Akun admin tidak ditemukan."))?;
     if !is_active && active_admin_ids.contains(&id) && active_admin_ids.len() <= 1 {
         return Err(ApiError::Conflict(
             "Super Admin aktif terakhir tidak dapat dinonaktifkan.",
@@ -438,6 +555,18 @@ async fn set_admin_account_status(
             .execute(&mut *transaction)
             .await
             .map_err(internal_error)?;
+    }
+    if previous_active != is_active {
+        record_admin_audit(
+            &mut transaction,
+            current_admin.id,
+            if is_active { "activate" } else { "deactivate" },
+            "admin_account",
+            &id.to_string(),
+            json!({ "is_active": is_active }),
+        )
+        .await
+        .map_err(internal_error)?;
     }
     transaction.commit().await.map_err(internal_error)?;
     Ok(())

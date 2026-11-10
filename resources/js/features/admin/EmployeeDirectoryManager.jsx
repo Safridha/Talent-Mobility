@@ -5,7 +5,7 @@ import { apiRequest } from '../../api'
 import { queryKeys } from '../../query/queryKeys'
 import SuccessPopup from '../../components/SuccessPopup'
 import { AdminFormDialog, AdminTableToolbar } from './AdminPrimitives'
-import { downloadTableCsv } from './downloadCsv'
+import { downloadTablePdf } from './downloadPdf'
 
 const EMPTY_EMPLOYEES = []
 
@@ -160,8 +160,9 @@ export function EmployeeDirectoryManager({
         search={search}
         searchPlaceholder="Cari NIP, nama, jabatan, atau unit..."
         totalCount={employees.length}
-        onDownloadCsv={() => downloadTableCsv(
+        onDownloadPdf={() => downloadTablePdf(
           'direktori-karyawan',
+          'Direktori Karyawan',
           ['NIP', 'Nama', 'Jabatan', 'Unit kerja', 'Status'],
           visibleEmployees.map((employee) => [
             employee.employee_number,

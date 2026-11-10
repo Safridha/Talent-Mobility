@@ -165,6 +165,34 @@ mod tests {
                 .is_err()
         );
         assert!(validate_admin_permissions("admin", &[]).is_err());
+        assert!(validate_admin_permissions("admin", &[EMPLOYEES_MANAGE.to_owned()]).is_err());
+    }
+
+    #[test]
+    fn application_permission_matrix_requires_view_for_every_admin_role() {
+        let application_permissions = [
+            APPLICATIONS_VIEW,
+            APPLICATIONS_CHANGE_STATUS,
+            APPLICATIONS_DOWNLOAD_DOCUMENTS,
+        ];
+        let roles = ["admin", "division_head", "department_head"];
+
+        for role in roles {
+            for mask in 0..(1 << application_permissions.len()) {
+                let permissions = application_permissions
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| mask & (1 << index) != 0)
+                    .map(|(_, permission)| (*permission).to_owned())
+                    .collect::<Vec<_>>();
+                let expected_valid = mask & 1 != 0;
+                assert_eq!(
+                    validate_admin_permissions(role, &permissions).is_ok(),
+                    expected_valid,
+                    "unexpected application permission validation for {role} with {permissions:?}"
+                );
+            }
+        }
     }
 
     #[test]

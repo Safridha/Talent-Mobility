@@ -260,23 +260,38 @@ pub(super) async fn admin_create_job_type(
     headers: HeaderMap,
     Json(request): Json<JobTypeNameRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_operational_admin(&state.pool, &headers)
-        .await?
-        .require_permission(JOB_TYPES_MANAGE)?;
+    let admin = authorized_operational_admin(&state.pool, &headers).await?;
+    admin.require_permission(JOB_TYPES_MANAGE)?;
     let name = validate_job_type_name(&request.name)?;
-    match sqlx::query("INSERT INTO job_types (name) VALUES ($1)")
-        .bind(name)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(_) => Ok(Json(
-            json!({ "message": "Jenis pekerjaan berhasil ditambahkan." }),
-        )),
-        Err(error) if is_unique_violation(&error) => Err(ApiError::Conflict(
-            "Jenis pekerjaan tersebut sudah terdaftar.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let id =
+        match sqlx::query_scalar::<_, i64>("INSERT INTO job_types (name) VALUES ($1) RETURNING id")
+            .bind(&name)
+            .fetch_one(&mut *transaction)
+            .await
+        {
+            Ok(id) => id,
+            Err(error) if is_unique_violation(&error) => {
+                return Err(ApiError::Conflict(
+                    "Jenis pekerjaan tersebut sudah terdaftar.",
+                ));
+            }
+            Err(error) => return Err(internal_error(error)),
+        };
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "create",
+        "job_type",
+        &id.to_string(),
+        json!({ "name": name }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(
+        json!({ "message": "Jenis pekerjaan berhasil ditambahkan." }),
+    ))
 }
 
 pub(super) async fn admin_update_job_type(
@@ -285,27 +300,45 @@ pub(super) async fn admin_update_job_type(
     Path(id): Path<i64>,
     Json(request): Json<JobTypeNameRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_operational_admin(&state.pool, &headers)
-        .await?
-        .require_permission(JOB_TYPES_MANAGE)?;
+    let admin = authorized_operational_admin(&state.pool, &headers).await?;
+    admin.require_permission(JOB_TYPES_MANAGE)?;
     let name = validate_job_type_name(&request.name)?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous =
+        sqlx::query_scalar::<_, String>("SELECT name FROM job_types WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(internal_error)?
+            .ok_or(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))?;
     let result = sqlx::query("UPDATE job_types SET name = $2 WHERE id = $1")
         .bind(id)
-        .bind(name)
-        .execute(&state.pool)
+        .bind(&name)
+        .execute(&mut *transaction)
         .await;
     match result {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))
+        Ok(_) => {}
+        Err(error) if is_unique_violation(&error) => {
+            return Err(ApiError::Conflict(
+                "Jenis pekerjaan tersebut sudah terdaftar.",
+            ));
         }
-        Ok(_) => Ok(Json(
-            json!({ "message": "Jenis pekerjaan berhasil diperbarui." }),
-        )),
-        Err(error) if is_unique_violation(&error) => Err(ApiError::Conflict(
-            "Jenis pekerjaan tersebut sudah terdaftar.",
-        )),
-        Err(error) => Err(internal_error(error)),
+        Err(error) => return Err(internal_error(error)),
     }
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "update",
+        "job_type",
+        &id.to_string(),
+        json!({ "before": { "name": previous }, "after": { "name": name } }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(
+        json!({ "message": "Jenis pekerjaan berhasil diperbarui." }),
+    ))
 }
 
 pub(super) async fn admin_delete_job_type(
@@ -313,25 +346,43 @@ pub(super) async fn admin_delete_job_type(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_operational_admin(&state.pool, &headers)
-        .await?
-        .require_permission(JOB_TYPES_MANAGE)?;
+    let admin = authorized_operational_admin(&state.pool, &headers).await?;
+    admin.require_permission(JOB_TYPES_MANAGE)?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let name =
+        sqlx::query_scalar::<_, String>("SELECT name FROM job_types WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(internal_error)?
+            .ok_or(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))?;
     match sqlx::query("DELETE FROM job_types WHERE id = $1")
         .bind(id)
-        .execute(&state.pool)
+        .execute(&mut *transaction)
         .await
     {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))
+        Ok(_) => {}
+        Err(error) if is_foreign_key_violation(&error) => {
+            return Err(ApiError::Conflict(
+                "Jenis pekerjaan masih digunakan oleh lowongan. Ubah jenis pada lowongan terkait terlebih dahulu.",
+            ));
         }
-        Ok(_) => Ok(Json(
-            json!({ "message": "Jenis pekerjaan berhasil dihapus." }),
-        )),
-        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
-            "Jenis pekerjaan masih digunakan oleh lowongan. Ubah jenis pada lowongan terkait terlebih dahulu.",
-        )),
-        Err(error) => Err(internal_error(error)),
+        Err(error) => return Err(internal_error(error)),
     }
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "delete",
+        "job_type",
+        &id.to_string(),
+        json!({ "name": name }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(
+        json!({ "message": "Jenis pekerjaan berhasil dihapus." }),
+    ))
 }
 
 pub(super) async fn admin_list_organization(
@@ -407,28 +458,46 @@ pub(super) async fn admin_create_division(
     headers: HeaderMap,
     Json(request): Json<DivisionRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
     let name = validate_organization_name(&request.name)?;
     let description = validate_organization_description(&request.description)?;
     let secretariat_name = validate_optional_organization_name(&request.secretariat_name)?;
     let secretariat_description =
         validate_organization_description(&request.secretariat_description)?;
-    match sqlx::query(
-        "INSERT INTO divisions (name, description, secretariat_name, secretariat_description) VALUES ($1, $2, $3, $4)",
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let id = match sqlx::query_scalar::<_, i64>(
+        "INSERT INTO divisions (name, description, secretariat_name, secretariat_description) VALUES ($1, $2, $3, $4) RETURNING id",
     )
-        .bind(name)
-        .bind(description)
-        .bind(secretariat_name)
-        .bind(secretariat_description)
-        .execute(&state.pool)
-        .await
+    .bind(&name)
+    .bind(&description)
+    .bind(&secretariat_name)
+    .bind(&secretariat_description)
+    .fetch_one(&mut *transaction)
+    .await
     {
-        Ok(_) => Ok(Json(json!({ "message": "Divisi berhasil ditambahkan." }))),
+        Ok(id) => id,
         Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("Nama divisi sudah digunakan."))
+            return Err(ApiError::Conflict("Nama divisi sudah digunakan."));
         }
-        Err(error) => Err(internal_error(error)),
-    }
+        Err(error) => return Err(internal_error(error)),
+    };
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "create",
+        "division",
+        &id.to_string(),
+        json!({
+            "name": name,
+            "description": description,
+            "secretariat_name": secretariat_name,
+            "secretariat_description": secretariat_description,
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "message": "Divisi berhasil ditambahkan." })))
 }
 
 pub(super) async fn admin_update_division(
@@ -437,13 +506,21 @@ pub(super) async fn admin_update_division(
     Path(id): Path<i64>,
     Json(request): Json<DivisionRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
     let name = validate_organization_name(&request.name)?;
     let description = validate_organization_description(&request.description)?;
     let secretariat_name = validate_optional_organization_name(&request.secretariat_name)?;
     let secretariat_description =
         validate_organization_description(&request.secretariat_description)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous = sqlx::query_as::<_, (String, String, String, String)>(
+        "SELECT name, description, secretariat_name, secretariat_description FROM divisions WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Divisi tidak ditemukan."))?;
     if secretariat_name.is_empty() {
         let secretariat_is_in_use: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM job_postings WHERE division_id = $1 AND target_level = 'secretariat' UNION ALL SELECT 1 FROM employee_directory WHERE division_id = $1 AND target_level = 'secretariat')",
@@ -463,9 +540,9 @@ pub(super) async fn admin_update_division(
     )
         .bind(id)
         .bind(&name)
-        .bind(description)
+        .bind(&description)
         .bind(&secretariat_name)
-        .bind(secretariat_description)
+        .bind(&secretariat_description)
         .execute(&mut *transaction)
         .await;
     match result {
@@ -488,8 +565,31 @@ pub(super) async fn admin_update_division(
         "UPDATE job_postings SET unit = $2 WHERE division_id = $1 AND target_level = 'secretariat'",
     )
     .bind(id)
-    .bind(secretariat_name)
+    .bind(&secretariat_name)
     .execute(&mut *transaction)
+    .await
+    .map_err(internal_error)?;
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "update",
+        "division",
+        &id.to_string(),
+        json!({
+            "before": {
+                "name": previous.0,
+                "description": previous.1,
+                "secretariat_name": previous.2,
+                "secretariat_description": previous.3,
+            },
+            "after": {
+                "name": name,
+                "description": description,
+                "secretariat_name": secretariat_name,
+                "secretariat_description": secretariat_description,
+            },
+        }),
+    )
     .await
     .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
@@ -501,21 +601,40 @@ pub(super) async fn admin_delete_division(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let name =
+        sqlx::query_scalar::<_, String>("SELECT name FROM divisions WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(internal_error)?
+            .ok_or(ApiError::NotFound("Divisi tidak ditemukan."))?;
     match sqlx::query("DELETE FROM divisions WHERE id = $1")
         .bind(id)
-        .execute(&state.pool)
+        .execute(&mut *transaction)
         .await
     {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Divisi tidak ditemukan."))
+        Ok(_) => {}
+        Err(error) if is_foreign_key_violation(&error) => {
+            return Err(ApiError::Conflict(
+                "Divisi masih digunakan oleh departemen, lowongan, akun admin, atau direktori karyawan. Hapus atau pindahkan data terkait terlebih dahulu.",
+            ));
         }
-        Ok(_) => Ok(Json(json!({ "message": "Divisi berhasil dihapus." }))),
-        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
-            "Divisi masih digunakan oleh departemen, lowongan, akun admin, atau direktori karyawan. Hapus atau pindahkan data terkait terlebih dahulu.",
-        )),
-        Err(error) => Err(internal_error(error)),
+        Err(error) => return Err(internal_error(error)),
     }
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "delete",
+        "division",
+        &id.to_string(),
+        json!({ "name": name }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "message": "Divisi berhasil dihapus." })))
 }
 
 pub(super) async fn admin_create_department(
@@ -523,7 +642,7 @@ pub(super) async fn admin_create_department(
     headers: HeaderMap,
     Json(request): Json<CreateDepartmentRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
     let name = validate_organization_name(&request.name)?;
     let description = validate_organization_description(&request.description)?;
     let division_exists: bool =
@@ -535,23 +654,42 @@ pub(super) async fn admin_create_department(
     if !division_exists {
         return Err(ApiError::BadRequest("Divisi yang dipilih tidak ditemukan."));
     }
-    match sqlx::query(
-        "INSERT INTO departments (division_id, name, description) VALUES ($1, $2, $3)",
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let id = match sqlx::query_scalar::<_, i64>(
+        "INSERT INTO departments (division_id, name, description) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(request.division_id)
-    .bind(name)
-    .bind(description)
-    .execute(&state.pool)
+    .bind(&name)
+    .bind(&description)
+    .fetch_one(&mut *transaction)
     .await
     {
-        Ok(_) => Ok(Json(
-            json!({ "message": "Departemen berhasil ditambahkan." }),
-        )),
-        Err(error) if is_unique_violation(&error) => Err(ApiError::Conflict(
-            "Nama departemen sudah ada di divisi ini.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
+        Ok(id) => id,
+        Err(error) if is_unique_violation(&error) => {
+            return Err(ApiError::Conflict(
+                "Nama departemen sudah ada di divisi ini.",
+            ));
+        }
+        Err(error) => return Err(internal_error(error)),
+    };
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "create",
+        "department",
+        &id.to_string(),
+        json!({
+            "division_id": request.division_id,
+            "name": name,
+            "description": description,
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(
+        json!({ "message": "Departemen berhasil ditambahkan." }),
+    ))
 }
 
 pub(super) async fn admin_update_department(
@@ -560,14 +698,22 @@ pub(super) async fn admin_update_department(
     Path(id): Path<i64>,
     Json(request): Json<OrganizationNameRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
     let name = validate_organization_name(&request.name)?;
     let description = validate_organization_description(&request.description)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous = sqlx::query_as::<_, (String, String, i64)>(
+        "SELECT name, description, division_id FROM departments WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Departemen tidak ditemukan."))?;
     let result = sqlx::query("UPDATE departments SET name = $2, description = $3 WHERE id = $1")
         .bind(id)
         .bind(&name)
-        .bind(description)
+        .bind(&description)
         .execute(&mut *transaction)
         .await;
     match result {
@@ -584,10 +730,23 @@ pub(super) async fn admin_update_department(
     }
     sqlx::query("UPDATE job_postings SET department = $2 WHERE department_id = $1")
         .bind(id)
-        .bind(name)
+        .bind(&name)
         .execute(&mut *transaction)
         .await
         .map_err(internal_error)?;
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "update",
+        "department",
+        &id.to_string(),
+        json!({
+            "before": { "name": previous.0, "description": previous.1, "division_id": previous.2 },
+            "after": { "name": name, "description": description, "division_id": previous.2 },
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(
         json!({ "message": "Departemen berhasil diperbarui." }),
@@ -599,21 +758,41 @@ pub(super) async fn admin_delete_department(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous = sqlx::query_as::<_, (String, i64)>(
+        "SELECT name, division_id FROM departments WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Departemen tidak ditemukan."))?;
     match sqlx::query("DELETE FROM departments WHERE id = $1")
         .bind(id)
-        .execute(&state.pool)
+        .execute(&mut *transaction)
         .await
     {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Departemen tidak ditemukan."))
+        Ok(_) => {}
+        Err(error) if is_foreign_key_violation(&error) => {
+            return Err(ApiError::Conflict(
+                "Departemen masih memiliki biro/bengkel atau digunakan oleh lowongan, akun admin, atau direktori karyawan.",
+            ));
         }
-        Ok(_) => Ok(Json(json!({ "message": "Departemen berhasil dihapus." }))),
-        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
-            "Departemen masih memiliki biro/bengkel atau digunakan oleh lowongan, akun admin, atau direktori karyawan.",
-        )),
-        Err(error) => Err(internal_error(error)),
+        Err(error) => return Err(internal_error(error)),
     }
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "delete",
+        "department",
+        &id.to_string(),
+        json!({ "name": previous.0, "division_id": previous.1 }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "message": "Departemen berhasil dihapus." })))
 }
 
 pub(super) async fn admin_create_bureau(
@@ -621,7 +800,7 @@ pub(super) async fn admin_create_bureau(
     headers: HeaderMap,
     Json(request): Json<CreateBureauRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
     let name = validate_organization_name(&request.name)?;
     let description = validate_organization_description(&request.description)?;
     let unit_type = validate_bureau_unit_type(&request.unit_type)?;
@@ -636,22 +815,42 @@ pub(super) async fn admin_create_bureau(
             "Departemen yang dipilih tidak ditemukan.",
         ));
     }
-    match sqlx::query(
-        "INSERT INTO bureaus (department_id, name, description, unit_type) VALUES ($1, $2, $3, $4)",
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let id = match sqlx::query_scalar::<_, i64>(
+        "INSERT INTO bureaus (department_id, name, description, unit_type) VALUES ($1, $2, $3, $4) RETURNING id",
     )
     .bind(request.department_id)
-    .bind(name)
-    .bind(description)
-    .bind(unit_type)
-    .execute(&state.pool)
+    .bind(&name)
+    .bind(&description)
+    .bind(&unit_type)
+    .fetch_one(&mut *transaction)
     .await
     {
-        Ok(_) => Ok(Json(json!({ "message": "Biro berhasil ditambahkan." }))),
+        Ok(id) => id,
         Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("Nama biro sudah ada di departemen ini."))
+            return Err(ApiError::Conflict(
+                "Nama biro sudah ada di departemen ini.",
+            ));
         }
-        Err(error) => Err(internal_error(error)),
-    }
+        Err(error) => return Err(internal_error(error)),
+    };
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "create",
+        "bureau",
+        &id.to_string(),
+        json!({
+            "department_id": request.department_id,
+            "name": name,
+            "description": description,
+            "unit_type": unit_type,
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "message": "Biro berhasil ditambahkan." })))
 }
 
 pub(super) async fn admin_update_bureau(
@@ -660,17 +859,25 @@ pub(super) async fn admin_update_bureau(
     Path(id): Path<i64>,
     Json(request): Json<BureauUpdateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
     let name = validate_organization_name(&request.name)?;
     let description = validate_organization_description(&request.description)?;
     let unit_type = validate_bureau_unit_type(&request.unit_type)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous = sqlx::query_as::<_, (String, String, String, i64)>(
+        "SELECT name, description, unit_type, department_id FROM bureaus WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Biro tidak ditemukan."))?;
     let result =
         sqlx::query("UPDATE bureaus SET name = $2, description = $3, unit_type = $4 WHERE id = $1")
             .bind(id)
             .bind(&name)
-            .bind(description)
-            .bind(unit_type)
+            .bind(&description)
+            .bind(&unit_type)
             .execute(&mut *transaction)
             .await;
     match result {
@@ -685,10 +892,33 @@ pub(super) async fn admin_update_bureau(
     }
     sqlx::query("UPDATE job_postings SET unit = $2 WHERE bureau_id = $1")
         .bind(id)
-        .bind(name)
+        .bind(&name)
         .execute(&mut *transaction)
         .await
         .map_err(internal_error)?;
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "update",
+        "bureau",
+        &id.to_string(),
+        json!({
+            "before": {
+                "name": previous.0,
+                "description": previous.1,
+                "unit_type": previous.2,
+                "department_id": previous.3,
+            },
+            "after": {
+                "name": name,
+                "description": description,
+                "unit_type": unit_type,
+                "department_id": previous.3,
+            },
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(json!({ "message": "Biro berhasil diperbarui." })))
 }
@@ -698,21 +928,41 @@ pub(super) async fn admin_delete_bureau(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_super_admin(&state.pool, &headers).await?;
+    let actor = authorized_super_admin(&state.pool, &headers).await?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous = sqlx::query_as::<_, (String, i64)>(
+        "SELECT name, department_id FROM bureaus WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Biro tidak ditemukan."))?;
     match sqlx::query("DELETE FROM bureaus WHERE id = $1")
         .bind(id)
-        .execute(&state.pool)
+        .execute(&mut *transaction)
         .await
     {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Biro tidak ditemukan."))
+        Ok(_) => {}
+        Err(error) if is_foreign_key_violation(&error) => {
+            return Err(ApiError::Conflict(
+                "Biro/bengkel masih digunakan oleh lowongan atau direktori karyawan. Pindahkan data terkait terlebih dahulu.",
+            ));
         }
-        Ok(_) => Ok(Json(json!({ "message": "Biro berhasil dihapus." }))),
-        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
-            "Biro/bengkel masih digunakan oleh lowongan atau direktori karyawan. Pindahkan data terkait terlebih dahulu.",
-        )),
-        Err(error) => Err(internal_error(error)),
+        Err(error) => return Err(internal_error(error)),
     }
+    record_admin_audit(
+        &mut transaction,
+        actor.id,
+        "delete",
+        "bureau",
+        &id.to_string(),
+        json!({ "name": previous.0, "department_id": previous.1 }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "message": "Biro berhasil dihapus." })))
 }
 
 struct JobTargetPath {

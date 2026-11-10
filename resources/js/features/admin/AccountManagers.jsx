@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react'
 import { Plus, Shield, Users } from 'lucide-react'
 import { apiRequest } from '../../api'
 import { AdminTableToolbar, ConfirmDialog, AdminFormDialog } from './AdminPrimitives'
-import { downloadTableCsv } from './downloadCsv'
+import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 
 const adminRoles = [
-  { value: 'super_admin', label: 'Super Admin' },
   { value: 'admin', label: 'Admin Operasional' },
   { value: 'division_head', label: 'Kepala Divisi (Kadiv)' },
   { value: 'department_head', label: 'Kepala Departemen (Kadep)' },
@@ -301,23 +300,29 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
       </label>
       {isAdminAccount && (
         <>
-          <label><span>Peran admin <em>*</em></span>
-            <select
-              onChange={(event) => setForm((current) => ({
-                ...current,
-                admin_role: event.target.value,
-                division_id: '',
-                department_id: '',
-                bureau_id: '',
-                permissions: permissionsForRole(event.target.value),
-              }))}
-              required
-              value={form.admin_role}
-            >
-              <option value="">Pilih peran admin</option>
-              {adminRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-            </select>
-          </label>
+          {editingId && form.admin_role === 'super_admin' ? (
+            <label><span>Peran admin</span>
+              <input aria-readonly="true" readOnly value="Super Admin" />
+            </label>
+          ) : (
+            <label><span>Peran admin <em>*</em></span>
+              <select
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  admin_role: event.target.value,
+                  division_id: '',
+                  department_id: '',
+                  bureau_id: '',
+                  permissions: permissionsForRole(event.target.value),
+                }))}
+                required
+                value={form.admin_role}
+              >
+                <option value="">Pilih peran admin</option>
+                {adminRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+              </select>
+            </label>
+          )}
           {form.admin_role === 'division_head' && (
             <label><span>Divisi yang dikelola <em>*</em></span>
               <select onChange={(event) => setForm({ ...form, division_id: event.target.value })} required value={form.division_id}>
@@ -336,9 +341,6 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
                 })}
               </select>
             </label>
-          )}
-          {form.admin_role === 'super_admin' && (
-            <p className="organization-help account-form-help">Super Admin selalu memiliki seluruh hak akses; izin ini tidak dapat dibatasi per akun.</p>
           )}
           {form.admin_role && form.admin_role !== 'super_admin' && (
             <fieldset className="account-permissions">
@@ -375,7 +377,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
             <p className="organization-help account-form-help">Admin Operasional dapat melihat dan memproses seluruh lamaran serta mengelola lowongan, tetapi tidak dapat mengelola akun admin atau struktur organisasi.</p>
           )}
           {form.admin_role === 'super_admin' && (
-            <p className="organization-help account-form-help">Super Admin dapat mengelola seluruh divisi, departemen, biro, lamaran, dan akun admin.</p>
+            <p className="organization-help account-form-help">Super Admin adalah akun sistem dan tidak dapat dibuat atau diubah perannya dari Kelola Akun.</p>
           )}
           {form.admin_role === 'division_head' && (
             <p className="organization-help account-form-help">Kepala Divisi dapat melihat dan memproses lamaran untuk semua lowongan di divisi ini, termasuk departemen dan biro di bawahnya.</p>
@@ -424,8 +426,9 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
         search={search}
         searchPlaceholder="Cari nama atau email..."
         totalCount={accounts.length}
-        onDownloadCsv={() => downloadTableCsv(
+        onDownloadPdf={() => downloadTablePdf(
           isAdminAccount ? 'akun-admin' : 'akun-pelamar',
+          isAdminAccount ? 'Daftar Akun Admin' : 'Daftar Akun Pelamar',
           isAdminAccount
             ? ['Nama', 'Email', 'Peran', 'Lingkup organisasi', 'Izin aktif', 'Terdaftar', 'Status']
             : ['Nama', 'Email', 'Jumlah lamaran', 'Terdaftar', 'Status'],

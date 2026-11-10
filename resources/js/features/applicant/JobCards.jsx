@@ -1,5 +1,6 @@
 import { ArrowRight, BriefcaseBusiness, Building2, CalendarDays, ChevronRight, GraduationCap, Info, List, MapPin, Users, Wrench, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
+import { getJobTargetLabels } from './jobTargetLabels'
 
 export function JobDetail({ job, onClose, onApply, isApplying, hasApplied }) {
   return (
@@ -21,19 +22,12 @@ export function JobDetail({ job, onClose, onApply, isApplying, hasApplied }) {
           </div>
           <h2 id="job-detail-title">{job.title}</h2>
           <div aria-label="Struktur organisasi" className="job-detail-breadcrumb">
-            <strong>{job.division}</strong>
-            {job.target_level !== 'division' && (
-              <>
-                <ChevronRight size={16} />
-                <span>{job.department}</span>
-              </>
-            )}
-            {job.target_level === 'bureau' && (
-              <>
-                <ChevronRight size={16} />
-                <span>{job.unit}</span>
-              </>
-            )}
+            {getJobTargetLabels(job).map((label, index) => (
+              <span className="job-detail-breadcrumb-item" key={`${label}-${index}`}>
+                {index > 0 && <ChevronRight aria-hidden="true" size={16} />}
+                {index === 0 ? <strong>{label}</strong> : label}
+              </span>
+            ))}
           </div>
           <div className="job-detail-meta">
             <span><MapPin size={15} />{job.location}</span>
@@ -90,7 +84,9 @@ export function JobCard({ job, onSelect, onApply, isApplying, hasApplied }) {
       <h2>{job.title}</h2>
       <div className="job-organization">
         {job.target_level === 'division' ? (
-          <span><Building2 size={15} />Seluruh Divisi</span>
+          <span><Building2 size={15} />Posisi tingkat divisi</span>
+        ) : job.target_level === 'secretariat' ? (
+          <span><Building2 size={15} />Sekretariat — {job.unit}</span>
         ) : (
           <span><Users size={15} />{job.department}</span>
         )}

@@ -70,8 +70,9 @@ pub(super) async fn admin_create_employee(
     validate_employee_target(&state.pool, &fields).await?;
     ensure_can_manage_employee(&admin, &fields)?;
 
-    match sqlx::query(
-        "INSERT INTO employee_directory (employee_number, name, position_title, target_level, division_id, department_id, bureau_id, created_by, updated_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)",
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let id = match sqlx::query_scalar::<_, i64>(
+        "INSERT INTO employee_directory (employee_number, name, position_title, target_level, division_id, department_id, bureau_id, created_by, updated_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8) RETURNING id",
     )
     .bind(&fields.employee_number)
     .bind(&fields.name)
@@ -81,15 +82,36 @@ pub(super) async fn admin_create_employee(
     .bind(fields.department_id)
     .bind(fields.bureau_id)
     .bind(admin.id)
-    .execute(&state.pool)
+    .fetch_one(&mut *transaction)
     .await
     {
-        Ok(_) => Ok(Json(json!({ "message": "Data karyawan berhasil ditambahkan." }))),
+        Ok(id) => id,
         Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("NIP karyawan sudah terdaftar."))
+            return Err(ApiError::Conflict("NIP karyawan sudah terdaftar."));
         }
-        Err(error) => Err(internal_error(error)),
-    }
+        Err(error) => return Err(internal_error(error)),
+    };
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "create",
+        "employee",
+        &id.to_string(),
+        json!({
+            "name": fields.name,
+            "position_title": fields.position_title,
+            "target_level": fields.target_level,
+            "division_id": fields.division_id,
+            "department_id": fields.department_id,
+            "bureau_id": fields.bureau_id,
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(
+        json!({ "message": "Data karyawan berhasil ditambahkan." }),
+    ))
 }
 
 pub(super) async fn admin_update_employee(
@@ -138,6 +160,24 @@ pub(super) async fn admin_update_employee(
         }
         Err(error) => return Err(internal_error(error)),
     }
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "update",
+        "employee",
+        &id.to_string(),
+        json!({
+            "employee_number": fields.employee_number,
+            "name": fields.name,
+            "position_title": fields.position_title,
+            "target_level": fields.target_level,
+            "division_id": fields.division_id,
+            "department_id": fields.department_id,
+            "bureau_id": fields.bureau_id,
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(
         json!({ "message": "Data karyawan berhasil diperbarui." }),
@@ -152,6 +192,7 @@ pub(super) async fn admin_set_employee_status(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let admin = authorized_admin_context(&state.pool, &headers).await?;
     admin.require_permission(EMPLOYEES_MANAGE)?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let result = sqlx::query(
         "UPDATE employee_directory SET is_active = $2, updated_by = $3, updated_at = NOW() WHERE id = $1 AND ($4 IN ('super_admin', 'admin') OR ($4 = 'division_head' AND division_id = $5) OR ($4 = 'department_head' AND target_level IN ('department', 'bureau') AND department_id = $6))",
     )
@@ -161,12 +202,27 @@ pub(super) async fn admin_set_employee_status(
     .bind(&admin.admin_role)
     .bind(admin.division_id)
     .bind(admin.department_id)
-    .execute(&state.pool)
+    .execute(&mut *transaction)
     .await
     .map_err(internal_error)?;
     if result.rows_affected() == 0 {
         return Err(ApiError::NotFound("Data karyawan tidak ditemukan."));
     }
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        if request.is_active {
+            "activate"
+        } else {
+            "deactivate"
+        },
+        "employee",
+        &id.to_string(),
+        json!({ "is_active": request.is_active }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
     Ok(Json(
         json!({ "message": "Status karyawan berhasil diperbarui." }),
     ))

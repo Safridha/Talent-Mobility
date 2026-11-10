@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { apiRequest } from '../../api'
 import { AdminTableToolbar, ConfirmDialog, AdminFormDialog } from './AdminPrimitives'
-import { downloadTableCsv } from './downloadCsv'
+import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 
 export function OrganizationManager({ level, organization, isLoading, sessionToken, onRefresh }) {
@@ -38,6 +38,7 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
   const [parentId, setParentId] = useState('')
   const [search, setSearch] = useState('')
   const [parentFilter, setParentFilter] = useState('all')
+  const [divisionFilter, setDivisionFilter] = useState('all')
   const [editingId, setEditingId] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -71,6 +72,10 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
     return `${division?.name || 'Divisi tidak ditemukan'} / ${parent.name}`
   }
 
+  const parentFilterOptions = level === 'bureaus' && divisionFilter !== 'all'
+    ? parents.filter((parent) => String(parent.division_id) === divisionFilter)
+    : parents
+
   const filteredItems = items.filter((item) => {
     const query = search.trim().toLocaleLowerCase('id')
     const matchesSearch = [
@@ -80,10 +85,16 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
       item.secretariat_description,
       getParentName(item),
     ].join(' ').toLocaleLowerCase('id').includes(query)
+    const department = level === 'bureaus'
+      ? organization.departments.find((entry) => entry.id === item.department_id)
+      : null
+    const matchesDivision = level !== 'bureaus'
+      || divisionFilter === 'all'
+      || String(department?.division_id) === divisionFilter
     const matchesParent = !definition.parentField
       || parentFilter === 'all'
       || String(item[definition.parentField]) === parentFilter
-    return matchesSearch && matchesParent
+    return matchesSearch && matchesDivision && matchesParent
   })
 
   async function handleSubmit(event) {
@@ -245,19 +256,48 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
         </AdminFormDialog>
       )}
       <AdminTableToolbar
-        filters={definition.parentField ? [{
-          label: definition.parentLabel,
-          value: parentFilter,
-          onChange: setParentFilter,
-          options: parents.map((parent) => ({ value: String(parent.id), label: parent.name })),
-        }] : []}
+        filters={level === 'bureaus'
+          ? [
+              {
+                label: 'Divisi',
+                value: divisionFilter,
+                onChange: (value) => {
+                  setDivisionFilter(value)
+                  setParentFilter('all')
+                },
+                options: organization.divisions.map((division) => ({
+                  value: String(division.id),
+                  label: division.name,
+                })),
+              },
+              {
+                label: 'Departemen',
+                value: parentFilter,
+                onChange: setParentFilter,
+                options: parentFilterOptions.map((parent) => ({
+                  value: String(parent.id),
+                  label: getParentOptionName(parent),
+                })),
+              },
+            ]
+          : definition.parentField ? [{
+              label: definition.parentLabel,
+              value: parentFilter,
+              onChange: setParentFilter,
+              options: parents.map((parent) => ({ value: String(parent.id), label: parent.name })),
+            }] : []}
         onSearchChange={setSearch}
         resultCount={filteredItems.length}
         search={search}
         searchPlaceholder={`Cari ${definition.label.toLocaleLowerCase('id')}${definition.parentField ? ' atau induknya' : ''}...`}
         totalCount={items.length}
-        onDownloadCsv={() => downloadTableCsv(
+        onDownloadPdf={() => downloadTablePdf(
           level,
+          level === 'divisions'
+            ? 'Daftar Divisi'
+            : level === 'departments'
+              ? 'Daftar Departemen'
+              : 'Daftar Biro dan Bengkel',
           level === 'divisions'
             ? ['Divisi', 'Deskripsi', 'Sekretariat', 'Deskripsi sekretariat']
             : level === 'departments'
@@ -456,8 +496,9 @@ export function JobTypeManager({ jobTypes, isLoading, loadError, sessionToken, o
         search={search}
         searchPlaceholder="Cari jenis pekerjaan..."
         totalCount={jobTypes.length}
-        onDownloadCsv={() => downloadTableCsv(
+        onDownloadPdf={() => downloadTablePdf(
           'jenis-pekerjaan',
+          'Daftar Jenis Pekerjaan',
           ['Jenis pekerjaan', 'Jumlah lowongan terkait'],
           filteredJobTypes.map((jobType) => [jobType.name, jobType.job_count]),
         )}

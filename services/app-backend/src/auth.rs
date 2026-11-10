@@ -283,14 +283,39 @@ pub(super) async fn update_account_profile(
         .await
         .map_err(internal_error)?
     } else {
-        sqlx::query_as::<_, (String, String)>(
+        let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+        let previous_name =
+            sqlx::query_scalar::<_, String>("SELECT name FROM admins WHERE id = $1 FOR UPDATE")
+                .bind(account.id)
+                .fetch_optional(&mut *transaction)
+                .await
+                .map_err(internal_error)?
+                .ok_or(ApiError::Unauthorized)?;
+        let profile = sqlx::query_as::<_, (String, String)>(
             "UPDATE admins SET name = $1 WHERE id = $2 RETURNING name, email",
         )
         .bind(name)
         .bind(account.id)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(internal_error)?
+        .ok_or(ApiError::Unauthorized)?;
+        record_admin_audit(
+            &mut transaction,
+            account.id,
+            "update",
+            "admin_account",
+            &account.id.to_string(),
+            json!({
+                "before": { "name": previous_name },
+                "after": { "name": name },
+                "source": "self_service",
+            }),
+        )
+        .await
+        .map_err(internal_error)?;
+        transaction.commit().await.map_err(internal_error)?;
+        Some(profile)
     }
     .ok_or(ApiError::Unauthorized)?;
 
@@ -469,6 +494,16 @@ pub(super) async fn change_account_password(
             .execute(&mut *transaction)
             .await
             .map_err(internal_error)?;
+        record_admin_audit(
+            &mut transaction,
+            account.id,
+            "update",
+            "admin_account",
+            &account.id.to_string(),
+            json!({ "password_changed": true }),
+        )
+        .await
+        .map_err(internal_error)?;
     }
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(json!({ "message": "Kata sandi berhasil diubah." })))

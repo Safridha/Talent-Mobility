@@ -6,7 +6,7 @@ use argon2::{
 };
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Json, Multipart, Path, State},
+    extract::{DefaultBodyLimit, Json, Multipart, Path, Query, State},
     http::{
         header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE},
         HeaderMap, HeaderValue, Request, StatusCode,
@@ -33,6 +33,7 @@ use ulid::Ulid;
 
 mod admin_accounts;
 mod admin_applications;
+mod admin_audit;
 mod admin_permissions;
 mod applications;
 mod auth;
@@ -41,6 +42,7 @@ mod jobs;
 
 use admin_accounts::*;
 use admin_applications::*;
+use admin_audit::*;
 use admin_permissions::*;
 use applications::*;
 use auth::*;
@@ -695,6 +697,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/admin/login", post(admin_login))
         .route("/api/admin/logout", post(admin_logout))
         .route("/api/admin/dashboard", get(admin_dashboard))
+        .route("/api/admin/audit-log", get(admin_list_audit_events))
         .route(
             "/api/admin/accounts",
             get(admin_list_accounts).post(admin_create_account),
@@ -1060,11 +1063,16 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
 }
 
 fn is_foreign_key_violation(error: &sqlx::Error) -> bool {
-    error
-        .as_database_error()
-        .and_then(|database_error| database_error.code())
-        .as_deref()
-        == Some("23503")
+    is_foreign_key_violation_code(
+        error
+            .as_database_error()
+            .and_then(|database_error| database_error.code())
+            .as_deref(),
+    )
+}
+
+fn is_foreign_key_violation_code(code: Option<&str>) -> bool {
+    matches!(code, Some("23001") | Some("23503"))
 }
 
 fn create_token() -> (String, String) {
@@ -1115,15 +1123,25 @@ async fn seed_admin(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
         .hash_password(password.as_bytes(), &salt)
         .map_err(|error| std::io::Error::other(error.to_string()))?
         .to_string();
+    insert_bootstrap_admin(pool, name.trim(), &email, &password_hash).await?;
+    tracing::info!("Admin bootstrap account was created if it did not already exist.");
+    Ok(())
+}
+
+async fn insert_bootstrap_admin(
+    pool: &PgPool,
+    name: &str,
+    email: &str,
+    password_hash: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO admins (name, email, password_hash) VALUES ($1, $2, $3) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, password_hash = EXCLUDED.password_hash",
+        "INSERT INTO admins (name, email, password_hash) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING",
     )
-    .bind(name.trim())
+    .bind(name)
     .bind(email)
     .bind(password_hash)
     .execute(pool)
     .await?;
-    tracing::info!("Admin account created or refreshed from ADMIN_* configuration.");
     Ok(())
 }
 
@@ -1137,6 +1155,1020 @@ mod tests {
         validate_optional_organization_name, validate_organization_description,
     };
     use super::*;
+
+    #[cfg(feature = "postgres-migration-tests")]
+    #[sqlx::test(migrations = "./migrations")]
+    async fn bootstrap_does_not_overwrite_existing_admin_credentials(pool: PgPool) {
+        insert_bootstrap_admin(
+            &pool,
+            "Bootstrap Admin",
+            "bootstrap@example.com",
+            "initial-hash",
+        )
+        .await
+        .expect("bootstrap account should be inserted");
+        insert_bootstrap_admin(&pool, "Updated Admin", "bootstrap@example.com", "new-hash")
+            .await
+            .expect("repeated bootstrap should not fail");
+
+        let account = sqlx::query_as::<_, (String, String)>(
+            "SELECT name, password_hash FROM admins WHERE email = $1",
+        )
+        .bind("bootstrap@example.com")
+        .fetch_one(&pool)
+        .await
+        .expect("bootstrap account should exist");
+
+        assert_eq!(account.0, "Bootstrap Admin");
+        assert_eq!(account.1, "initial-hash");
+    }
+
+    #[cfg(feature = "postgres-migration-tests")]
+    #[sqlx::test(migrations = "./migrations")]
+    async fn admin_job_application_and_account_workflow(pool: PgPool) {
+        fn bearer(token: &str) -> HeaderMap {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+            );
+            headers
+        }
+
+        async fn submit_test_application(
+            state: &AppState,
+            headers: HeaderMap,
+            job_id: &str,
+            employee_number: &str,
+            boundary: &str,
+        ) -> serde_json::Value {
+            use axum::extract::FromRequest;
+
+            let body = format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"job_id\"\r\n\r\n{job_id}\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"employee_number\"\r\n\r\n{employee_number}\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"applicant_full_name\"\r\n\r\nAudit Applicant\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"origin_division\"\r\n\r\nAudit Division Updated\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"origin_unit\"\r\n\r\nAudit Department Updated / Audit Bureau Updated\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"education_level\"\r\n\r\nD4/S1\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"study_field\"\r\n\r\nTeknik\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"motivation\"\r\n\r\nPengembangan karier\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"supporting_document\"; filename=\"cv.pdf\"\r\nContent-Type: application/pdf\r\n\r\n%PDF-1.7\nAudit document\r\n\
+                 --{boundary}--\r\n"
+            );
+            let request = Request::builder()
+                .header(
+                    CONTENT_TYPE,
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(body))
+                .unwrap();
+            let multipart = Multipart::from_request(request, state).await.unwrap();
+            create_application(State(state.clone()), headers, multipart)
+                .await
+                .unwrap()
+                .0
+        }
+
+        let state = AppState { pool };
+        let super_password = "Admin!Pass123";
+        insert_bootstrap_admin(
+            &state.pool,
+            "Audit Super Admin",
+            "super@example.com",
+            &hash_password(super_password).unwrap(),
+        )
+        .await
+        .unwrap();
+        let super_admin = admin_login(
+            State(state.clone()),
+            Json(AdminLoginRequest {
+                email: "super@example.com".to_owned(),
+                password: super_password.to_owned(),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        let super_headers = bearer(&super_admin.token);
+        assert!(matches!(
+            admin_create_admin_account(
+                State(state.clone()),
+                super_headers.clone(),
+                Json(AdminAccountCreateRequest {
+                    name: "Additional Super Admin".to_owned(),
+                    email: "additional-super@example.com".to_owned(),
+                    password: "Admin!Pass123".to_owned(),
+                    admin_role: "super_admin".to_owned(),
+                    division_id: None,
+                    department_id: None,
+                    bureau_id: None,
+                    permissions: None,
+                }),
+            )
+            .await,
+            Err(ApiError::BadRequest(_))
+        ));
+
+        let _ = admin_create_division(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(DivisionRequest {
+                name: "Audit Division".to_owned(),
+                description: "Audit".to_owned(),
+                secretariat_name: "Audit Secretariat".to_owned(),
+                secretariat_description: String::new(),
+            }),
+        )
+        .await
+        .unwrap();
+        let division_id: i64 =
+            sqlx::query_scalar("SELECT id FROM divisions WHERE name = 'Audit Division'")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        let _ = admin_create_department(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(CreateDepartmentRequest {
+                division_id,
+                name: "Audit Department".to_owned(),
+                description: String::new(),
+            }),
+        )
+        .await
+        .unwrap();
+        let department_id: i64 =
+            sqlx::query_scalar("SELECT id FROM departments WHERE name = 'Audit Department'")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        let _ = admin_create_bureau(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(CreateBureauRequest {
+                department_id,
+                name: "Audit Bureau".to_owned(),
+                description: String::new(),
+                unit_type: "biro".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let bureau_id: i64 =
+            sqlx::query_scalar("SELECT id FROM bureaus WHERE name = 'Audit Bureau'")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+
+        let _ = admin_create_job_type(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(JobTypeNameRequest {
+                name: "Audit Work".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let job_type_id: i64 =
+            sqlx::query_scalar("SELECT id FROM job_types WHERE name = 'Audit Work'")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        let _ = admin_update_job_type(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(job_type_id),
+            Json(JobTypeNameRequest {
+                name: "Audit Role".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        for (name, email, role, division_id, department_id) in [
+            (
+                "Audit Division Head",
+                "kadiv@example.com",
+                "division_head",
+                Some(division_id),
+                None,
+            ),
+            (
+                "Audit Department Head",
+                "kadep@example.com",
+                "department_head",
+                None,
+                Some(department_id),
+            ),
+        ] {
+            let _ = admin_create_admin_account(
+                State(state.clone()),
+                super_headers.clone(),
+                Json(AdminAccountCreateRequest {
+                    name: name.to_owned(),
+                    email: email.to_owned(),
+                    password: "Admin!Pass123".to_owned(),
+                    admin_role: role.to_owned(),
+                    division_id,
+                    department_id,
+                    bureau_id: None,
+                    permissions: None,
+                }),
+            )
+            .await
+            .unwrap();
+        }
+        let account_list = admin_list_admin_accounts(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(account_list["data"].as_array().unwrap().len(), 3);
+
+        let job_fields = || AdminJobFields {
+            title: "Audit Position".to_owned(),
+            target_level: "bureau".to_owned(),
+            division_id: Some(division_id),
+            department_id: Some(department_id),
+            bureau_id: Some(bureau_id),
+            location: "Jakarta".to_owned(),
+            quota: 1,
+            posted: "Hari ini".to_owned(),
+            job_type: "Audit Role".to_owned(),
+            summary: "Internal mobility audit".to_owned(),
+            skills: vec!["Pengalaman internal".to_owned()],
+            responsibilities: vec!["Mengelola pekerjaan".to_owned()],
+        };
+        let _ = admin_create_job(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(CreateAdminJobRequest {
+                id: "AUDIT-JOB-001".to_owned(),
+                fields: job_fields(),
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = admin_set_job_status(
+            State(state.clone()),
+            super_headers.clone(),
+            Path("AUDIT-JOB-001".to_owned()),
+            Json(JobStatusRequest {
+                status: "open".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = admin_update_division(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(division_id),
+            Json(DivisionRequest {
+                name: "Audit Division Updated".to_owned(),
+                description: "Updated".to_owned(),
+                secretariat_name: "Audit Secretariat".to_owned(),
+                secretariat_description: String::new(),
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = admin_update_department(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(department_id),
+            Json(OrganizationNameRequest {
+                name: "Audit Department Updated".to_owned(),
+                description: "Updated".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = admin_update_bureau(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(bureau_id),
+            Json(BureauUpdateRequest {
+                name: "Audit Bureau Updated".to_owned(),
+                description: "Updated".to_owned(),
+                unit_type: "biro".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let mut updated_job_fields = job_fields();
+        updated_job_fields.title = "Audit Position Updated".to_owned();
+        let _ = admin_update_job(
+            State(state.clone()),
+            super_headers.clone(),
+            Path("AUDIT-JOB-001".to_owned()),
+            Json(updated_job_fields),
+        )
+        .await
+        .unwrap();
+        let updated_jobs = admin_list_jobs(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(updated_jobs.data[0].division, "Audit Division Updated");
+        assert_eq!(updated_jobs.data[0].department, "Audit Department Updated");
+        assert_eq!(updated_jobs.data[0].unit, "Audit Bureau Updated");
+        assert_eq!(updated_jobs.data[0].job_type, "Audit Role");
+        let _ = admin_create_job(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(CreateAdminJobRequest {
+                id: "AUDIT-JOB-DIV".to_owned(),
+                fields: AdminJobFields {
+                    title: "Division Position".to_owned(),
+                    target_level: "division".to_owned(),
+                    department_id: None,
+                    bureau_id: None,
+                    ..job_fields()
+                },
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = admin_set_job_status(
+            State(state.clone()),
+            super_headers.clone(),
+            Path("AUDIT-JOB-DIV".to_owned()),
+            Json(JobStatusRequest {
+                status: "open".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let other_division_id: i64 = sqlx::query_scalar(
+            "INSERT INTO divisions (name) VALUES ('Other Audit Division') RETURNING id",
+        )
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        let other_department_id: i64 = sqlx::query_scalar(
+            "INSERT INTO departments (division_id, name) VALUES ($1, 'Other Audit Department') RETURNING id",
+        )
+        .bind(other_division_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        let other_bureau_id: i64 = sqlx::query_scalar(
+            "INSERT INTO bureaus (department_id, name) VALUES ($1, 'Other Audit Bureau') RETURNING id",
+        )
+        .bind(other_department_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        let _ = admin_create_job(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(CreateAdminJobRequest {
+                id: "AUDIT-JOB-OTHER".to_owned(),
+                fields: AdminJobFields {
+                    title: "Other Division Position".to_owned(),
+                    division_id: Some(other_division_id),
+                    department_id: Some(other_department_id),
+                    bureau_id: Some(other_bureau_id),
+                    ..job_fields()
+                },
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = admin_create_admin_account(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(AdminAccountCreateRequest {
+                name: "Audit Operational Admin".to_owned(),
+                email: "operational@example.com".to_owned(),
+                password: "Admin!Pass123".to_owned(),
+                admin_role: "admin".to_owned(),
+                division_id: None,
+                department_id: None,
+                bureau_id: None,
+                permissions: Some(vec![JOBS_VIEW.to_owned()]),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let kadep = admin_login(
+            State(state.clone()),
+            Json(AdminLoginRequest {
+                email: "kadep@example.com".to_owned(),
+                password: "Admin!Pass123".to_owned(),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        let kadep_headers = bearer(&kadep.token);
+        assert_eq!(
+            admin_list_jobs(State(state.clone()), kadep_headers.clone())
+                .await
+                .unwrap()
+                .0
+                .data
+                .len(),
+            1
+        );
+        let kadiv = admin_login(
+            State(state.clone()),
+            Json(AdminLoginRequest {
+                email: "kadiv@example.com".to_owned(),
+                password: "Admin!Pass123".to_owned(),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        let kadiv_headers = bearer(&kadiv.token);
+        assert_eq!(
+            admin_list_jobs(State(state.clone()), kadiv_headers.clone())
+                .await
+                .unwrap()
+                .0
+                .data
+                .len(),
+            2
+        );
+        let operational = admin_login(
+            State(state.clone()),
+            Json(AdminLoginRequest {
+                email: "operational@example.com".to_owned(),
+                password: "Admin!Pass123".to_owned(),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(
+            admin_list_jobs(State(state.clone()), bearer(&operational.token))
+                .await
+                .unwrap()
+                .0
+                .data
+                .len(),
+            3
+        );
+        let operational_headers = bearer(&operational.token);
+        assert!(matches!(
+            admin_list_applications(State(state.clone()), operational_headers.clone()).await,
+            Err(ApiError::Forbidden)
+        ));
+        assert!(matches!(
+            admin_set_job_status(
+                State(state.clone()),
+                operational_headers.clone(),
+                Path("AUDIT-JOB-001".to_owned()),
+                Json(JobStatusRequest {
+                    status: "closed".to_owned(),
+                }),
+            )
+            .await,
+            Err(ApiError::Forbidden)
+        ));
+        assert!(matches!(
+            admin_create_job(
+                State(state.clone()),
+                kadep_headers.clone(),
+                Json(CreateAdminJobRequest {
+                    id: "AUDIT-JOB-OUT-OF-SCOPE".to_owned(),
+                    fields: AdminJobFields {
+                        target_level: "division".to_owned(),
+                        department_id: None,
+                        bureau_id: None,
+                        ..job_fields()
+                    },
+                }),
+            )
+            .await,
+            Err(ApiError::Forbidden)
+        ));
+        let _ = admin_create_job(
+            State(state.clone()),
+            kadep_headers.clone(),
+            Json(CreateAdminJobRequest {
+                id: "AUDIT-JOB-KADEP".to_owned(),
+                fields: job_fields(),
+            }),
+        )
+        .await
+        .unwrap();
+        let mut kadep_job_update = job_fields();
+        kadep_job_update.title = "Kadep Updated Position".to_owned();
+        let _ = admin_update_job(
+            State(state.clone()),
+            kadep_headers.clone(),
+            Path("AUDIT-JOB-KADEP".to_owned()),
+            Json(kadep_job_update),
+        )
+        .await
+        .unwrap();
+        let _ = admin_delete_job(
+            State(state.clone()),
+            kadep_headers.clone(),
+            Path("AUDIT-JOB-KADEP".to_owned()),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            admin_create_job(
+                State(state.clone()),
+                operational_headers.clone(),
+                Json(CreateAdminJobRequest {
+                    id: "AUDIT-JOB-NO-CREATE-PERMISSION".to_owned(),
+                    fields: job_fields(),
+                }),
+            )
+            .await,
+            Err(ApiError::Forbidden)
+        ));
+
+        let applicant = register(
+            State(state.clone()),
+            Json(RegisterRequest {
+                name: "Audit Applicant".to_owned(),
+                email: "applicant@example.com".to_owned(),
+                password: "Applicant!Pass123".to_owned(),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        let applicant_headers = bearer(&applicant.token);
+        let submitted = submit_test_application(
+            &state,
+            applicant_headers.clone(),
+            "AUDIT-JOB-001",
+            "EMP-001",
+            "admin-workflow-audit",
+        )
+        .await;
+        let application_id = submitted["application_id"].as_str().unwrap().to_owned();
+        let division_application = submit_test_application(
+            &state,
+            applicant_headers,
+            "AUDIT-JOB-DIV",
+            "EMP-002",
+            "admin-workflow-audit-division",
+        )
+        .await;
+        let division_application_id = division_application["application_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(
+            admin_list_applications(State(state.clone()), kadep_headers.clone())
+                .await
+                .unwrap()
+                .0
+                .data
+                .len(),
+            1
+        );
+        assert!(matches!(
+            admin_get_application(
+                State(state.clone()),
+                kadep_headers.clone(),
+                Path(division_application_id.clone()),
+            )
+            .await,
+            Err(ApiError::NotFound(_))
+        ));
+        assert_eq!(
+            admin_list_notifications(State(state.clone()), kadep_headers.clone())
+                .await
+                .unwrap()
+                .0
+                .data
+                .len(),
+            1
+        );
+        assert_eq!(
+            admin_list_applications(State(state.clone()), kadiv_headers.clone())
+                .await
+                .unwrap()
+                .0
+                .data
+                .len(),
+            2
+        );
+        assert_eq!(
+            admin_list_notifications(State(state.clone()), kadiv_headers.clone())
+                .await
+                .unwrap()
+                .0
+                .data
+                .len(),
+            2
+        );
+
+        async fn create_permission_admin(
+            state: &AppState,
+            super_headers: &HeaderMap,
+            email: &str,
+            permissions: Vec<String>,
+            department_id: i64,
+        ) -> HeaderMap {
+            let _ = admin_create_admin_account(
+                State(state.clone()),
+                super_headers.clone(),
+                Json(AdminAccountCreateRequest {
+                    name: email.to_owned(),
+                    email: email.to_owned(),
+                    password: "Matrix!Pass123".to_owned(),
+                    admin_role: "department_head".to_owned(),
+                    division_id: None,
+                    department_id: Some(department_id),
+                    bureau_id: None,
+                    permissions: Some(permissions),
+                }),
+            )
+            .await
+            .unwrap();
+            let admin = admin_login(
+                State(state.clone()),
+                Json(AdminLoginRequest {
+                    email: email.to_owned(),
+                    password: "Matrix!Pass123".to_owned(),
+                }),
+            )
+            .await
+            .unwrap()
+            .0;
+            bearer(&admin.token)
+        }
+
+        let view_only_headers = create_permission_admin(
+            &state,
+            &super_headers,
+            "view-only@example.com",
+            vec![APPLICATIONS_VIEW.to_owned()],
+            department_id,
+        )
+        .await;
+        assert_eq!(
+            admin_get_application(
+                State(state.clone()),
+                view_only_headers.clone(),
+                Path(application_id.clone()),
+            )
+            .await
+            .unwrap()
+            .0
+            .application
+            .status,
+            "submitted"
+        );
+        assert!(matches!(
+            admin_download_application_document(
+                State(state.clone()),
+                view_only_headers.clone(),
+                Path((application_id.clone(), 1)),
+            )
+            .await,
+            Err(ApiError::Forbidden)
+        ));
+        assert!(matches!(
+            admin_set_application_status(
+                State(state.clone()),
+                view_only_headers,
+                Path(application_id.clone()),
+                Json(ApplicationStatusRequest {
+                    status: "screening".to_owned(),
+                    reason: None,
+                }),
+            )
+            .await,
+            Err(ApiError::Forbidden)
+        ));
+
+        let document_only_headers = create_permission_admin(
+            &state,
+            &super_headers,
+            "document-only@example.com",
+            vec![
+                APPLICATIONS_VIEW.to_owned(),
+                APPLICATIONS_DOWNLOAD_DOCUMENTS.to_owned(),
+            ],
+            department_id,
+        )
+        .await;
+        let document = admin_download_application_document(
+            State(state.clone()),
+            document_only_headers.clone(),
+            Path((application_id.clone(), 1)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(document.status(), StatusCode::OK);
+        assert!(matches!(
+            admin_set_application_status(
+                State(state.clone()),
+                document_only_headers,
+                Path(application_id.clone()),
+                Json(ApplicationStatusRequest {
+                    status: "screening".to_owned(),
+                    reason: None,
+                }),
+            )
+            .await,
+            Err(ApiError::Forbidden)
+        ));
+
+        let status_only_headers = create_permission_admin(
+            &state,
+            &super_headers,
+            "status-only@example.com",
+            vec![
+                APPLICATIONS_VIEW.to_owned(),
+                APPLICATIONS_CHANGE_STATUS.to_owned(),
+            ],
+            department_id,
+        )
+        .await;
+        assert!(matches!(
+            admin_download_application_document(
+                State(state.clone()),
+                status_only_headers.clone(),
+                Path((application_id.clone(), 1)),
+            )
+            .await,
+            Err(ApiError::Forbidden)
+        ));
+        let _ = admin_set_application_status(
+            State(state.clone()),
+            status_only_headers,
+            Path(application_id.clone()),
+            Json(ApplicationStatusRequest {
+                status: "screening".to_owned(),
+                reason: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let applications = admin_list_applications(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(applications.data.len(), 2);
+        let detail = admin_get_application(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(application_id.clone()),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(detail.documents.len(), 1);
+        let document = admin_download_application_document(
+            State(state.clone()),
+            super_headers.clone(),
+            Path((application_id.clone(), detail.documents[0].id)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            axum::body::to_bytes(document.into_body(), 1024)
+                .await
+                .unwrap()
+                .as_ref(),
+            b"%PDF-1.7\nAudit document"
+        );
+
+        let notifications = admin_list_notifications(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(notifications.unread_count, 2);
+        let _ = admin_mark_notification_read(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(notifications.data[0].id),
+        )
+        .await
+        .unwrap();
+        let _ = admin_set_application_status(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(application_id.clone()),
+            Json(ApplicationStatusRequest {
+                status: "screening".to_owned(),
+                reason: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = admin_set_application_status(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(application_id.clone()),
+            Json(ApplicationStatusRequest {
+                status: "rejected".to_owned(),
+                reason: Some("Tidak sesuai kualifikasi".to_owned()),
+            }),
+        )
+        .await
+        .unwrap();
+        let audit_response = admin_list_audit_events(
+            State(state.clone()),
+            super_headers.clone(),
+            Query(AdminAuditQuery {
+                before_id: None,
+                limit: Some(50),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        let audit_json = serde_json::to_value(audit_response).unwrap();
+        let audit_events = audit_json["data"].as_array().unwrap();
+        assert!(audit_events.iter().any(|event| {
+            event["entity_type"] == "admin_account"
+                && event["action"] == "create"
+                && event["actor_email"] == "super@example.com"
+        }));
+        assert!(audit_events
+            .iter()
+            .any(|event| event["entity_type"] == "division" && event["action"] == "update"));
+        assert!(!audit_json.to_string().contains("Admin!Pass123"));
+        let audit_page = admin_list_audit_events(
+            State(state.clone()),
+            super_headers.clone(),
+            Query(AdminAuditQuery {
+                before_id: None,
+                limit: Some(2),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        let audit_page_json = serde_json::to_value(audit_page).unwrap();
+        let first_event_id = audit_page_json["data"][0]["id"].as_i64().unwrap();
+        let cursor = audit_page_json["next_before_id"].as_i64().unwrap();
+        let older_page = admin_list_audit_events(
+            State(state.clone()),
+            super_headers.clone(),
+            Query(AdminAuditQuery {
+                before_id: Some(cursor),
+                limit: Some(2),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        let older_page_json = serde_json::to_value(older_page).unwrap();
+        let older_event_id = older_page_json["data"][0]["id"].as_i64().unwrap();
+        assert!(first_event_id > older_event_id);
+        assert!(matches!(
+            admin_list_audit_events(
+                State(state.clone()),
+                kadep_headers.clone(),
+                Query(AdminAuditQuery {
+                    before_id: None,
+                    limit: Some(10),
+                }),
+            )
+            .await,
+            Err(ApiError::Forbidden)
+        ));
+        let status_notifications: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM application_status_notifications WHERE new_status = 'rejected' AND reason = 'Tidak sesuai kualifikasi'",
+        )
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        assert_eq!(status_notifications, 1);
+        assert!(matches!(
+            admin_delete_job(
+                State(state.clone()),
+                super_headers.clone(),
+                Path("AUDIT-JOB-001".to_owned()),
+            )
+            .await,
+            Err(ApiError::Conflict(_))
+        ));
+        assert!(matches!(
+            admin_delete_bureau(State(state.clone()), super_headers.clone(), Path(bureau_id),)
+                .await,
+            Err(ApiError::Conflict(_))
+        ));
+        let kadep_id: i64 =
+            sqlx::query_scalar("SELECT id FROM admins WHERE email = 'kadep@example.com'")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        assert!(matches!(
+            admin_update_admin_account(
+                State(state.clone()),
+                super_headers.clone(),
+                Path(kadep_id),
+                Json(AdminAccountUpdateRequest {
+                    name: "Audit Department Head".to_owned(),
+                    email: "kadep@example.com".to_owned(),
+                    password: None,
+                    admin_role: "super_admin".to_owned(),
+                    division_id: None,
+                    department_id: None,
+                    bureau_id: None,
+                    permissions: None,
+                }),
+            )
+            .await,
+            Err(ApiError::BadRequest(_))
+        ));
+        let _ = admin_update_admin_account(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(kadep_id),
+            Json(AdminAccountUpdateRequest {
+                name: "Updated Audit Department Head".to_owned(),
+                email: "kadep@example.com".to_owned(),
+                password: None,
+                admin_role: "department_head".to_owned(),
+                division_id: None,
+                department_id: Some(department_id),
+                bureau_id: None,
+                permissions: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = admin_deactivate_admin_account(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(kadep_id),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            admin_list_jobs(State(state.clone()), bearer(&kadep.token)).await,
+            Err(ApiError::Unauthorized)
+        ));
+
+        let _ = update_account_profile(
+            State(state.clone()),
+            super_headers.clone(),
+            Json(ProfileUpdateRequest {
+                name: "Updated Audit Admin".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = change_account_password(
+            State(state.clone()),
+            super_headers,
+            Json(ChangePasswordRequest {
+                current_password: super_password.to_owned(),
+                new_password: "Admin!Pass456".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let refreshed_super_login = admin_login(
+            State(state.clone()),
+            Json(AdminLoginRequest {
+                email: "super@example.com".to_owned(),
+                password: "Admin!Pass456".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let final_audit_response = admin_list_audit_events(
+            State(state.clone()),
+            bearer(&refreshed_super_login.token),
+            Query(AdminAuditQuery {
+                before_id: None,
+                limit: Some(50),
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        let final_audit_json = serde_json::to_value(final_audit_response).unwrap();
+        let final_audit_events = final_audit_json["data"].as_array().unwrap();
+        assert!(final_audit_events.iter().any(|event| {
+            event["entity_type"] == "admin_account"
+                && event["action"] == "update"
+                && event["details"]["source"] == "self_service"
+        }));
+        assert!(final_audit_events.iter().any(|event| {
+            event["entity_type"] == "admin_account"
+                && event["action"] == "update"
+                && event["details"]["password_changed"] == true
+        }));
+        assert!(!final_audit_json.to_string().contains("Admin!Pass456"));
+    }
+
+    #[test]
+    fn foreign_key_delete_restrictions_are_not_internal_errors() {
+        assert!(is_foreign_key_violation_code(Some("23001")));
+        assert!(is_foreign_key_violation_code(Some("23503")));
+        assert!(!is_foreign_key_violation_code(Some("23505")));
+        assert!(!is_foreign_key_violation_code(None));
+    }
 
     #[test]
     fn api_responses_are_not_cacheable() {
