@@ -1,0 +1,835 @@
+{
+  "bureaus": [
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang penyusunan pelaksanaan program kerja yang berkaitan dengan perencanaan fasilitas produksi, analisa dan evaluasi kesiapan fasilitas dan sarana produksi, serta administrasi & SDM Divisi Kapal Permukaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Administrasi & SDM",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang pelayanan dan pengoperasian fasilitas alat angkat dan alat angkut produksi di Divisi Kapal Permukaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Alat Angkat & Alat Angkut",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang penyiapan dan pengoperasian fasilitas dermaga, ship lift, dock dan launching di Divisi Kapal Permukaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Dock & Launching",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menyusun strategi, merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan di bidang penyusunan pelaksanaan program kerja yang berkaitan dengan kebutuhan Logistik & Pengembangan Produksi di Divisi Kapal Permukaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Logistik & Pengembangan Produksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam rangka merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan dalam bidang pemeliharaan dan perbaikan mesin-mesin, sarana dan fasilitas kerja di Divisi Kapal Permukaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Pemeliharaan & Perbaikan Aset",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang pemeliharaan dan perbaikan mesin-mesin, sarana dan fasilitas kerja di Divisi Kapal Permukaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Pemeliharaan & Perbaikan Fasilitas",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menyusun strategi pelaksanaan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan dalam bidang penyiapan fasilitas transportasi di Divisi Kapal Permukaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Transportasi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang utilitas dan pendukungnya di Divisi Kapal Permukaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Utilitas & Pendukung",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Erection",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Erection dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan erection joint yang meliputi penataan keel block, loading block, adjusting block dan fit-up joint serta pemeriksaan keakuratan dimensi, pemeriksaan zero margin dan keel deflection bersama-sama dengan Tim Akurasi Kontrol di building berth yang telah direncanakan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Erection 1",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Erection",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Erection dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan erection joint yang meliputi penataan keel block, loading block, adjusting block dan fit-up joint serta pemeriksaan keakuratan dimensi, pemeriksaan zero margin dan keel deflection bersama-sama dengan Tim Akurasi Kontrol di building berth yang telah direncanakan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Erection 2",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Erection",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Erection dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan erection joint yang meliputi penataan keel block, loading block, adjusting block dan fit-up joint serta pemeriksaan keakuratan dimensi, pemeriksaan zero margin dan keel deflection bersama-sama dengan Tim Akurasi Kontrol di building berth yang telah direncanakan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Erection 3",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Erection",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Erection dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan adjusting grand block, fit-up joint block beserta komponen konstruksi didalamnya dan melaksanakan pengelolaan keakuratan dimensi dan pemeriksaan zero margin bersama-sama dengan Tim Akurasi Kontrol terutama di area Grand Assembly.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Grand Assembly",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Erection",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Erection dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan pengelasan konstruksi kapal di workshop maupun di lokasi konstruksi yang ditentukan terutama joint grand block maupun joint erection beserta konstruksi penyerta di dalamnya sampai dengan hasil kualitas pengelasan diterima Biro Klasifikasi dan atau Pemilik Kapal berdasar prosedur dan standar yang berlaku.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Las 1",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Erection",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Erection dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan pengelasan konstruksi kapal di workshop maupun di lokasi konstruksi yang ditentukan terutama joint grand block maupun joint erection beserta konstruksi penyerta di dalamnya sampai dengan hasil kualitas pengelasan diterima Biro Klasifikasi dan atau Pemilik Kapal berdasar prosedur dan standar yang berlaku.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Las 2",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Erection",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Erection dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan pemasangan, pembongkaran, penyimpanan dan perawatan perancah sesuai kebutuhan proses produksi serta mengelola dan melaksanakan tank test sesuai standar keberterimaan yang berlaku.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Perancah & Tank Test",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 1 dalam perencanaan, pelaksanaan, dan pengendalian kegiatan pekerjaan di workshop (galvanizing, pickling, blasting, painting raw material maupun hasil fabrication steel work & pipe) dan pekerjaan surface preparation serta painting lingkup inside ship (Accommodation Outfitting & Engine Room), repair painting, dan painting equipment system pada proyek kapal maupun non kapal sampai dengan diserahkan kepada owner.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Cat Accommodation Outfitting & Engine Room",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 1 dalam perencanaan, pelaksanaan dan pengendalian kegiatan pekerjaan blasting & painting Hull Outfitting (painting & blasting area outside shell, cargo, deck, bottom shell, dan tanki-tanki), water jet, dan repair painting meliputi tahapan pekerjaan painting joint block sampai dengan kapal maupun non kapal diserahkan ke owner.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Cat Hull Outfitting",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 1 dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan fabrikasi komponen perlengkapan lambung (Hull Outfitting Fabrication).",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Fabrikasi Plat Tipis",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 1 dalam perencanaan, pelaksanaan dan pengendalian pekerjaan install steel work di luar area Engine Room (Shell, Main Deck, Fore Castle, WBT, Cargo space, Steering Gear Room, Bow Thruster Room dan Accommodation dll.) serta install supporting equipment system, test fungsi, sampai dengan commissioning (HAT & SAT) diterima Class maupun Owner.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel FOBS HO & AO",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 1 dalam perencanaan, pelaksanaan dan pengendalian pekerjaan fabrikasi & install furniture, install interior, fabrikasi steel joist, live saving, insulation, install lining/ceiling, install lavatory dan install inventory.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Interior 1",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 1 dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan produksi yang terkait pekerjaan welding HO & AO.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Las HO & AO 1",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 1 dalam perencanaan, pelaksanaan dan pengendalian pekerjaan install pipa & support AO, test fungsi sistem pipa AO, tes fungsi equipment maupun system AO (HAT & SAT).",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Sistem Accommodation Outfitting",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 1 dalam perencanaan, pelaksanaan dan pengendalian pekerjaan kelengkapan (accessories) HO, install pipa & support, press test & flushing, deck machinery mulai loading equipment HO sampai dengan test & commissioning (HAT & SAT).",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Sistem Hull Outfitting 1",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 2",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 2 dalam perencanaan, pelaksanaan dan pengendalian pekerjaan fabrikasi & install furniture, install interior, fabrikasi steel joist, live saving, insulation, install lining/ceiling, install lavatory dan install inventory.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Interior 2",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 2",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 2 dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan produksi yang terkait pekerjaan welding MO, HO, & AO.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Las HO & AO 2",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 2",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 2 dalam perencanaan, pelaksanaan dan pengendalian pekerjaan Perpipaan baik fabrikasi maupun install dilingkup MO, HO & AO yang meliputi install pipa & support, press test & flushing sampai dengan test & commissioning (HAT & SAT).",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Sistem Hull Outfitting 2",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 2",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen HO & AO 2 dalam Merencanakan, mengkoordinasikan dan melaksanakan pangawasan sumber daya dan pekerjaan di bidang pelaksanaan dan pengendalian kegiatan fabrikasi dan install pintu, jendela, fondasi peralatan kapal meliputi paralatan di dek, akomodasi dan kamar mesin, pemasangan galley, life boat, deck crane sesuai dengan program kerja.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Steel Work",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Konstruksi 1 dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan block assembly di curve block line, penyetelan dan pengelasan komponen serta pemeriksaan akurasi kontrol dan kualitas hasil produksi.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Assembly CBL",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Konstruksi 1 dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan pekerjaan assembly block di main panel line, penyetelan dan pengelasan komponen serta pemeriksaan akurasi kontrol dan kualitas hasil produksi.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Assembly MPL",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Konstruksi 1 dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan steel work preparation, blasting dan painting pada hasil produksi fabrikasi, sub assembly dan assembly termasuk hasil fabrikasi outfitting berukuran besar.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Block Blasting (BBS)",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Konstruksi 1 dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan penerimaan raw material (plate & profile) dari gudang, shot blasting dan shop priming serta assorting raw material, penandaan, pemotongan, pembentukan, penggerindaan dan assorting beserta pengiriman komponen hasil produksi, serta penerimaan material plat dari gudang pusat, pemetaan material plat sesuai dimensinya, pemetaan material plat sesuai kebutuhan per blok.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Fabrikasi dan SSH",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 1",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Konstruksi 1 dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan perakitan panel blok, pengelasan panel blok maupun blok berukuran kecil, persiapan akurasi kontrol dan kualitas blok pada proyek pembangunan kapal.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Sub Assembly",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 2",
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan di bidang perencanaan, pelaksanaan dan pengendalian pembuatan komponen dan perakitan konstruksi kapal aluminium di dalam atau di luar ruangan hangar.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Aluminium",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 2",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Konstruksi 2 dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan pekerjaan sub assembly dan assembly block, penyetelan serta pengecekan akurasi dan kualitas hasil produksi.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Assembly",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 2",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Konstruksi 2 dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan steel work preparation, blasting dan painting pada hasil produksi assembly maupun outfitting serta pelaksanaan painting onboard.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Block Blasting (BBS) & Painting",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 2",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Konstruksi 2 dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan penerimaan raw material (plate & profile) dari gudang pusat, pemetaan raw material sesuai dimensinya, pemetaan raw material sesuai kebutuhan per blok, marking, cutting, pembentukan, penggerindaan, assorting dan pengiriman komponen hasil fabrikasi.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Fabrikasi",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Konstruksi 2",
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan dibidang pengelasan dan pengendalian kegiatan pengelasan komponen sub assembly, assembly block, ring block sampai menjadi modul kapal.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Las Konstruksi",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen MO & EO dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan produksi fabrikasi dan main & sub cable way beserta penetration coaming, instalasi kelistrikan dan elektronik sampai dengan pelaksanaan testing & commisioning (HAT & SAT) sampai dengan kapal diserah terimakan kepada Owner.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Electric Outfitting 1",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pelaksanaan pekerjaan serta pengendalian kegiatan pemasangan cable tray, cable coaming, cable wiring, electric panel, lighting, MSB dan generator serta connection, line check sampai dengan comissioning, function test, HAT dan SAT pada pembangunan kapal sesuai dengan program kerja departemen.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Electric Outfitting 2",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Merancanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pelaksanaan pekerjaan serta pengendalian kegiatan pemasangan peralatan electronic & navigation, communication, electronic panel, electronic & navigation communication, wiring, connection, line check sampai dengan commissioning, function test, HAT dan SAT pada pembangunan kapal.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Electronic & Control System Outfitting",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen MO & EO dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan produksi yang berkaitan pekerjaan Welding dilingkup MO & EO.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Las MO & EO",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen MO & EO dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan produksi instalasi machinery outfitting, accessories dan flushing piping system sampai dengan pelaksanaan testing & commisioning (HAT & SAT) sampai dengan kapal diserah terimakan kepada Owner.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Machinery Outfitting",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen MO & EO dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan produksi lingkup pekerjaan permesinan (machining).",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Mesin 1",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan di bidang pelaksanaan dan pengendalian kegiatan loading dan pemasangan equipment (mesin pokok, mesin bantu, propulsi, pompa-pompa, dan deck machinery) serta kelengkapannya, pemasangan sistem heating ventilating dan air conditioning sampai dengan function test untuk pembangunan kapal maupun non kapal.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Mesin 2",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen MO & EO dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan perpipaan baik fabrikasi di lingkup MO, HO, & AO maupun install pipa & support, press test & flushing dilingkup Engine Room sampai dengan test & commissioning (HAT & SAT).",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Pipa",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen MO & EO dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan pekerjaan instalasi steel work di area engine room dan dan fungsi pengawasan material perpipaan serta pengawasan instalasi peralatan di E/R.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Bengkel Steel Work Engine Room",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perencanaan dan pengendalian dalam bidang pengelolaan dan pengendalian keuangan, termasuk perencanaan RKAP divisi dan pencatatan realisasi serta evaluasinya.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Administrasi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perencanaan dan Pengendalian dalam bidang Konstruksi untuk mendukung proses produksi.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Konstruksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perencanaan dan Pengendalian dalam bidang Machinery Outfitting & Electric/Electronic (MO/EO) untuk mendukung proses produksi.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Outfitting",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam rangka merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan di bidang pendistribusian dan penyusunan / pengelompokan material sesuai paket pekerjaan.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Paletisasi Produksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perencanaan dan Pengendalian dalam bidang Pengendalian Produksi terkait dengan kinerja produksi untuk mendukung proses produksi.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Pengendalian",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perencanaan dan Pengendalian dalam bidang Perencanaan Hull Outfitting & Accomodation Outfitting untuk mendukung proses produksi.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Perencanaan",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan di bidang perencanaan dan penyusunan prosedur produksi serta pengendalian akurasi sesuai dengan program kerja Departemen terutama.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Rekayasa Produksi 1",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan di bidang perencanaan dan penyusunan prosedur produksi serta pengendalian akurasi sesuai dengan program kerja Departemen.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Biro Rekayasa Produksi 2",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Material",
+      "description": "Melaksanakan fungsi dukungan administrasi dan keuangan untuk mendukung RKAP Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Dukungan Administrasi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Material",
+      "description": "1. Mengkoordinasikan dan melaksanakan pengambilan, pengelompokan dan tatakelola material (perawatan dan distribusi) sesuai dengan proses produksi untuk mencapai kualitas, biaya dan jadwal proyek Divisi Kapal Selam.\n2. Mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan sesuai program kerja Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Painting, GRP, Hull Material",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Material",
+      "description": "1. Mengkoordinasikan dan melaksanakan pengambilan, pengelompokan dan tatakelola material (perawatan dan distribusi) sesuai dengan proses produksi untuk mencapai kualitas, biaya dan jadwal proyek Divisi Kapal Selam.\n2. Mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan sesuai program kerja Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Piping & Machinery Material",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Material",
+      "description": "1. Mengkoordinasikan dan melaksanakan pengambilan, pengelompokan dan tatakelola material (perawatan dan distribusi) sesuai dengan proses produksi untuk mencapai kualitas, biaya dan jadwal proyek Divisi Kapal Selam.\n2. Mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan sesuai program kerja Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Steel Outfitting & ECW Material",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang penyiapan dan pengoperasian alat angkat, alat angkut untuk mendukung proses produksi di Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Alat Angkat dan Alat Angkut",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menyusun Strategi, mengkoordinir, melaksanakan dan mengevalusi kegiatan serta melakukan pemeliharaan terhadap sumber daya fasilitas produksi dengan segala aspeknya untuk menunjang kegiatan produksi.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Pemeliharaan",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang Utilitas untuk mendukung proses produksi di Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Utilitas",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Lambung",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Lambung dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan pekerjaan fabrikasi non pressure hull, penyetelan dan pengelasan komponen serta pengecekan akurasi dan kualitas hasil produksi.",
+      "division": "Divisi Kapal Selam",
+      "name": "Bengkel Assembly Non PH",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Lambung",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Lambung dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan pekerjaan fabrikasi badan tekan di assembly PHPL, penyetelan dan pengelasan komponen serta pengecekan akurasi dan kualitas hasil produksi.",
+      "division": "Divisi Kapal Selam",
+      "name": "Bengkel Assembly PHPL",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Lambung",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Lambung dalam bidang perencanaan, pelaksanaan dan pengendalian pekerjaan installation, erection dan tank test serta pekerjaan, blasting dan pengecatan pada hasil produksi fabrikasi dan assembly.",
+      "division": "Divisi Kapal Selam",
+      "name": "Bengkel Erection & Panting",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Melaksanakan pengelolaan dan pengendalian proses produksi serta pemeliharaan kapal melalui identifikasi dan analisis risiko, pemantauan kinerja produksi, evaluasi efektivitas tenaga kerja, pengendalian anggaran proyek, serta koordinasi dengan unit kerja terkait guna memastikan kelancaran, efisiensi, dan keberlanjutan proyek sesuai dengan standar dan perencanaan yang telah ditetapkan.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Pengendalian Produksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Melaksanakan perencanaan, pengelolaan, dan pengendalian proses produksi kapal dengan menyusun Work Breakdown Structure (WBS), perencanaan jadwal, pengadaan sumber daya dan anggaran guna memastikan kelancaran, efisiensi, dan efektivitas produksi sesuai dengan standar yang ditetapkan.",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Perencanaan Pekerjaan",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan dan Pengendalian",
+      "description": "Melaksanakan perencanaan, pengelolaan, dan pengendalian seluruh proses pembangunan kapal, mulai dari tahap perancangan hingga uji coba dan pemeliharaan, guna memastikan efisiensi, kualitas, serta ketepatan waktu dalam pelaksanaan proyek, serta merencanakan program pelatihan dan Transfer of Technology (ToT).",
+      "division": "Divisi Kapal Selam",
+      "name": "Biro Rekayasa Produksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perlengkapan",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perlengkapan Kapal dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan fabrikasi dan instalasi electric, communication dan weapon.",
+      "division": "Divisi Kapal Selam",
+      "name": "Bengkel ECW (Electric, Communication, Weapon)",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Perlengkapan",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perlengkapan Kapal dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan machining dan instalasi.",
+      "division": "Divisi Kapal Selam",
+      "name": "Bengkel Machinery Outfitting",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Perlengkapan",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perlengkapan Kapal dalam bidang pelaksanaan dan pengendalian kegiatan produksi meliputi fabrikasi dan instalasi pipa dan Fitting, Pressure Test dan Flushing serta kegiatan Insulation, cover dan casing GRP.",
+      "division": "Divisi Kapal Selam",
+      "name": "Bengkel Pipa & GRP",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Perlengkapan",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perlengkapan Kapal dalam bidang perencanaan, pelaksanaan dan pengendalian kegiatan produksi meliputi fabrikasi dan instalasi steel outfitting.",
+      "division": "Divisi Kapal Selam",
+      "name": "Bengkel Steel Outfitting",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang pelayanan dan pengelolaan pengedokan (docking/undocking) Dok Apung.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Dok Apung",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Dukungan Produksi dalam bidang pelayanan dan pengelolaan pengedokan (docking/undocking) Dok Gali.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Dok Gali",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Merencanakan, mengkoordinir & melaksanakan, mengevalusi serta melakukan perbaikan terhadap sumber daya pemeliharaan fasilitas produksi dengan segala aspeknya untuk menunjang kegiatan produksi.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Maintenance",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Dukungan Produksi",
+      "description": "Merencanakan, mengkoordinir & melaksanakan, mengevalusi serta melakukan perbaikan terhadap sumber daya dan pekerjaan dukungan pelayanan sarana apung yang meliputi: alat angkat & angkut apung dan kapal tunda serta segala aspeknya untuk menunjang kegiatan produksi.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Biro Perencanaan & Persiapan Fasilitas Produksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan & Pengendalian",
+      "description": "1. Merencanakan, mengkoordinasikan dan melaksanakan Analisa & Evaluasi project di lingkup Divisi Pemeliharaan & Perbaikan (Harkan).\n2. Pengelolaan, pengembangan serta pengawasan SDM di lingkup Divisi Pemeliharaan & Perbaikan (Harkan).\n3. Pengelolaan dan pengendalian keuangan, termasuk perencanaan (RKAP) untuk proyek Harkan kapal, Harkan non kapal.\n4. Mengawal proses transformasi teknologi terkait implementasi Sistem Informasi Manajemen berkaitan dengan pekerjaan untuk proyek Harkan kapal, Harkan non kapal.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Biro Analisa, Evaluasi, SDM dan Transformasi Teknologi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan & Pengendalian",
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan serta melakukan perbaikan terhadap pekerjaan di bidang implementasi Sistem Informasi Manajemen berkaitan dengan Rendal pekerjaan dan pengelolaan dan pengendalian keuangan, termasuk perencanaan (RKAP) untuk proyek Harkan kapal dan Harkan non kapal.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Biro Perencana",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan & Pengendalian",
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan, mengevaluasi serta melakukan perbaikan terhadap pekerjaan di bidang pekerjaan analisa dan evaluasi teknis yang berkaitan dengan permasalahan rekayasa (engineering) Harkan kapal, Harkan non kapal dan lainnya.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Biro Rekayasa",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Produksi",
+      "description": "Merencanakan, mengkoordinir, melaksanakan evaluasi dan melakukan perbaikan di bidang Blasting, Pengecatan dan Scaffolding.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Blasting, Pengecatan dan Scaffolding",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Produksi",
+      "description": "Merencanakan, mengkoordinir, melaksanakan evaluasi dan melakukan perbaikan di bidang pelaksanaan dan pengendalian kegiatan konstruksi meliputi: marking, cutting, bending/fairing, perakitan dan pengelasan.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Konstruksi",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Produksi",
+      "description": "Merencanakan, mengkoordinir, melaksanakan evaluasi dan melakukan perbaikan di bidang power listrik, instrumentasi listrik dan Kontrol sistem, instalasi, elmot, fire alarm, akomodasi pendukung.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Listrik dan Kontrol",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Produksi",
+      "description": "Merencanakan, mengkoordinir, melaksanakan evaluasi dan melakukan perbaikan di bidang pekerjaan mesin perkakas atau machining meliputi bubut, frais, kolter, sekrap, bor, surface contact, balancing, pekerjaan kerja bangku.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Mesin Perkakas",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Produksi",
+      "description": "Merencanakan, mengkoordinir, melaksanakan evaluasi dan melakukan perbaikan di bidang permesinan yang meliputi: overhaul mesin-mesin 1000 PK dan testbench, aligment mesin, aligment gear box.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Permesinan",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Produksi",
+      "description": "Merencanakan, mengkoordinir, melaksanakan evaluasi dan melakukan perbaikan di bidang sistem bantu yang mencakup sistem pipa (air laut, air tawar, bahan bakar, oli, udara & hidrolik), sistem katup, lier jangkar, sistem pompa, kompresor, dan pesawat-pesawat bantu yang lain.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Sistem Bantu dan Katup",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Produksi",
+      "description": "Merencanakan, mengkoordinir, melaksanakan evaluasi dan melakukan perbaikan di bidang sistem poros & kemudi.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Bengkel Sistem Poros & Kemudi",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Produksi",
+      "description": "Merencanakan dan mengendalikan penyiapan sumber daya (manusia, peralatan dan dokumen kerja) beserta dukungan rekayasa (engineering) untuk pelaksanaan pekerjaan / kegiatan yang diterima berdasarkan Job Card (JC) dan schedule pekerjaan.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Biro Koordinasi Pekerjaan",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Fabrikasi & Konstruksi",
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Departemen Fabrikasi & Konstruksi dalam pelaksanaan pekerjaan blasting, pengecatan dan pengepakan dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Bengkel Blasting, Pengecetan & Pengepakan",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Fabrikasi & Konstruksi",
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Departemen Fabrikasi & Konstruksi dalam pelaksanaan pekerjaan fabrikasi plat dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Bengkel Fabrikasi Plat",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Fabrikasi & Konstruksi",
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Departemen Fabrikasi & Konstruksi dalam pelaksanaan pekerjaan konstruksi plat dengan kapasitas maksimum 32 ton dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Bengkel Konstruksi Plat I",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Fabrikasi & Konstruksi",
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Departemen Fabrikasi & Konstruksi dalam pelaksanaan pekerjaan konstruksi plat dengan kapasitas maksimum 80 ton dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Bengkel Konstruksi Plat II",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Fabrikasi & Konstruksi",
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Departemen Fabrikasi & Konstruksi dalam pelaksanaan pekerjaan konstruksi pipa dan bertanggung jawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Bengkel Pipa",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Perencanaan & Pengendalian",
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Permukaan dalam bidang kegiatan operasional yang mencakup perencanaan, persiapan pelaksanaan, pengkoordinasian dan pengendalian pekerjaan yang berkaitan dengan seluruh pekerjaan fabrikasi dan instalasi outfitting lambung dan outfitting akomodasi sampai dengan pelaksanaan testing dan commissioning (HAT & SAT) serta bertindak sebagai operator sistem dalam kapal (sementara) sampai dengan serah terima kepada pemilik kapal.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Biro Dukungan Administrasi & SDM",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan & Pengendalian",
+      "description": "Menjabarkan dan melaksanakan program kerja Departemen Perencanaan & Pengendalian bidang pengendalian produksi terhadap aspek-aspek produksi sesuai dengan program kerja Departemen Perencanaan & Pengendalian terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Biro Pengendalian Produksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan & Pengendalian",
+      "description": "Merencanakan, mengkoordinasikan dan mengendalikan sumber daya dan pekerjaan di bidang perencanaan produksi sesuai dengan kebijakan dan ketentuan yang berlaku sesuai dengan program kerja Departemen Perencanaan & Pengendalian dan bertanggung jawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan Perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Biro Perencana Produksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan & Pengendalian",
+      "description": "Mengelola dan Melaksanakan program kerja Departemen Perencanaan & Pengendalian dalam bidang persiapan kegiatan produksi di lingkup Departemen Perencanaan & Pengendalian dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Biro Persiapan Produksi",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Perencanaan & Pengendalian",
+      "description": "Merencanakan, mengkoordinasikan dan mengendalikan sumber daya dan pekerjaan di bidang Sarana & Fasilitas sesuai dengan ketentuan yang berlaku sesuai dengan program kerja Departemen Perencanaan & Pengendalian dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Biro Sarana & Fasilitas",
+      "unit_type": "biro"
+    },
+    {
+      "department": "Departemen Permesinan & Perakitan",
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Departemen Permesinan & Perakitan dalam pelaksanaan pekerjaan permesinan dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Bengkel CNC",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Permesinan & Perakitan",
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Departemen Permesinan & Perakitan dalam pelaksanaan pekerjaan listrik dan Instrumen dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Bengkel Listrik dan Instrumen",
+      "unit_type": "bengkel"
+    },
+    {
+      "department": "Departemen Permesinan & Perakitan",
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Departemen Permesinan & Perakitan dalam pelaksanaan pekerjaan perakitan komponen-komponen menjadi produk jadi dan melaksanakan uji coba fungsi produk tersebut dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Bengkel Perakitan",
+      "unit_type": "bengkel"
+    }
+  ],
+  "departments": [
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan kebijakan Divisi Kapal Permukaan beserta program kerjanya dalam bidang pemberian dukungan, baik terhadap kegiatan produksi dan proses administrasinya dalam lingkup Divisi Kapal Permukaan.\n2. Merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dalam bidang pemberian dukungan terhadap kegiatan produksi dan proses administratif.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Departemen Dukungan Produksi"
+    },
+    {
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Permukaan atas kegiatan operasional yang mencakup perencanaan, persiapan pelaksanaan, pengkoordinasian dan pengendalian pekerjaan yang berkaitan dengan seluruh pekerjaan erection, grand assembly, welding, supporting perancah serta tank test sampai dengan diterima Biro Klasifikasi dan Pemilik Kapal sesuai dengan standar yang berlaku.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Departemen Erection"
+    },
+    {
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Permukaan dalam bidang kegiatan operasional yang mencakup perencanaan, persiapan pelaksanaan, pengkoordinasian dan pengendalian pekerjaan yang berkaitan dengan seluruh pekerjaan fabrikasi dan instalasi outfitting lambung dan outfitting akomodasi sampai dengan pelaksanaan testing dan commissioning (HAT & SAT) serta bertindak sebagai operator sistem dalam kapal (sementara) sampai dengan serah terima kepada pemilik kapal.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 1"
+    },
+    {
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Permukaan dalam bidang kegiatan operasional yang mencakup perencanaan, persiapan pelaksanaan, pengkoordinasian dan pengendalian pekerjaan yang berkaitan dengan seluruh pekerjaan fabrikasi dan instalasi outfitting lambung dan outfitting akomodasi sampai dengan pelaksanaan testing dan commissioning (HAT & SAT) serta bertindak sebagai operator sistem dalam kapal (sementara) sampai dengan serah terima kepada pemilik kapal.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Departemen Hull Outfitting & Accomodation Oufitting (HO&AO) 2"
+    },
+    {
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Permukaan dalam bidang perencanaan, pelaksanaan, pengkoordinasian dan pengendalian pekerjaan yang berkaitan dengan seluruh pekerjaan konstruksi lambung, fabrikasi, sub assembly, assembly dan block blasting & painting.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Departemen Konstruksi 1"
+    },
+    {
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Permukaan dalam bidang perencanaan, pelaksanaan, pengkoordinasian dan pengendalian pekerjaan yang berkaitan dengan fabrikasi, sub assembly, assembly dan blasting serta painting (shop priming, block & outfitiing painting serta onboard painting).",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Departemen Konstruksi 2"
+    },
+    {
+      "description": "Mengelola, melaksanakan dan mengevaluasi program kerja Divisi Kapal Permukaan atas kegiatan operasional yang mencakup perencanaan, persiapan pelaksanaan, pengkoordinasian dan pengendalian pekerjaan yang berkaitan dengan seluruh pekerjaan fabrikasi perpipaan, instalasi pipa E/R, instalasi outfitting permesinan dan welding beserta kelistrikan maupun elektronik termasuk sistem kontrol sampai dengan pelaksanaan testing dan commissioning (HAT & SAT) serta bertindak sebagai operator sistem dalam kapal (sementara) sampai dengan serah terima kepada pemilik kapal.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Departemen Machinery Outfitting & Electric Outfitting (MO & EO)"
+    },
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan kebijakan Divisi Kapal Permukaan beserta program kerjanya dalam bidang perencanaan dan pengendalian proses produksi pada proyek pembangunan kapal.\n2. Merencanakan, mengkoordinasikan dan mengendalikan sumber daya dalam hal perencanaan dan pengendalian proses produksi pada proyek pembangunan kapal.",
+      "division": "Divisi Kapal Permukaan",
+      "name": "Departemen Perencanaan dan Pengendalian"
+    },
+    {
+      "description": "1. Mengkoordinasikan dan melaksanakan pengambilan, pengelompokan dan tatakelola material (Palletizing, perawatan dan distribusi) sesuai dengan proses produksi untuk mencapai kualitas, biaya dan jadwal proyek Divisi Kapal Selam.\n2. Mengkoordinasikan dan melaksanakan pengawasan sumber daya dan pekerjaan sesuai program kerja Divisi Kapal Selam.\n3. Melaksanakan fungsi dukungan administrasi dan keuangan untuk mendukung RKAP Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Departemen Dukungan Material"
+    },
+    {
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Selam dalam bidang pemberian dukungan, baik terhadap kegiatan produksi maupun operasional dalam lingkup Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Departemen Dukungan Produksi"
+    },
+    {
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Selam atas kegiatan operasional yang mencakup perencanaan, persiapan pelaksanaan, pengkoordinasian dan pengendalian pekerjaan yang berkaitan dengan seluruh pekerjaan assembly badan tekan, assembly non badan tekan, installation penetration, installation poundation, erection, welding, tank test, serta painting.",
+      "division": "Divisi Kapal Selam",
+      "name": "Departemen Lambung"
+    },
+    {
+      "description": "Menjabarkan dan melaksanakan program kerja Divisi Kapal Selam dalam bidang Perencanaan dan Pengendalian Produksi yang meliputi: perencanaan, strategi, dan biaya di bidang pembangunan, overhaul dan warranty Kapal Selam untuk mencapai kualitas, biaya dan jadwal sesuai program kerja yang telah ditetapkan dalam lingkup Divisi Kapal Selam.",
+      "division": "Divisi Kapal Selam",
+      "name": "Departemen Perencanaan dan Pengendalian"
+    },
+    {
+      "description": "Menyusun Strategi Produksi, memonitor dan mengkoordinasikan aspek-aspek produksi yang berkaitan dengan piping & GRP part, machinery part, steel outfitting part, serta ECW part yang meliputi proses fabrikasi, assembly, instalasi dan membantu kegiatan proses pengujian dan pengetesan.",
+      "division": "Divisi Kapal Selam",
+      "name": "Departemen Perlengkapan"
+    },
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan kebijakan Divisi Pemeliharaan & Perbaikan (Harkan) beserta program kerjanya dalam bidang klarifikasi teknik, spesifikasi, volume dan waktu penyelesaian pekerjaan, koordinasi serta penyelesaian administrasi teknik pelaksanaan pekerjaan kapal dengan owner yang meliputi: Berita Acara Docking/Undocking, Satisfaction Note, Docking Report, Berita Acara Penyelesaian Pekerjaan, Berita Acara Sea Trial dan lain-lain yang terkait dengan penyelesaian pekerjaan.\n2. Mengkoordinir, mengevaluasi serta mengendalikan progress proyek dan melakukan perbaikan terhadap kegiatan bidang pekerjaan proyek pemeliharaan dan perbaikan kapal, non kapal dan alat apung lainnya.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Departemen Dok Apung"
+    },
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan kebijakan Divisi Pemeliharaan & Perbaikan (Harkan) beserta program kerjanya dalam bidang klarifikasi teknik, negosiasi spesifikasi, volume dan waktu penyelesaian pekerjaan, koordinasi serta penyelesaian administrasi teknik pelaksanaan pekerjaan kapal dengan owner yang meliputi: Berita Acara Docking/Undocking, Satisfaction Note, Docking Report, Berita Acara Penyelesaian Pekerjaan, Berita Acara Sea Trial dan lain-lain yang terkait dengan penyelesaian pekerjaan.\n2. Mengkoordinir, mengevalusi serta mengendalikan progress proyek dan melakukan perbaikan terhadap kegiatan bidang pekerjaan proyek pemeliharaan dan perbaikan kapal, non kapal dan alat apung lainnya.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Departemen Dok Gali"
+    },
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan kebijakan Divisi Pemeliharaan & Perbaikan (Harkan) beserta program kerjanya dalam bidang perencanaan dan pemeliharaan fasilitas untuk mendukung berjalannya proses produksi.\n2. Merencanakan, mengkoordinir & melaksanakan, mengevalusi serta melakukan perbaikan terhadap kegiatan pengelolaan fasilitas & sumber daya lainnya yaitu berupa pengelolaan fasilitas alat apung, alat kerja dan fasilitas lainnya untuk mendukung berjalannya proses produksi.\n3. Menjabarkan, menyusun strategi pelaksanaan kebijakan Divisi Pemeliharaan & Perbaikan (Harkan) beserta program kerjanya dalam bidang utilisasi bengkel Maintenance, Dok Gali maupun Dok Apung.\n4. Merencanakan, mengkoordinasikan dan melaksanakan pengawasan sumber daya dalam bidang utilisasi bengkel Maintenance, Dok Gali maupun Dok Apung.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Departemen Dukungan Produksi"
+    },
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan kebijakan Divisi Pemeliharaan & Perbaikan (Harkan) beserta program kerjanya dalam bidang perencanaan & pengendalian dan rekayasa.\n2. Merencanakan, mengkoordinir & melaksanakan, mengevalusi serta melakukan perbaikan terhadap kegiatan bidang perencanaan & pengendalian dan rekayasa untuk pemeliharaan dan perbaikan kapal, non kapal dan alat apung lainnya.\n3. Mengkoordinir penyusunan & atau evaluasi KPI (Key Performance Indicator) Divisi Harkan beserta pelaporan realisasi implementasinya.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Departemen Perencanaan & Pengendalian"
+    },
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan kebijakan Divisi Pemeliharaan & Perbaikan (Harkan) beserta program kerjanya untuk mengkoordinir pekerjaan produksi utama dalam bidang Konstruksi, Sistem Poros & Kemudi, Sistem Bantu & Katup, Mesin Perkakas, Permesinan, Listrik dan Kontrol dan Blasting, Pengecatan dan Scaffolding.\n2. Mengkoordinir pekerjaan produksi meliputi tahap perencanaan, pelaksanaan, pengendalian dan mengevalusi terhadap kegiatan perbaikan bidang Konstruksi, Sistem Poros & Kemudi, Sistem Bantu & Katup, Mesin Perkakas, Permesinan, Listrik dan Kontrol dan Blasting, Pengecatan dan Scaffolding untuk pemeliharaan dan perbaikan kapal, non kapal dan alat apung lainnya.",
+      "division": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "name": "Departemen Produksi"
+    },
+    {
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Divisi Rekayasa Umum dalam bidang fabrikasi dan konstruksi dalam lingkup rekayasa umum secara berdaya guna dan berhasil guna, sehingga mendapatkan nilai tambah yang optimal dengan memperhatikan aspek Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Departemen Fabrikasi & Konstruksi"
+    },
+    {
+      "description": "1. Merencanakan, mengkoordinasikan dan mengendalikan sumber daya dalam bidang Perencanaan & Pengendalian proses produksi di bidang rekayasa umum.\n2. Menjabarkan, Menyusun strategi pelaksanaan kebijakan Divisi Rekayasa Umum beserta program kerjanya dalam bidang perencanaan & pengendalian proses produksi di bidang Rekayasa Umum sesuai ketentuan yang berlaku dan bertanggungjawab terhadap Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.\n3. Merencanakan, menyiapkan dan memastikan seluruh sarana & fasilitas produksi dapat digunakan dengan baik untuk proses produksi pembangunan produk-produk rekayasa umum.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Departemen Perencanaan & Pengendalian"
+    },
+    {
+      "description": "Mengelola, Melaksanakan dan mengevaluasi program kerja Divisi Rekayasa Umum di bidang permesinan dan perakitan dalam lingkup Divisi Rekayasa Umum secara berdaya guna dan berhasil guna, sehingga mendapatkan nilai tambah yang optimal dengan memperhatikan aspek Quality, Cost dan Delivery sesuai yang telah ditetapkan perusahaan.",
+      "division": "Divisi Rekayasa Umum",
+      "name": "Departemen Permesinan & Perakitan"
+    }
+  ],
+  "divisions": [
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan kebijakan perusahaan beserta program kerja di bidang pembangunan kapal baru jenis kapal niaga, kapal perang, kapal cepat dan kapal-kapal jenis lain berdasarkan IPP yang telah ditetapkan Direksi secara berdaya guna dan berhasil guna dengan memperhatikan QCDHSE (Quality, cost, delivery time, health, safety, environment) sehingga mendapatkan nilai tambah dan keuntungan yang optimal.\n2. Menyusun strategi pelaksanaan, mengkoordinasikan dan melaksanakan pengawasan sumber daya untuk pembangunan kapal baru jenis kapal niaga, kapal perang, kapal cepat, dan kapal-kapal jenis lain.",
+      "name": "Divisi Kapal Permukaan",
+      "secretariat_description": "Melakukan kegiatan kesekretariatan yang meliputi ketatausahaan, kerumahtanggaan dan keuangan di lingkungan Divisi Kapal Permukaan.",
+      "secretariat_name": "Sekretariat Divisi Kapal Permukaan"
+    },
+    {
+      "description": "Mengelola penyelesaian proyek di Divisi Kapal Selam sesuai kontrak melalui pengendalian jadwal, biaya dan kualitas proyek dan mengkaji risiko dan segala dampak perubahan terhadap scope pekerjaan, waktu/jadwal, biaya pada kontrak serta melakukan mitigasinya, mendetilkan scope of work proyek yang akan dikerjakan di dalam atau di luar PT PAL Indonesia.",
+      "name": "Divisi Kapal Selam",
+      "secretariat_description": "Melakukan kegiatan kesekretariatan yang meliputi administrasi umum, administrasi personil, kerumahtanggaan, pengelolaan dan penyimpanan dokumen-dokumen Divisi Kapal Selam.",
+      "secretariat_name": "Sekretariat Divisi Kapal Selam"
+    },
+    {
+      "description": "Merencanakan, mengkoordinasikan dan melaksanakan Strategi Eksekusi Perusahaan dalam bidang pemeliharaan dan perbaikan kapal, non kapal dan alat apung lain untuk mencapai Target Perusahaan sesuai dengan aturan dan kebijakan yang berlaku.",
+      "name": "Divisi Pemeliharaan & Perbaikan (Harkan)",
+      "secretariat_description": "Menyelenggarakan kesekretariatan Divisi Harkan yang meliputi administrasi umum, administrasi personil, kerumahtanggaan dan keuangan di lingkungan Divisi Harkan.",
+      "secretariat_name": "Sekretariat Divisi Harkan"
+    },
+    {
+      "description": "1. Menjabarkan, menyusun strategi pelaksanaan strategi perusahaan beserta program kerja di bidang pembangunan proyek-proyek Rekayasa Umum, pengendalian integrasi kegiatan produksi, pengendalian operasional sesuai QCD-HSE dan produktivitas SDM di Divisi Rekayasa Umum sesuai dengan target yang ditetapkan perusahaan.\n2. Merencanakan, mengkoordinasikan dan mengendalikan sumber daya untuk pelaksanaan pekerjaan pembangunan proyek-proyek Rekayasa Umum dalam rangka menunjang kegiatan produksi, dan operasional perusahaan dan bertanggungjawab terhadap Quality, Cost & Delivery sesuai yang telah ditetapkan perusahaan.",
+      "name": "Divisi Rekayasa Umum",
+      "secretariat_description": "Melakukan kegiatan kesekretariatan yang meliputi administrasi umum, administrasi personil, kerumahtanggaan dan keuangan di lingkungan sekretariat Divisi Rekayasa Umum dan bertanggungjawab terhadap Quality, Cost, Delivery sesuai yang telah ditetapkan perusahaan.\n\nSedangkan untuk fungsi Koordinator Proyek bertanggungjawab melaksanakan koordinasi jalannya proyek produk-produk rekayasa umum dibawah kendali Divisi Rekayasa Umum, dan bertanggungjawab terhadap pengendalian Quality, Cost, Delivery proyek yang menjadi tanggungjawabnya sesuai yang telah ditetapkan perusahaan.",
+      "secretariat_name": "Sekretariat Divisi Rekayasa Umum"
+    }
+  ],
+  "job_types": [
+    "Contract",
+    "Full-time",
+    "Internship"
+  ]
+}
