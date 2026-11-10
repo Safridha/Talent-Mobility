@@ -1,0 +1,25 @@
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from 'vite'
+
+// https://vite.dev/config/
+export default defineConfig(({ command }) => ({
+  plugins: [react(), tailwindcss()],
+  base: command === 'serve' ? '/' : '/spa/',
+  publicDir: false,
+  build: {
+    outDir: 'public/spa',
+    emptyOutDir: true,
+  },
+  server: {
+    host: '127.0.0.1',
+    port: 8000,
+    strictPort: true,
+    watch: {
+      ignored: ['**/target/**'],
+    },
+    proxy: {
+      '/api': 'http://127.0.0.1:8001',
+    },
+  },
+}))
