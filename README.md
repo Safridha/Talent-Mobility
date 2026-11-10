@@ -19,11 +19,18 @@ Persiapkan Docker Desktop, Node.js 22+, dan Rust stable. Setelah clone atau pull
 
 ```powershell
 npm ci
-npm run dev
 ```
 
 `npm run dev` menyalakan PostgreSQL lokal melalui Docker Compose pada `127.0.0.1:54329`, menjalankan migrasi, lalu mengimpor snapshot master data versi project pada database development yang masih kosong. Snapshot hanya berisi divisi, departemen, biro/bengkel, dan jenis pekerjaan—tidak berisi akun pengguna, data karyawan, pelamar, atau lamaran. Database lokal menggunakan kredensial development khusus dan tidak dapat diakses dari jaringan luar.
 
+Buat akun Super Admin lokal dengan mengatur `ADMIN_PASSWORD` sebelum menjalankan server. Email default-nya `admin@gmail.com`; password harus 8–128 karakter dengan huruf besar, huruf kecil, angka, dan simbol. Contoh PowerShell:
+
+```powershell
+$env:ADMIN_PASSWORD = "<password lokal yang dibagikan secara privat>"
+npm run dev
+```
+
+Password tidak disimpan di Git; setiap kolaborator mengaturnya sendiri atau menerimanya melalui kanal privat. Akun bootstrap hanya dibuat jika belum ada dan tidak mengubah password akun yang sudah tersimpan. Buka `http://127.0.0.1:8000`. Tekan `Ctrl+C` untuk menghentikan frontend dan backend; `docker compose down` menghentikan database tanpa menghapus datanya.
 
 Jika `DATABASE_URL` sudah diberikan sebagai environment variable, `npm run dev` memakai database development tersebut dan tidak menjalankan snapshot seeder. Jangan arahkan development ke production.
 

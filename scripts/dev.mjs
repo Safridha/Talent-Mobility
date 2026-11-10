@@ -76,9 +76,13 @@ start('Backend', 'cargo', ['run', '-p', 'app-backend'], {
     ? {
         DATABASE_URL: localDatabaseUrl,
         APP_DEV_MASTER_SEED: 'true',
-        ADMIN_NAME: process.env.ADMIN_NAME || 'Local Development Admin',
-ADMIN_EMAIL: process.env.ADMIN_EMAIL,
-...(process.env.ADMIN_PASSWORD ? { ADMIN_PASSWORD: process.env.ADMIN_PASSWORD } : {}),
+        ...(process.env.ADMIN_PASSWORD
+          ? {
+              ADMIN_NAME: process.env.ADMIN_NAME || 'Local Development Admin',
+              ADMIN_EMAIL: process.env.ADMIN_EMAIL || 'admin@gmail.com',
+              ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+            }
+          : {}),
       }
     : {}),
 })
