@@ -1,0 +1,2 @@
+-- Retired: the complete, repeatable organization data is now seeded by migrations
+-- 0022 through 0025. Do not apply this former partial seed manually.

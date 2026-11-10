@@ -1,0 +1,14 @@
+export const queryKeys = {
+  admin: ['admin'],
+  adminDashboard: ['admin', 'dashboard'],
+  adminJobs: ['admin', 'jobs'],
+  adminApplications: ['admin', 'applications'],
+  adminNotifications: ['admin', 'notifications'],
+  adminOrganization: ['admin', 'organization'],
+  adminJobTypes: ['admin', 'job-types'],
+  adminEmployees: ['admin', 'employees'],
+  applicantApplications: ['applicant', 'applications'],
+  applicantNotifications: ['applicant', 'notifications'],
+  publicJobs: ['public', 'jobs'],
+  publicOrganization: ['public', 'organization'],
+}

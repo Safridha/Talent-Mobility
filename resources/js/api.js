@@ -18,6 +18,10 @@ export async function apiRequest(path, { token, ...options } = {}) {
     throw new Error('Respons API tidak valid. Silakan coba lagi.')
   }
 
+  if (response.status === 401 && token) {
+    window.dispatchEvent(new Event('talent-mobility:session-expired'))
+  }
+
   if (!response.ok) {
     throw new Error(payload.message || 'Permintaan gagal. Silakan coba lagi.')
   }
@@ -32,6 +36,9 @@ export async function apiDownload(path, { token, ...options } = {}) {
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers })
   if (!response.ok) {
+    if (response.status === 401 && token) {
+      window.dispatchEvent(new Event('talent-mobility:session-expired'))
+    }
     const payload = await response.json().catch(() => ({}))
     throw new Error(payload.message || 'Dokumen belum dapat diunduh.')
   }

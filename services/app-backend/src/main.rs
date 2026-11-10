@@ -9,8 +9,9 @@ use axum::{
     extract::{DefaultBodyLimit, Json, Multipart, Path, State},
     http::{
         header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE},
-        HeaderMap, StatusCode,
+        HeaderMap, HeaderValue, Request, StatusCode,
     },
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, patch, post, put},
     Router,
@@ -30,6 +31,22 @@ use tower_http::{
 };
 use ulid::Ulid;
 
+mod admin_accounts;
+mod admin_applications;
+mod admin_permissions;
+mod applications;
+mod auth;
+mod employee_directory;
+mod jobs;
+
+use admin_accounts::*;
+use admin_applications::*;
+use admin_permissions::*;
+use applications::*;
+use auth::*;
+use employee_directory::*;
+use jobs::*;
+
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
@@ -45,6 +62,7 @@ const MAX_PROFILE_PHOTO_BYTES: usize = 2 * 1024 * 1024;
 enum ApiError {
     BadRequest(&'static str),
     Unauthorized,
+    Forbidden,
     Conflict(&'static str),
     NotFound(&'static str),
     Unavailable(&'static str),
@@ -59,6 +77,7 @@ impl IntoResponse for ApiError {
                 StatusCode::UNAUTHORIZED,
                 "Sesi tidak valid atau telah berakhir.",
             ),
+            Self::Forbidden => (StatusCode::FORBIDDEN, "Akses tidak diizinkan."),
             Self::Conflict(message) => (StatusCode::CONFLICT, message),
             Self::NotFound(message) => (StatusCode::NOT_FOUND, message),
             Self::Unavailable(message) => (StatusCode::SERVICE_UNAVAILABLE, message),
@@ -69,6 +88,18 @@ impl IntoResponse for ApiError {
         };
         (status, Json(json!({ "message": message }))).into_response()
     }
+}
+
+fn set_api_no_store(response: &mut Response) {
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+}
+
+async fn prevent_api_caching(request: Request<Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    set_api_no_store(&mut response);
+    response
 }
 
 #[derive(Deserialize)]
@@ -158,6 +189,11 @@ struct AdminAccountCreateRequest {
     name: String,
     email: String,
     password: String,
+    admin_role: String,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    bureau_id: Option<i64>,
+    permissions: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -165,6 +201,11 @@ struct AdminAccountUpdateRequest {
     name: String,
     email: String,
     password: Option<String>,
+    admin_role: String,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    bureau_id: Option<i64>,
+    permissions: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -190,6 +231,11 @@ struct Admin {
     id: i64,
     name: String,
     email: String,
+    admin_role: String,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    bureau_id: Option<i64>,
+    permissions: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -220,6 +266,47 @@ struct AdminRecord {
     name: String,
     email: String,
     password_hash: String,
+    admin_role: String,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    bureau_id: Option<i64>,
+    permissions: Vec<String>,
+}
+
+#[derive(Clone)]
+struct AdminContext {
+    id: i64,
+    token_hash: String,
+    admin_role: String,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    permissions: Vec<String>,
+}
+
+impl AdminContext {
+    fn has_permission(&self, permission: &str) -> bool {
+        self.admin_role == "super_admin"
+            || self.permissions.iter().any(|granted| granted == permission)
+    }
+
+    fn require_permission(&self, permission: &str) -> Result<(), ApiError> {
+        if self.has_permission(permission) {
+            Ok(())
+        } else {
+            Err(ApiError::Forbidden)
+        }
+    }
+
+    fn require_any_permission(&self, permissions: &[&str]) -> Result<(), ApiError> {
+        if permissions
+            .iter()
+            .any(|permission| self.has_permission(permission))
+        {
+            Ok(())
+        } else {
+            Err(ApiError::Forbidden)
+        }
+    }
 }
 
 struct ApplicationSubmissionFields {
@@ -244,6 +331,7 @@ struct ApplicationSummary {
     id: String,
     job_id: String,
     status: String,
+    created_at: String,
 }
 
 #[derive(Serialize)]
@@ -287,12 +375,21 @@ struct ManagedAdminAccount {
     email: String,
     created_at: String,
     is_active: bool,
+    admin_role: String,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    bureau_id: Option<i64>,
+    scope_label: String,
+    permissions: Vec<String>,
 }
 
 #[derive(Deserialize)]
 struct AdminJobFields {
     title: String,
-    bureau_id: i64,
+    target_level: String,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    bureau_id: Option<i64>,
     location: String,
     quota: i16,
     posted: String,
@@ -300,12 +397,24 @@ struct AdminJobFields {
     summary: String,
     skills: Vec<String>,
     responsibilities: Vec<String>,
-    is_open: bool,
 }
 
 #[derive(Deserialize)]
 struct OrganizationNameRequest {
     name: String,
+    #[serde(default)]
+    description: String,
+}
+
+#[derive(Deserialize)]
+struct DivisionRequest {
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    secretariat_name: String,
+    #[serde(default)]
+    secretariat_description: String,
 }
 
 #[derive(Deserialize)]
@@ -317,18 +426,40 @@ struct JobTypeNameRequest {
 struct CreateDepartmentRequest {
     division_id: i64,
     name: String,
+    #[serde(default)]
+    description: String,
 }
 
 #[derive(Deserialize)]
 struct CreateBureauRequest {
     department_id: i64,
     name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default = "default_bureau_unit_type")]
+    unit_type: String,
+}
+
+#[derive(Deserialize)]
+struct BureauUpdateRequest {
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default = "default_bureau_unit_type")]
+    unit_type: String,
+}
+
+fn default_bureau_unit_type() -> String {
+    "biro".to_owned()
 }
 
 #[derive(FromRow, Serialize)]
 struct DivisionRecord {
     id: i64,
     name: String,
+    description: String,
+    secretariat_name: String,
+    secretariat_description: String,
 }
 
 #[derive(FromRow, Serialize)]
@@ -336,6 +467,7 @@ struct DepartmentRecord {
     id: i64,
     division_id: i64,
     name: String,
+    description: String,
 }
 
 #[derive(FromRow, Serialize)]
@@ -343,6 +475,8 @@ struct BureauRecord {
     id: i64,
     department_id: i64,
     name: String,
+    description: String,
+    unit_type: String,
 }
 
 #[derive(FromRow, Serialize)]
@@ -359,11 +493,33 @@ struct OrganizationResponse {
     bureaus: Vec<BureauRecord>,
 }
 
-#[derive(FromRow)]
-struct BureauPath {
-    division: String,
-    department: String,
-    unit: String,
+#[derive(FromRow, Serialize)]
+struct PublicDivisionRecord {
+    id: i64,
+    name: String,
+    secretariat_name: String,
+}
+
+#[derive(FromRow, Serialize)]
+struct PublicDepartmentRecord {
+    id: i64,
+    division_id: i64,
+    name: String,
+}
+
+#[derive(FromRow, Serialize)]
+struct PublicBureauRecord {
+    id: i64,
+    department_id: i64,
+    name: String,
+    unit_type: String,
+}
+
+#[derive(Serialize)]
+struct PublicOrganizationResponse {
+    divisions: Vec<PublicDivisionRecord>,
+    departments: Vec<PublicDepartmentRecord>,
+    bureaus: Vec<PublicBureauRecord>,
 }
 
 #[derive(Deserialize)]
@@ -374,8 +530,8 @@ struct CreateAdminJobRequest {
 }
 
 #[derive(Deserialize)]
-struct JobOpenRequest {
-    is_open: bool,
+struct JobStatusRequest {
+    status: String,
 }
 
 #[derive(Deserialize)]
@@ -432,8 +588,27 @@ struct AdminApplicationsResponse {
 }
 
 #[derive(FromRow, Serialize)]
+struct AdminApplicationNotification {
+    id: i64,
+    application_id: String,
+    job_id: String,
+    job_title: String,
+    applicant_name: String,
+    target_level: String,
+    created_at: String,
+    read_at: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AdminNotificationsResponse {
+    data: Vec<AdminApplicationNotification>,
+    unread_count: i64,
+}
+
+#[derive(FromRow, Serialize)]
 struct AdminDashboardMetrics {
     positions_total: i64,
+    positions_draft: i64,
     positions_open: i64,
     positions_closed: i64,
     applications_total: i64,
@@ -445,29 +620,17 @@ struct AdminDashboardMetrics {
 }
 
 #[derive(FromRow, Serialize)]
-struct PositionMapping {
-    id: String,
-    title: String,
-    division: String,
-    department: String,
-    unit: String,
-    quota: i16,
-    is_open: bool,
-}
-
-#[derive(Serialize)]
-struct PositionMappingsResponse {
-    data: Vec<PositionMapping>,
-}
-
-#[derive(FromRow, Serialize)]
 struct Job {
     id: String,
     title: String,
     division: String,
     department: String,
     unit: String,
-    bureau_id: i64,
+    unit_type: String,
+    target_level: String,
+    division_id: i64,
+    department_id: Option<i64>,
+    bureau_id: Option<i64>,
     location: String,
     quota: i16,
     posted: String,
@@ -476,7 +639,9 @@ struct Job {
     summary: String,
     skills: SqlJson<Vec<String>>,
     responsibilities: SqlJson<Vec<String>>,
-    is_open: bool,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    has_applications: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -526,7 +691,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route("/api/account/password", post(change_account_password))
         .route("/api/jobs", get(list_jobs))
-        .route("/api/monitoring/positions", get(monitor_positions))
+        .route("/api/organization", get(public_list_organization))
         .route("/api/admin/login", post(admin_login))
         .route("/api/admin/logout", post(admin_logout))
         .route("/api/admin/dashboard", get(admin_dashboard))
@@ -553,6 +718,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/api/admin/admin-accounts/{id}/status",
             patch(admin_set_admin_account_status),
+        )
+        .route(
+            "/api/admin/employees",
+            get(admin_list_employees).post(admin_create_employee),
+        )
+        .route("/api/admin/employees/{id}", put(admin_update_employee))
+        .route(
+            "/api/admin/employees/{id}/status",
+            patch(admin_set_employee_status),
         )
         .route(
             "/api/admin/job-types",
@@ -588,6 +762,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route("/api/admin/jobs/{id}/status", patch(admin_set_job_status))
         .route("/api/admin/applications", get(admin_list_applications))
+        .route("/api/admin/notifications", get(admin_list_notifications))
+        .route(
+            "/api/admin/notifications/{id}/read",
+            patch(admin_mark_notification_read),
+        )
         .route("/api/admin/applications/{id}", get(admin_get_application))
         .route(
             "/api/admin/applications/{id}/documents/{document_id}",
@@ -608,6 +787,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/notifications/{id}/read",
             patch(mark_applicant_notification_read),
         )
+        .route_layer(middleware::from_fn(prevent_api_caching))
         .fallback_service(ServeDir::new("public").fallback(ServeFile::new("public/spa/index.html")))
         .layer(TraceLayer::new_for_http())
         .with_state(AppState { pool });
@@ -640,2181 +820,6 @@ async fn ensure_application_public_ids(pool: &PgPool) -> Result<(), sqlx::Error>
     Ok(())
 }
 
-async fn register(
-    State(state): State<AppState>,
-    Json(credentials): Json<RegisterRequest>,
-) -> Result<Json<AuthResponse>, ApiError> {
-    let name = credentials.name.trim();
-    let email = credentials.email.trim().to_ascii_lowercase();
-    if name.is_empty() || name.len() > 200 {
-        return Err(ApiError::BadRequest(
-            "Nama wajib diisi dan maksimal 200 karakter.",
-        ));
-    }
-    if !is_valid_email(&email) {
-        return Err(ApiError::BadRequest("Format email tidak valid."));
-    }
-    if !(8..=128).contains(&credentials.password.len()) {
-        return Err(ApiError::BadRequest(
-            "Kata sandi harus terdiri dari 8 sampai 128 karakter.",
-        ));
-    }
-
-    let salt = SaltString::generate(&mut OsRng);
-    let password_hash = Argon2::default()
-        .hash_password(credentials.password.as_bytes(), &salt)
-        .map_err(internal_error)?
-        .to_string();
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let applicant = match sqlx::query_as::<_, ApplicantRecord>(
-        "INSERT INTO applicants (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email, password_hash",
-    )
-    .bind(name)
-    .bind(&email)
-    .bind(password_hash)
-    .fetch_one(&mut *transaction)
-    .await
-    {
-        Ok(applicant) => applicant,
-        Err(error) if is_unique_violation(&error) => {
-            return Err(ApiError::Conflict("Email sudah terdaftar."));
-        }
-        Err(error) => return Err(internal_error(error)),
-    };
-
-    let (token, token_hash) = create_token();
-    sqlx::query(
-        "INSERT INTO applicant_tokens (token_hash, applicant_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '24 hours')",
-    )
-    .bind(token_hash)
-    .bind(applicant.id)
-    .execute(&mut *transaction)
-    .await
-    .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
-
-    Ok(Json(AuthResponse {
-        token,
-        role: "applicant".to_owned(),
-        applicant: Applicant {
-            name: applicant.name,
-            email: applicant.email,
-        },
-    }))
-}
-
-async fn login(
-    State(state): State<AppState>,
-    Json(credentials): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, ApiError> {
-    let email = credentials.email.trim().to_ascii_lowercase();
-    if !is_valid_email(&email) || credentials.password.is_empty() {
-        return Err(ApiError::BadRequest("Email dan kata sandi tidak sesuai."));
-    }
-
-    let applicant = sqlx::query_as::<_, ApplicantRecord>(
-        "SELECT id, name, email, password_hash FROM applicants WHERE email = $1 AND is_active = TRUE",
-    )
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(internal_error)?;
-
-    if let Some(applicant) = applicant {
-        let password_hash = PasswordHash::new(&applicant.password_hash).map_err(internal_error)?;
-        if Argon2::default()
-            .verify_password(credentials.password.as_bytes(), &password_hash)
-            .is_ok()
-        {
-            let (token, token_hash) = create_token();
-            sqlx::query(
-                "INSERT INTO applicant_tokens (token_hash, applicant_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '24 hours')",
-            )
-            .bind(token_hash)
-            .bind(applicant.id)
-            .execute(&state.pool)
-            .await
-            .map_err(internal_error)?;
-
-            return Ok(Json(LoginResponse::Applicant(AuthResponse {
-                token,
-                role: "applicant".to_owned(),
-                applicant: Applicant {
-                    name: applicant.name,
-                    email: applicant.email,
-                },
-            })));
-        }
-    }
-
-    let admin = sqlx::query_as::<_, AdminRecord>(
-        "SELECT id, name, email, password_hash FROM admins WHERE email = $1 AND is_active = TRUE",
-    )
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    let Some(admin) = admin else {
-        return Err(ApiError::BadRequest("Email atau kata sandi tidak sesuai."));
-    };
-    let password_hash = PasswordHash::new(&admin.password_hash).map_err(internal_error)?;
-    if Argon2::default()
-        .verify_password(credentials.password.as_bytes(), &password_hash)
-        .is_err()
-    {
-        return Err(ApiError::BadRequest("Email atau kata sandi tidak sesuai."));
-    }
-
-    let (token, token_hash) = create_token();
-    sqlx::query(
-        "INSERT INTO admin_tokens (token_hash, admin_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '8 hours')",
-    )
-    .bind(token_hash)
-    .bind(admin.id)
-    .execute(&state.pool)
-    .await
-    .map_err(internal_error)?;
-
-    Ok(Json(LoginResponse::Admin(AdminAuthResponse {
-        token,
-        role: "admin".to_owned(),
-        admin: Admin {
-            id: admin.id,
-            name: admin.name,
-            email: admin.email,
-        },
-    })))
-}
-
-async fn admin_login(
-    State(state): State<AppState>,
-    Json(credentials): Json<AdminLoginRequest>,
-) -> Result<Json<AdminAuthResponse>, ApiError> {
-    let email = credentials.email.trim().to_ascii_lowercase();
-    if !is_valid_email(&email) || credentials.password.is_empty() {
-        return Err(ApiError::BadRequest(
-            "Email admin dan kata sandi tidak sesuai.",
-        ));
-    }
-
-    let admin = sqlx::query_as::<_, AdminRecord>(
-        "SELECT id, name, email, password_hash FROM admins WHERE email = $1 AND is_active = TRUE",
-    )
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    let Some(admin) = admin else {
-        return Err(ApiError::BadRequest(
-            "Email atau kata sandi admin tidak sesuai.",
-        ));
-    };
-    let password_hash = PasswordHash::new(&admin.password_hash).map_err(internal_error)?;
-    if Argon2::default()
-        .verify_password(credentials.password.as_bytes(), &password_hash)
-        .is_err()
-    {
-        return Err(ApiError::BadRequest(
-            "Email atau kata sandi admin tidak sesuai.",
-        ));
-    }
-
-    let (token, token_hash) = create_token();
-    sqlx::query(
-        "INSERT INTO admin_tokens (token_hash, admin_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '8 hours')",
-    )
-    .bind(token_hash)
-    .bind(admin.id)
-    .execute(&state.pool)
-    .await
-    .map_err(internal_error)?;
-
-    Ok(Json(AdminAuthResponse {
-        token,
-        role: "admin".to_owned(),
-        admin: Admin {
-            id: admin.id,
-            name: admin.name,
-            email: admin.email,
-        },
-    }))
-}
-
-async fn admin_logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let (_, token_hash) = authorized_admin(&state.pool, &headers).await?;
-    sqlx::query("DELETE FROM admin_tokens WHERE token_hash = $1")
-        .bind(token_hash)
-        .execute(&state.pool)
-        .await
-        .map_err(internal_error)?;
-    Ok(Json(
-        json!({ "message": "Berhasil keluar dari dashboard admin." }),
-    ))
-}
-
-async fn logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let (_, token_hash) = authorized_applicant(&state.pool, &headers).await?;
-    sqlx::query("DELETE FROM applicant_tokens WHERE token_hash = $1")
-        .bind(token_hash)
-        .execute(&state.pool)
-        .await
-        .map_err(internal_error)?;
-    Ok(Json(json!({ "message": "Berhasil keluar." })))
-}
-
-async fn get_account_profile(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<AccountProfileResponse>, ApiError> {
-    let account = authorized_account(&state.pool, &headers).await?;
-    let profile = if account.role == "applicant" {
-        sqlx::query_as::<_, (String, String)>("SELECT name, email FROM applicants WHERE id = $1")
-            .bind(account.id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal_error)?
-    } else {
-        sqlx::query_as::<_, (String, String)>("SELECT name, email FROM admins WHERE id = $1")
-            .bind(account.id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal_error)?
-    }
-    .ok_or(ApiError::Unauthorized)?;
-
-    Ok(Json(AccountProfileResponse {
-        role: account.role.to_owned(),
-        name: profile.0,
-        email: profile.1,
-    }))
-}
-
-async fn update_account_profile(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<ProfileUpdateRequest>,
-) -> Result<Json<AccountProfileResponse>, ApiError> {
-    let account = authorized_account(&state.pool, &headers).await?;
-    let name = request.name.trim();
-    if name.is_empty() || name.len() > 200 {
-        return Err(ApiError::BadRequest(
-            "Nama wajib diisi dan maksimal 200 karakter.",
-        ));
-    }
-    let profile = if account.role == "applicant" {
-        sqlx::query_as::<_, (String, String)>(
-            "UPDATE applicants SET name = $1 WHERE id = $2 RETURNING name, email",
-        )
-        .bind(name)
-        .bind(account.id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(internal_error)?
-    } else {
-        sqlx::query_as::<_, (String, String)>(
-            "UPDATE admins SET name = $1 WHERE id = $2 RETURNING name, email",
-        )
-        .bind(name)
-        .bind(account.id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(internal_error)?
-    }
-    .ok_or(ApiError::Unauthorized)?;
-
-    Ok(Json(AccountProfileResponse {
-        role: account.role.to_owned(),
-        name: profile.0,
-        email: profile.1,
-    }))
-}
-
-async fn download_account_avatar(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Response, ApiError> {
-    let account = authorized_account(&state.pool, &headers).await?;
-    let avatar = if account.role == "applicant" {
-        sqlx::query_as::<_, (Option<String>, Option<Vec<u8>>)>(
-            "SELECT profile_photo_content_type, profile_photo FROM applicants WHERE id = $1",
-        )
-        .bind(account.id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(internal_error)?
-    } else {
-        sqlx::query_as::<_, (Option<String>, Option<Vec<u8>>)>(
-            "SELECT profile_photo_content_type, profile_photo FROM admins WHERE id = $1",
-        )
-        .bind(account.id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(internal_error)?
-    }
-    .ok_or(ApiError::Unauthorized)?;
-    let (Some(content_type), Some(content)) = avatar else {
-        return Err(ApiError::NotFound("Foto profil belum dipasang."));
-    };
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(CACHE_CONTROL, "private, no-store")
-        .header(CONTENT_TYPE, content_type)
-        .header("x-content-type-options", "nosniff")
-        .body(Body::from(content))
-        .map_err(internal_error)
-}
-
-async fn upload_account_avatar(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let account = authorized_account(&state.pool, &headers).await?;
-    let field = multipart
-        .next_field()
-        .await
-        .map_err(|_| ApiError::BadRequest("Foto profil tidak dapat dibaca."))?
-        .ok_or(ApiError::BadRequest("Pilih foto profil terlebih dahulu."))?;
-    if field.name() != Some("photo") {
-        return Err(ApiError::BadRequest("Kolom foto profil tidak valid."));
-    }
-    let content_type = field.content_type().unwrap_or_default().to_owned();
-    let content = field
-        .bytes()
-        .await
-        .map_err(|_| ApiError::BadRequest("Foto profil tidak dapat dibaca."))?;
-    let content_type = validate_profile_photo(&content_type, &content)?;
-    if multipart
-        .next_field()
-        .await
-        .map_err(|_| ApiError::BadRequest("Foto profil tidak dapat dibaca."))?
-        .is_some()
-    {
-        return Err(ApiError::BadRequest(
-            "Unggah satu foto profil dalam satu waktu.",
-        ));
-    }
-
-    let query = if account.role == "applicant" {
-        "UPDATE applicants SET profile_photo = $1, profile_photo_content_type = $2 WHERE id = $3"
-    } else {
-        "UPDATE admins SET profile_photo = $1, profile_photo_content_type = $2 WHERE id = $3"
-    };
-    sqlx::query(query)
-        .bind(content.to_vec())
-        .bind(content_type)
-        .bind(account.id)
-        .execute(&state.pool)
-        .await
-        .map_err(internal_error)?;
-    Ok(Json(
-        json!({ "message": "Foto profil berhasil diperbarui." }),
-    ))
-}
-
-async fn delete_account_avatar(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let account = authorized_account(&state.pool, &headers).await?;
-    let query = if account.role == "applicant" {
-        "UPDATE applicants SET profile_photo = NULL, profile_photo_content_type = NULL WHERE id = $1"
-    } else {
-        "UPDATE admins SET profile_photo = NULL, profile_photo_content_type = NULL WHERE id = $1"
-    };
-    sqlx::query(query)
-        .bind(account.id)
-        .execute(&state.pool)
-        .await
-        .map_err(internal_error)?;
-    Ok(Json(json!({ "message": "Foto profil berhasil dihapus." })))
-}
-
-async fn change_account_password(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<ChangePasswordRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let account = authorized_account(&state.pool, &headers).await?;
-    let password_hash = if account.role == "applicant" {
-        sqlx::query_scalar::<_, String>("SELECT password_hash FROM applicants WHERE id = $1")
-            .bind(account.id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal_error)?
-    } else {
-        sqlx::query_scalar::<_, String>("SELECT password_hash FROM admins WHERE id = $1")
-            .bind(account.id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal_error)?
-    }
-    .ok_or(ApiError::Unauthorized)?;
-    let parsed_hash = PasswordHash::new(&password_hash).map_err(internal_error)?;
-    if Argon2::default()
-        .verify_password(request.current_password.as_bytes(), &parsed_hash)
-        .is_err()
-    {
-        return Err(ApiError::BadRequest("Kata sandi saat ini tidak sesuai."));
-    }
-    validate_account_password(account.role, &request.new_password)?;
-    let new_hash = hash_password(&request.new_password)?;
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    if account.role == "applicant" {
-        sqlx::query("UPDATE applicants SET password_hash = $1 WHERE id = $2")
-            .bind(new_hash)
-            .bind(account.id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM applicant_tokens WHERE applicant_id = $1 AND token_hash <> $2")
-            .bind(account.id)
-            .bind(&account.token_hash)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
-            .bind(account.id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    } else {
-        sqlx::query("UPDATE admins SET password_hash = $1 WHERE id = $2")
-            .bind(new_hash)
-            .bind(account.id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM admin_tokens WHERE admin_id = $1 AND token_hash <> $2")
-            .bind(account.id)
-            .bind(&account.token_hash)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE admin_id = $1")
-            .bind(account.id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    }
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(json!({ "message": "Kata sandi berhasil diubah." })))
-}
-
-async fn forgot_password(
-    State(state): State<AppState>,
-    Json(request): Json<ForgotPasswordRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let settings = password_reset_mail_settings()?;
-    let email = request.email.trim().to_ascii_lowercase();
-    if !is_valid_email(&email) {
-        return Ok(Json(json!({
-            "message": "Jika email terdaftar, tautan reset kata sandi akan dikirim."
-        })));
-    }
-
-    let applicant_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM applicants WHERE email = $1 AND is_active = TRUE",
-    )
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    let admin_id =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM admins WHERE email = $1 AND is_active = TRUE")
-            .bind(&email)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal_error)?;
-
-    if let Some(id) = applicant_id {
-        if let Some(token) = create_password_reset_token(&state.pool, "applicant", id).await? {
-            send_password_reset_email(&settings, &email, "pelajar", &token).await?;
-        }
-    }
-    if let Some(id) = admin_id {
-        if let Some(token) = create_password_reset_token(&state.pool, "admin", id).await? {
-            send_password_reset_email(&settings, &email, "admin", &token).await?;
-        }
-    }
-
-    Ok(Json(json!({
-        "message": "Jika email terdaftar, tautan reset kata sandi akan dikirim."
-    })))
-}
-
-async fn reset_password(
-    State(state): State<AppState>,
-    Json(request): Json<ResetPasswordRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let token_hash = hash_token(request.token.trim());
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let account = sqlx::query_as::<_, (Option<i64>, Option<i64>)>(
-            "SELECT applicant_id, admin_id FROM password_reset_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW() FOR UPDATE",
-        )
-        .bind(&token_hash)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(internal_error)?
-        .ok_or(ApiError::BadRequest(
-            "Tautan reset kata sandi tidak valid atau sudah kedaluwarsa.",
-        ))?;
-
-    let (role, account_id) = match account {
-        (Some(id), None) => ("applicant", id),
-        (None, Some(id)) => ("admin", id),
-        _ => return Err(ApiError::Internal),
-    };
-    validate_account_password(role, &request.new_password)?;
-    let new_hash = hash_password(&request.new_password)?;
-    if role == "applicant" {
-        sqlx::query("UPDATE applicants SET password_hash = $1 WHERE id = $2")
-            .bind(new_hash)
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM applicant_tokens WHERE applicant_id = $1")
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    } else {
-        sqlx::query("UPDATE admins SET password_hash = $1 WHERE id = $2")
-            .bind(new_hash)
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM admin_tokens WHERE admin_id = $1")
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE admin_id = $1")
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    }
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(json!({
-        "message": "Kata sandi berhasil diatur ulang. Silakan masuk kembali."
-    })))
-}
-
-async fn create_password_reset_token(
-    pool: &PgPool,
-    role: &str,
-    account_id: i64,
-) -> Result<Option<String>, ApiError> {
-    let (token, token_hash) = create_token();
-    let mut transaction = pool.begin().await.map_err(internal_error)?;
-    if role == "applicant" {
-        let recent_request: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM password_reset_tokens WHERE applicant_id = $1 AND created_at > NOW() - INTERVAL '5 minutes')",
-            )
-            .bind(account_id)
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        if recent_request {
-            return Ok(None);
-        }
-        sqlx::query(
-                "UPDATE password_reset_tokens SET used_at = NOW() WHERE applicant_id = $1 AND used_at IS NULL",
-            )
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query(
-                "INSERT INTO password_reset_tokens (token_hash, applicant_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')",
-            )
-            .bind(token_hash)
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    } else {
-        let recent_request: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM password_reset_tokens WHERE admin_id = $1 AND created_at > NOW() - INTERVAL '5 minutes')",
-            )
-            .bind(account_id)
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        if recent_request {
-            return Ok(None);
-        }
-        sqlx::query(
-                "UPDATE password_reset_tokens SET used_at = NOW() WHERE admin_id = $1 AND used_at IS NULL",
-            )
-                .bind(account_id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(internal_error)?;
-        sqlx::query(
-                "INSERT INTO password_reset_tokens (token_hash, admin_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')",
-            )
-            .bind(token_hash)
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    }
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Some(token))
-}
-
-fn password_reset_mail_settings() -> Result<MailSettings, ApiError> {
-    let required = |key: &str| {
-        env::var(key)
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .ok_or(ApiError::Unavailable(
-                "Fitur lupa kata sandi belum dikonfigurasi pada server.",
-            ))
-    };
-    let port = env::var("SMTP_PORT")
-        .unwrap_or_else(|_| "587".to_owned())
-        .parse::<u16>()
-        .map_err(|_| ApiError::Unavailable("Konfigurasi email reset kata sandi tidak valid."))?;
-    Ok(MailSettings {
-        host: required("SMTP_HOST")?,
-        port,
-        username: required("SMTP_USERNAME")?,
-        password: required("SMTP_PASSWORD")?,
-        from: required("SMTP_FROM")?,
-        public_url: env::var("APP_PUBLIC_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:8000".to_owned()),
-    })
-}
-
-async fn send_password_reset_email(
-    settings: &MailSettings,
-    email: &str,
-    account_type: &str,
-    token: &str,
-) -> Result<(), ApiError> {
-    let from = settings.from.parse::<Mailbox>().map_err(internal_error)?;
-    let to = email.parse::<Mailbox>().map_err(internal_error)?;
-    let reset_url = format!(
-        "{}/#reset_token={token}",
-        settings.public_url.trim_end_matches('/')
-    );
-    let message = Message::builder()
-            .from(from)
-            .to(to)
-            .subject("Atur ulang kata sandi Talent Mobility")
-            .body(format!(
-                "Permintaan reset kata sandi untuk akun {account_type} Anda diterima.\n\nBuka tautan berikut dalam satu jam:\n{reset_url}\n\nJika Anda tidak meminta reset, abaikan email ini."
-            ))
-            .map_err(internal_error)?;
-    let mailer = AsyncSmtpTransport::<Tokio1Executor>::relay(&settings.host)
-        .map_err(internal_error)?
-        .port(settings.port)
-        .credentials(Credentials::new(
-            settings.username.clone(),
-            settings.password.clone(),
-        ))
-        .build();
-    mailer.send(message).await.map_err(internal_error)?;
-    Ok(())
-}
-
-async fn list_jobs(State(state): State<AppState>) -> Result<Json<JobsResponse>, ApiError> {
-    let data = sqlx::query_as::<_, Job>(
-        "SELECT job_postings.id, title, division, department, unit, bureau_id, location, quota, posted, job_types.name AS job_type, summary, skills, responsibilities, is_open FROM job_postings JOIN job_types ON job_types.id = job_postings.job_type_id WHERE is_open = TRUE ORDER BY job_postings.id",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(JobsResponse { data }))
-}
-
-async fn admin_list_jobs(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<JobsResponse>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let data = sqlx::query_as::<_, Job>(
-        "SELECT job_postings.id, title, division, department, unit, bureau_id, location, quota, posted, job_types.name AS job_type, summary, skills, responsibilities, is_open FROM job_postings JOIN job_types ON job_types.id = job_postings.job_type_id ORDER BY job_postings.id",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(JobsResponse { data }))
-}
-
-async fn admin_create_job(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<CreateAdminJobRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let id = request.id.trim();
-    let fields = request.fields;
-    validate_admin_job(id, &fields)?;
-    let organization = resolve_bureau_path(&state.pool, fields.bureau_id).await?;
-    let job_type_id = resolve_job_type_id(&state.pool, &fields.job_type).await?;
-    let result = sqlx::query(
-        "INSERT INTO job_postings (id, title, division, department, unit, bureau_id, location, quota, posted, job_type_id, summary, skills, responsibilities, is_open) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
-    )
-    .bind(id)
-    .bind(fields.title.trim())
-    .bind(organization.division)
-    .bind(organization.department)
-    .bind(organization.unit)
-    .bind(fields.bureau_id)
-    .bind(fields.location.trim())
-    .bind(fields.quota)
-    .bind(fields.posted.trim())
-    .bind(job_type_id)
-    .bind(fields.summary.trim())
-    .bind(SqlJson(fields.skills))
-    .bind(SqlJson(fields.responsibilities))
-    .bind(fields.is_open)
-    .execute(&state.pool)
-    .await;
-
-    match result {
-        Ok(_) => Ok(Json(json!({ "message": "Lowongan berhasil dibuat." }))),
-        Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("Kode posisi sudah digunakan."))
-        }
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_update_job(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    Json(fields): Json<AdminJobFields>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    validate_admin_job(&id, &fields)?;
-    let organization = resolve_bureau_path(&state.pool, fields.bureau_id).await?;
-    let job_type_id = resolve_job_type_id(&state.pool, &fields.job_type).await?;
-    let result = sqlx::query(
-        "UPDATE job_postings SET title = $2, division = $3, department = $4, unit = $5, bureau_id = $6, location = $7, quota = $8, posted = $9, job_type_id = $10, summary = $11, skills = $12, responsibilities = $13, is_open = $14 WHERE id = $1",
-    )
-    .bind(&id)
-    .bind(fields.title.trim())
-    .bind(organization.division)
-    .bind(organization.department)
-    .bind(organization.unit)
-    .bind(fields.bureau_id)
-    .bind(fields.location.trim())
-    .bind(fields.quota)
-    .bind(fields.posted.trim())
-    .bind(job_type_id)
-    .bind(fields.summary.trim())
-    .bind(SqlJson(fields.skills))
-    .bind(SqlJson(fields.responsibilities))
-    .bind(fields.is_open)
-    .execute(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    if result.rows_affected() == 0 {
-        return Err(ApiError::NotFound("Lowongan tidak ditemukan."));
-    }
-    Ok(Json(json!({ "message": "Lowongan berhasil diperbarui." })))
-}
-
-async fn admin_delete_job(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let job_id =
-        sqlx::query_scalar::<_, String>("SELECT id FROM job_postings WHERE id = $1 FOR UPDATE")
-            .bind(&id)
-            .fetch_optional(&mut *transaction)
-            .await
-            .map_err(internal_error)?
-            .ok_or(ApiError::NotFound("Lowongan tidak ditemukan."))?;
-    let has_applications: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM applications WHERE job_id = $1)")
-            .bind(&job_id)
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    if has_applications {
-        return Err(ApiError::Conflict(
-            "Lowongan sudah memiliki lamaran dan hanya dapat ditutup.",
-        ));
-    }
-
-    sqlx::query("DELETE FROM job_postings WHERE id = $1")
-        .bind(job_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(json!({ "message": "Lowongan berhasil dihapus." })))
-}
-
-async fn admin_set_job_status(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    Json(request): Json<JobOpenRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let result = sqlx::query("UPDATE job_postings SET is_open = $2 WHERE id = $1")
-        .bind(id)
-        .bind(request.is_open)
-        .execute(&state.pool)
-        .await
-        .map_err(internal_error)?;
-    if result.rows_affected() == 0 {
-        return Err(ApiError::NotFound("Lowongan tidak ditemukan."));
-    }
-    Ok(Json(
-        json!({ "message": "Status lowongan berhasil diperbarui." }),
-    ))
-}
-
-async fn admin_dashboard(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<AdminDashboardMetrics>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let metrics = sqlx::query_as::<_, AdminDashboardMetrics>(
-        "SELECT (SELECT COUNT(*) FROM job_postings) AS positions_total, (SELECT COUNT(*) FROM job_postings WHERE is_open = TRUE) AS positions_open, (SELECT COUNT(*) FROM job_postings WHERE is_open = FALSE) AS positions_closed, (SELECT COUNT(*) FROM applications) AS applications_total, (SELECT COUNT(*) FROM applications WHERE status = 'submitted') AS applications_submitted, (SELECT COUNT(*) FROM applications WHERE status = 'screening') AS applications_screening, (SELECT COUNT(*) FROM applications WHERE status = 'interview') AS applications_interview, (SELECT COUNT(*) FROM applications WHERE status = 'accepted') AS applications_accepted, (SELECT COUNT(*) FROM applications WHERE status = 'rejected') AS applications_rejected",
-    )
-    .fetch_one(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(metrics))
-}
-
-async fn admin_list_accounts(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let data = sqlx::query_as::<_, AdminApplicantAccount>(
-        "SELECT applicants.id, applicants.name, applicants.email, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id GROUP BY applicants.id ORDER BY applicants.created_at DESC, applicants.id DESC",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(json!({ "data": data })))
-}
-
-async fn admin_create_account(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(account): Json<AdminApplicantCreateRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = account.name.trim();
-    let email = account.email.trim().to_ascii_lowercase();
-    validate_applicant_account(name, &email, &account.password)?;
-
-    let password_hash = hash_password(&account.password)?;
-    match sqlx::query("INSERT INTO applicants (name, email, password_hash) VALUES ($1, $2, $3)")
-        .bind(name)
-        .bind(email)
-        .bind(password_hash)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(_) => Ok(Json(json!({ "message": "Akun berhasil ditambahkan." }))),
-        Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("Email sudah terdaftar."))
-        }
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_update_account(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(account): Json<AdminApplicantUpdateRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = account.name.trim();
-    let email = account.email.trim().to_ascii_lowercase();
-    validate_applicant_name_and_email(name, &email)?;
-    if let Some(password) = account.password.as_deref() {
-        validate_applicant_password(password)?;
-    }
-
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let result = if let Some(password) = account.password.as_deref() {
-        let password_hash = hash_password(password)?;
-        sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3 WHERE id = $4")
-            .bind(name)
-            .bind(email)
-            .bind(password_hash)
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-    } else {
-        sqlx::query("UPDATE applicants SET name = $1, email = $2 WHERE id = $3")
-            .bind(name)
-            .bind(email)
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-    };
-    let result = match result {
-        Ok(result) => result,
-        Err(error) if is_unique_violation(&error) => {
-            return Err(ApiError::Conflict("Email sudah digunakan akun lain."));
-        }
-        Err(error) => return Err(internal_error(error)),
-    };
-    if result.rows_affected() == 0 {
-        return Err(ApiError::NotFound("Akun tidak ditemukan."));
-    }
-
-    sqlx::query("DELETE FROM applicant_tokens WHERE applicant_id = $1")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(
-        json!({ "message": "Akun berhasil diperbarui. Sesi aktif akun tersebut telah diakhiri." }),
-    ))
-}
-
-async fn admin_deactivate_account(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    set_applicant_account_status(&state.pool, &headers, id, false).await?;
-    Ok(Json(
-        json!({ "message": "Akun dinonaktifkan; riwayat lamaran dan dokumen tetap tersimpan." }),
-    ))
-}
-
-async fn admin_set_account_status(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(request): Json<ApplicantAccountStatusRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    set_applicant_account_status(&state.pool, &headers, id, request.is_active).await?;
-    let message = if request.is_active {
-        "Akun berhasil diaktifkan kembali."
-    } else {
-        "Akun dinonaktifkan; riwayat lamaran dan dokumen tetap tersimpan."
-    };
-    Ok(Json(json!({ "message": message })))
-}
-
-async fn set_applicant_account_status(
-    pool: &PgPool,
-    headers: &HeaderMap,
-    id: i64,
-    is_active: bool,
-) -> Result<(), ApiError> {
-    authorized_admin(pool, headers).await?;
-    let mut transaction = pool.begin().await.map_err(internal_error)?;
-    let result = sqlx::query("UPDATE applicants SET is_active = $1 WHERE id = $2")
-        .bind(is_active)
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    if result.rows_affected() == 0 {
-        return Err(ApiError::NotFound("Akun tidak ditemukan."));
-    }
-    if !is_active {
-        sqlx::query("DELETE FROM applicant_tokens WHERE applicant_id = $1")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    }
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(())
-}
-
-async fn admin_list_admin_accounts(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let data = sqlx::query_as::<_, ManagedAdminAccount>(
-        "SELECT id, name, email, created_at::text AS created_at, is_active FROM admins ORDER BY created_at DESC, id DESC",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(json!({ "data": data })))
-}
-
-async fn admin_create_admin_account(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(account): Json<AdminAccountCreateRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = account.name.trim();
-    let email = account.email.trim().to_ascii_lowercase();
-    validate_admin_account(name, &email, &account.password)?;
-    let password_hash = hash_password(&account.password)?;
-
-    match sqlx::query("INSERT INTO admins (name, email, password_hash) VALUES ($1, $2, $3)")
-        .bind(name)
-        .bind(email)
-        .bind(password_hash)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(_) => Ok(Json(
-            json!({ "message": "Akun admin berhasil ditambahkan." }),
-        )),
-        Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("Email sudah terdaftar."))
-        }
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_update_admin_account(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(account): Json<AdminAccountUpdateRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let (current_admin_id, _) = authorized_admin(&state.pool, &headers).await?;
-    if current_admin_id == id {
-        return Err(ApiError::Conflict(
-            "Akun admin yang sedang digunakan tidak dapat diubah dari halaman ini.",
-        ));
-    }
-    let name = account.name.trim();
-    let email = account.email.trim().to_ascii_lowercase();
-    validate_applicant_name_and_email(name, &email)?;
-    if let Some(password) = account.password.as_deref() {
-        validate_admin_password(password)?;
-    }
-
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let result = if let Some(password) = account.password.as_deref() {
-        let password_hash = hash_password(password)?;
-        sqlx::query("UPDATE admins SET name = $1, email = $2, password_hash = $3 WHERE id = $4")
-            .bind(name)
-            .bind(email)
-            .bind(password_hash)
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-    } else {
-        sqlx::query("UPDATE admins SET name = $1, email = $2 WHERE id = $3")
-            .bind(name)
-            .bind(email)
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-    };
-    let result = match result {
-        Ok(result) => result,
-        Err(error) if is_unique_violation(&error) => {
-            return Err(ApiError::Conflict("Email sudah digunakan akun lain."));
-        }
-        Err(error) => return Err(internal_error(error)),
-    };
-    if result.rows_affected() == 0 {
-        return Err(ApiError::NotFound("Akun admin tidak ditemukan."));
-    }
-    sqlx::query("DELETE FROM admin_tokens WHERE admin_id = $1")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    sqlx::query("DELETE FROM password_reset_tokens WHERE admin_id = $1")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(
-        json!({ "message": "Akun admin diperbarui dan semua sesi aktifnya diakhiri." }),
-    ))
-}
-
-async fn admin_deactivate_admin_account(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    set_admin_account_status(&state.pool, &headers, id, false).await?;
-    Ok(Json(
-        json!({ "message": "Akun admin dinonaktifkan dan seluruh sesinya diakhiri." }),
-    ))
-}
-
-async fn admin_set_admin_account_status(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(request): Json<AdminAccountStatusRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    set_admin_account_status(&state.pool, &headers, id, request.is_active).await?;
-    let message = if request.is_active {
-        "Akun admin berhasil diaktifkan kembali."
-    } else {
-        "Akun admin dinonaktifkan dan seluruh sesinya diakhiri."
-    };
-    Ok(Json(json!({ "message": message })))
-}
-
-async fn set_admin_account_status(
-    pool: &PgPool,
-    headers: &HeaderMap,
-    id: i64,
-    is_active: bool,
-) -> Result<(), ApiError> {
-    let (current_admin_id, _) = authorized_admin(pool, headers).await?;
-    if !is_active && current_admin_id == id {
-        return Err(ApiError::Conflict(
-            "Anda tidak dapat menonaktifkan akun admin yang sedang digunakan.",
-        ));
-    }
-    let mut transaction = pool.begin().await.map_err(internal_error)?;
-    let active_admin_ids = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM admins WHERE is_active = TRUE ORDER BY id FOR UPDATE",
-    )
-    .fetch_all(&mut *transaction)
-    .await
-    .map_err(internal_error)?;
-    let account_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM admins WHERE id = $1)")
-            .bind(id)
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    if !account_exists {
-        return Err(ApiError::NotFound("Akun admin tidak ditemukan."));
-    }
-    if !is_active && active_admin_ids.contains(&id) && active_admin_ids.len() <= 1 {
-        return Err(ApiError::Conflict(
-            "Admin aktif terakhir tidak dapat dinonaktifkan.",
-        ));
-    }
-    sqlx::query("UPDATE admins SET is_active = $1 WHERE id = $2")
-        .bind(is_active)
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    if !is_active {
-        sqlx::query("DELETE FROM admin_tokens WHERE admin_id = $1")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE admin_id = $1")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    }
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(())
-}
-
-async fn admin_list_applications(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<AdminApplicationsResponse>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let data = sqlx::query_as::<_, AdminApplication>(
-        "SELECT applications.public_id AS id, COALESCE(applications.applicant_full_name, applicants.name) AS applicant_name, applicants.email AS applicant_email, job_postings.id AS job_id, job_postings.title AS job_title, applications.employee_number, applications.origin_division, applications.origin_unit, applications.education_level, applications.study_field, applications.phone_number, applications.current_position, applications.current_unit, applications.motivation, applications.status, (SELECT COUNT(*) FROM application_documents WHERE application_id = applications.id) AS documents_count, applications.created_at::text AS created_at FROM applications JOIN applicants ON applicants.id = applications.applicant_id JOIN job_postings ON job_postings.id = applications.job_id ORDER BY applications.created_at DESC",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(AdminApplicationsResponse { data }))
-}
-
-async fn admin_get_application(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(public_id): Path<String>,
-) -> Result<Json<AdminApplicationDetail>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let internal_id =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM applications WHERE public_id = $1")
-            .bind(&public_id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal_error)?
-            .ok_or(ApiError::NotFound("Lamaran tidak ditemukan."))?;
-    let application = sqlx::query_as::<_, AdminApplication>(
-        "SELECT applications.public_id AS id, COALESCE(applications.applicant_full_name, applicants.name) AS applicant_name, applicants.email AS applicant_email, job_postings.id AS job_id, job_postings.title AS job_title, applications.employee_number, applications.origin_division, applications.origin_unit, applications.education_level, applications.study_field, applications.phone_number, applications.current_position, applications.current_unit, applications.motivation, applications.status, (SELECT COUNT(*) FROM application_documents WHERE application_id = applications.id) AS documents_count, applications.created_at::text AS created_at FROM applications JOIN applicants ON applicants.id = applications.applicant_id JOIN job_postings ON job_postings.id = applications.job_id WHERE applications.id = $1",
-    )
-    .bind(internal_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    let Some(application) = application else {
-        return Err(ApiError::NotFound("Lamaran tidak ditemukan."));
-    };
-    let documents = sqlx::query_as::<_, ApplicationDocumentSummary>(
-        "SELECT id, document_type, file_name, file_size FROM application_documents WHERE application_id = $1 ORDER BY created_at, id",
-    )
-    .bind(internal_id)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(AdminApplicationDetail {
-        application,
-        documents,
-    }))
-}
-
-async fn admin_download_application_document(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((public_id, document_id)): Path<(String, i64)>,
-) -> Result<Response, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let application_id =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM applications WHERE public_id = $1")
-            .bind(&public_id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal_error)?
-            .ok_or(ApiError::NotFound("Lamaran tidak ditemukan."))?;
-    let document = sqlx::query_as::<_, ApplicationDocumentFile>(
-        "SELECT document_type, content FROM application_documents WHERE id = $1 AND application_id = $2",
-    )
-    .bind(document_id)
-    .bind(application_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(internal_error)?
-    .ok_or(ApiError::NotFound("Dokumen lamaran tidak ditemukan."))?;
-    let document_label = match document.document_type.as_str() {
-        "cv" => "cv".to_owned(),
-        "cover_letter" => "cover-letter".to_owned(),
-        "certificate" => "certificate".to_owned(),
-        "supporting_document" => format!("supporting-document-{document_id}"),
-        _ => return Err(ApiError::Internal),
-    };
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(CACHE_CONTROL, "private, no-store")
-        .header(CONTENT_TYPE, "application/pdf")
-        .header(
-            CONTENT_DISPOSITION,
-            format!("attachment; filename=\"application-{public_id}-{document_label}.pdf\""),
-        )
-        .header("x-content-type-options", "nosniff")
-        .body(Body::from(document.content))
-        .map_err(internal_error)
-}
-
-async fn admin_set_application_status(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(public_id): Path<String>,
-    Json(request): Json<ApplicationStatusRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let status = request.status.trim().to_ascii_lowercase();
-    if !matches!(
-        status.as_str(),
-        "submitted" | "screening" | "interview" | "accepted" | "rejected"
-    ) {
-        return Err(ApiError::BadRequest("Status lamaran tidak valid."));
-    }
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let current = sqlx::query_as::<_, (i64, i64, String)>(
-        "SELECT id, applicant_id, status FROM applications WHERE public_id = $1 FOR UPDATE",
-    )
-    .bind(&public_id)
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(internal_error)?;
-    let Some((application_id, applicant_id, previous_status)) = current else {
-        return Err(ApiError::NotFound("Lamaran tidak ditemukan."));
-    };
-    if previous_status != status {
-        let reason = validate_application_status_reason(&status, request.reason.as_deref(), true)
-            .map_err(ApiError::BadRequest)?;
-        sqlx::query("UPDATE applications SET status = $2 WHERE id = $1")
-            .bind(application_id)
-            .bind(&status)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query(
-            "INSERT INTO application_status_notifications (application_id, applicant_id, previous_status, new_status, reason) VALUES ($1, $2, $3, $4, $5)",
-        )
-        .bind(application_id)
-        .bind(applicant_id)
-        .bind(previous_status)
-        .bind(&status)
-        .bind(reason)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    }
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(
-        json!({ "message": "Status lamaran berhasil diperbarui." }),
-    ))
-}
-
-async fn admin_list_job_types(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let data = sqlx::query_as::<_, JobTypeRecord>(
-        "SELECT job_types.id, job_types.name, COUNT(job_postings.id) AS job_count FROM job_types LEFT JOIN job_postings ON job_postings.job_type_id = job_types.id GROUP BY job_types.id ORDER BY lower(job_types.name), job_types.name",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(json!({ "data": data })))
-}
-
-async fn admin_create_job_type(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<JobTypeNameRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = validate_job_type_name(&request.name)?;
-    match sqlx::query("INSERT INTO job_types (name) VALUES ($1)")
-        .bind(name)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(_) => Ok(Json(
-            json!({ "message": "Jenis pekerjaan berhasil ditambahkan." }),
-        )),
-        Err(error) if is_unique_violation(&error) => Err(ApiError::Conflict(
-            "Jenis pekerjaan tersebut sudah terdaftar.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_update_job_type(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(request): Json<JobTypeNameRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = validate_job_type_name(&request.name)?;
-    let result = sqlx::query("UPDATE job_types SET name = $2 WHERE id = $1")
-        .bind(id)
-        .bind(name)
-        .execute(&state.pool)
-        .await;
-    match result {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))
-        }
-        Ok(_) => Ok(Json(
-            json!({ "message": "Jenis pekerjaan berhasil diperbarui." }),
-        )),
-        Err(error) if is_unique_violation(&error) => Err(ApiError::Conflict(
-            "Jenis pekerjaan tersebut sudah terdaftar.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_delete_job_type(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    match sqlx::query("DELETE FROM job_types WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))
-        }
-        Ok(_) => Ok(Json(
-            json!({ "message": "Jenis pekerjaan berhasil dihapus." }),
-        )),
-        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
-            "Jenis pekerjaan masih digunakan oleh lowongan. Ubah jenis pada lowongan terkait terlebih dahulu.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_list_organization(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<OrganizationResponse>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let divisions =
-        sqlx::query_as::<_, DivisionRecord>("SELECT id, name FROM divisions ORDER BY name")
-            .fetch_all(&state.pool)
-            .await
-            .map_err(internal_error)?;
-    let departments = sqlx::query_as::<_, DepartmentRecord>(
-        "SELECT id, division_id, name FROM departments ORDER BY name",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    let bureaus = sqlx::query_as::<_, BureauRecord>(
-        "SELECT id, department_id, name FROM bureaus ORDER BY name",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(OrganizationResponse {
-        divisions,
-        departments,
-        bureaus,
-    }))
-}
-
-async fn admin_create_division(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<OrganizationNameRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = validate_organization_name(&request.name)?;
-    match sqlx::query("INSERT INTO divisions (name) VALUES ($1)")
-        .bind(name)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(_) => Ok(Json(json!({ "message": "Divisi berhasil ditambahkan." }))),
-        Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("Nama divisi sudah digunakan."))
-        }
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_update_division(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(request): Json<OrganizationNameRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = validate_organization_name(&request.name)?;
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let result = sqlx::query("UPDATE divisions SET name = $2 WHERE id = $1")
-        .bind(id)
-        .bind(&name)
-        .execute(&mut *transaction)
-        .await;
-    match result {
-        Ok(result) if result.rows_affected() == 0 => {
-            return Err(ApiError::NotFound("Divisi tidak ditemukan."));
-        }
-        Ok(_) => {}
-        Err(error) if is_unique_violation(&error) => {
-            return Err(ApiError::Conflict("Nama divisi sudah digunakan."));
-        }
-        Err(error) => return Err(internal_error(error)),
-    }
-    sqlx::query(
-        "UPDATE job_postings SET division = $2 WHERE bureau_id IN (SELECT bureaus.id FROM bureaus JOIN departments ON departments.id = bureaus.department_id WHERE departments.division_id = $1)",
-    )
-    .bind(id)
-    .bind(name)
-    .execute(&mut *transaction)
-    .await
-    .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(json!({ "message": "Divisi berhasil diperbarui." })))
-}
-
-async fn admin_delete_division(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    match sqlx::query("DELETE FROM divisions WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Divisi tidak ditemukan."))
-        }
-        Ok(_) => Ok(Json(json!({ "message": "Divisi berhasil dihapus." }))),
-        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
-            "Divisi masih memiliki departemen. Hapus departemen terkait terlebih dahulu.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_create_department(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<CreateDepartmentRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = validate_organization_name(&request.name)?;
-    let division_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM divisions WHERE id = $1)")
-            .bind(request.division_id)
-            .fetch_one(&state.pool)
-            .await
-            .map_err(internal_error)?;
-    if !division_exists {
-        return Err(ApiError::BadRequest("Divisi yang dipilih tidak ditemukan."));
-    }
-    match sqlx::query("INSERT INTO departments (division_id, name) VALUES ($1, $2)")
-        .bind(request.division_id)
-        .bind(name)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(_) => Ok(Json(
-            json!({ "message": "Departemen berhasil ditambahkan." }),
-        )),
-        Err(error) if is_unique_violation(&error) => Err(ApiError::Conflict(
-            "Nama departemen sudah ada di divisi ini.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_update_department(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(request): Json<OrganizationNameRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = validate_organization_name(&request.name)?;
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let result = sqlx::query("UPDATE departments SET name = $2 WHERE id = $1")
-        .bind(id)
-        .bind(&name)
-        .execute(&mut *transaction)
-        .await;
-    match result {
-        Ok(result) if result.rows_affected() == 0 => {
-            return Err(ApiError::NotFound("Departemen tidak ditemukan."));
-        }
-        Ok(_) => {}
-        Err(error) if is_unique_violation(&error) => {
-            return Err(ApiError::Conflict(
-                "Nama departemen sudah ada di divisi ini.",
-            ));
-        }
-        Err(error) => return Err(internal_error(error)),
-    }
-    sqlx::query(
-        "UPDATE job_postings SET department = $2 WHERE bureau_id IN (SELECT id FROM bureaus WHERE department_id = $1)",
-    )
-    .bind(id)
-    .bind(name)
-    .execute(&mut *transaction)
-    .await
-    .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(
-        json!({ "message": "Departemen berhasil diperbarui." }),
-    ))
-}
-
-async fn admin_delete_department(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    match sqlx::query("DELETE FROM departments WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Departemen tidak ditemukan."))
-        }
-        Ok(_) => Ok(Json(json!({ "message": "Departemen berhasil dihapus." }))),
-        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
-            "Departemen masih memiliki biro. Hapus biro terkait terlebih dahulu.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_create_bureau(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<CreateBureauRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = validate_organization_name(&request.name)?;
-    let department_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM departments WHERE id = $1)")
-            .bind(request.department_id)
-            .fetch_one(&state.pool)
-            .await
-            .map_err(internal_error)?;
-    if !department_exists {
-        return Err(ApiError::BadRequest(
-            "Departemen yang dipilih tidak ditemukan.",
-        ));
-    }
-    match sqlx::query("INSERT INTO bureaus (department_id, name) VALUES ($1, $2)")
-        .bind(request.department_id)
-        .bind(name)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(_) => Ok(Json(json!({ "message": "Biro berhasil ditambahkan." }))),
-        Err(error) if is_unique_violation(&error) => {
-            Err(ApiError::Conflict("Nama biro sudah ada di departemen ini."))
-        }
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn admin_update_bureau(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(request): Json<OrganizationNameRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let name = validate_organization_name(&request.name)?;
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let result = sqlx::query("UPDATE bureaus SET name = $2 WHERE id = $1")
-        .bind(id)
-        .bind(&name)
-        .execute(&mut *transaction)
-        .await;
-    match result {
-        Ok(result) if result.rows_affected() == 0 => {
-            return Err(ApiError::NotFound("Biro tidak ditemukan."));
-        }
-        Ok(_) => {}
-        Err(error) if is_unique_violation(&error) => {
-            return Err(ApiError::Conflict("Nama biro sudah ada di departemen ini."));
-        }
-        Err(error) => return Err(internal_error(error)),
-    }
-    sqlx::query("UPDATE job_postings SET unit = $2 WHERE bureau_id = $1")
-        .bind(id)
-        .bind(name)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(json!({ "message": "Biro berhasil diperbarui." })))
-}
-
-async fn admin_delete_bureau(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    match sqlx::query("DELETE FROM bureaus WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await
-    {
-        Ok(result) if result.rows_affected() == 0 => {
-            Err(ApiError::NotFound("Biro tidak ditemukan."))
-        }
-        Ok(_) => Ok(Json(json!({ "message": "Biro berhasil dihapus." }))),
-        Err(error) if is_foreign_key_violation(&error) => Err(ApiError::Conflict(
-            "Biro masih digunakan oleh lowongan. Ubah biro pada lowongan terkait terlebih dahulu.",
-        )),
-        Err(error) => Err(internal_error(error)),
-    }
-}
-
-async fn resolve_bureau_path(pool: &PgPool, bureau_id: i64) -> Result<BureauPath, ApiError> {
-    sqlx::query_as::<_, BureauPath>(
-        "SELECT divisions.name AS division, departments.name AS department, bureaus.name AS unit FROM bureaus JOIN departments ON departments.id = bureaus.department_id JOIN divisions ON divisions.id = departments.division_id WHERE bureaus.id = $1",
-    )
-    .bind(bureau_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(internal_error)?
-    .ok_or(ApiError::BadRequest("Biro yang dipilih tidak ditemukan."))
-}
-
-fn validate_organization_name(name: &str) -> Result<String, ApiError> {
-    let name = name.trim();
-    if name.is_empty() || name.len() > 160 {
-        return Err(ApiError::BadRequest(
-            "Nama wajib diisi dan maksimal 160 karakter.",
-        ));
-    }
-    Ok(name.to_owned())
-}
-
-fn validate_job_type_name(name: &str) -> Result<String, ApiError> {
-    let name = name.trim();
-    if name.is_empty() || name.len() > 80 {
-        return Err(ApiError::BadRequest(
-            "Nama jenis pekerjaan wajib diisi dan maksimal 80 karakter.",
-        ));
-    }
-    Ok(name.to_owned())
-}
-
-async fn resolve_job_type_id(pool: &PgPool, name: &str) -> Result<i64, ApiError> {
-    sqlx::query_scalar("SELECT id FROM job_types WHERE name = $1")
-        .bind(name.trim())
-        .fetch_optional(pool)
-        .await
-        .map_err(internal_error)?
-        .ok_or(ApiError::BadRequest(
-            "Pilih jenis pekerjaan dari daftar yang tersedia.",
-        ))
-}
-
-fn validate_admin_job(id: &str, fields: &AdminJobFields) -> Result<(), ApiError> {
-    if id.trim().is_empty() || id.len() > 64 {
-        return Err(ApiError::BadRequest(
-            "Kode posisi wajib diisi dan maksimal 64 karakter.",
-        ));
-    }
-    if [
-        fields.title.trim(),
-        fields.location.trim(),
-        fields.posted.trim(),
-        fields.job_type.trim(),
-        fields.summary.trim(),
-    ]
-    .iter()
-    .any(|value| value.is_empty())
-    {
-        return Err(ApiError::BadRequest("Semua detail lowongan wajib diisi."));
-    }
-    if fields.quota < 0 {
-        return Err(ApiError::BadRequest("Kuota tidak boleh negatif."));
-    }
-    if fields.skills.is_empty()
-        || fields
-            .skills
-            .iter()
-            .any(|specification| specification.trim().is_empty())
-    {
-        return Err(ApiError::BadRequest(
-            "Setidaknya satu spesifikasi internal wajib diisi.",
-        ));
-    }
-    if fields.responsibilities.is_empty()
-        || fields
-            .responsibilities
-            .iter()
-            .any(|responsibility| responsibility.trim().is_empty())
-    {
-        return Err(ApiError::BadRequest(
-            "Setidaknya satu deskripsi tugas wajib diisi.",
-        ));
-    }
-    if fields.bureau_id <= 0 {
-        return Err(ApiError::BadRequest("Biro wajib dipilih."));
-    }
-    Ok(())
-}
-
-async fn monitor_positions(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<PositionMappingsResponse>, ApiError> {
-    authorized_admin(&state.pool, &headers).await?;
-    let data = sqlx::query_as::<_, PositionMapping>(
-        "SELECT id, title, division, department, unit, quota, is_open FROM job_postings ORDER BY id",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(PositionMappingsResponse { data }))
-}
-
-async fn list_applications(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<ApplicationsResponse>, ApiError> {
-    let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
-    let data = sqlx::query_as::<_, ApplicationSummary>(
-        "SELECT public_id AS id, job_id, status FROM applications WHERE applicant_id = $1 ORDER BY created_at DESC",
-    )
-    .bind(applicant_id)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(ApplicationsResponse { data }))
-}
-
-async fn list_applicant_notifications(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<ApplicantNotificationsResponse>, ApiError> {
-    let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
-    let data = sqlx::query_as::<_, ApplicantStatusNotification>(
-        "SELECT notifications.id, applications.public_id AS application_id, job_postings.id AS job_id, job_postings.title AS job_title, notifications.previous_status, notifications.new_status, notifications.reason, notifications.created_at::text AS created_at, notifications.read_at::text AS read_at FROM application_status_notifications AS notifications JOIN applications ON applications.id = notifications.application_id JOIN job_postings ON job_postings.id = applications.job_id WHERE notifications.applicant_id = $1 ORDER BY notifications.created_at DESC, notifications.id DESC LIMIT 50",
-    )
-    .bind(applicant_id)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    let unread_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM application_status_notifications WHERE applicant_id = $1 AND read_at IS NULL",
-    )
-    .bind(applicant_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(ApplicantNotificationsResponse { data, unread_count }))
-}
-
-fn validate_application_status_reason(
-    status: &str,
-    reason: Option<&str>,
-    is_status_change: bool,
-) -> Result<Option<String>, &'static str> {
-    let reason = reason
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-
-    if reason
-        .as_ref()
-        .is_some_and(|value| value.chars().count() > MAX_APPLICATION_STATUS_REASON_CHARS)
-    {
-        return Err("Alasan perubahan status maksimal 1000 karakter.");
-    }
-
-    if is_status_change && status == "rejected" && reason.is_none() {
-        return Err("Alasan wajib diisi saat status lamaran menjadi Ditolak.");
-    }
-
-    Ok(reason)
-}
-
-async fn mark_applicant_notification_read(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
-    let result = sqlx::query(
-        "UPDATE application_status_notifications SET read_at = COALESCE(read_at, NOW()) WHERE id = $1 AND applicant_id = $2",
-    )
-    .bind(id)
-    .bind(applicant_id)
-    .execute(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    if result.rows_affected() == 0 {
-        return Err(ApiError::NotFound("Notifikasi tidak ditemukan."));
-    }
-    Ok(Json(
-        json!({ "message": "Notifikasi ditandai sudah dibaca." }),
-    ))
-}
-
-async fn parse_application_submission(
-    mut multipart: Multipart,
-) -> Result<
-    (
-        ApplicationSubmissionFields,
-        Vec<UploadedApplicationDocument>,
-    ),
-    ApiError,
-> {
-    let mut job_id = None;
-    let mut employee_number = None;
-    let mut applicant_full_name = None;
-    let mut origin_division = None;
-    let mut origin_unit = None;
-    let mut education_level = None;
-    let mut study_field = None;
-    let mut motivation = None;
-    let mut documents: Vec<UploadedApplicationDocument> = Vec::new();
-
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|_| ApiError::BadRequest("Formulir lamaran tidak dapat dibaca."))?
-    {
-        let name = field
-            .name()
-            .ok_or(ApiError::BadRequest("Formulir lamaran tidak lengkap."))?
-            .to_owned();
-        match name.as_str() {
-            "job_id" => set_application_text(&mut job_id, field).await?,
-            "employee_number" => set_application_text(&mut employee_number, field).await?,
-            "applicant_full_name" => set_application_text(&mut applicant_full_name, field).await?,
-            "origin_division" => set_application_text(&mut origin_division, field).await?,
-            "origin_unit" => set_application_text(&mut origin_unit, field).await?,
-            "education_level" => set_application_text(&mut education_level, field).await?,
-            "study_field" => set_application_text(&mut study_field, field).await?,
-            "motivation" => set_application_text(&mut motivation, field).await?,
-            "supporting_document" | "cv" | "cover_letter" | "certificate" => {
-                let document_type = match name.as_str() {
-                    "supporting_document" => "supporting_document",
-                    "cv" => "cv",
-                    "cover_letter" => "cover_letter",
-                    "certificate" => "certificate",
-                    _ => unreachable!(),
-                };
-                if documents.len() >= MAX_APPLICATION_DOCUMENTS {
-                    return Err(ApiError::BadRequest(
-                        "Maksimal 5 berkas pendukung dapat diunggah.",
-                    ));
-                }
-                if document_type != "supporting_document"
-                    && documents
-                        .iter()
-                        .any(|document| document.document_type == document_type)
-                {
-                    return Err(ApiError::BadRequest(
-                        "Setiap jenis dokumen hanya dapat diunggah satu kali.",
-                    ));
-                }
-                let file_name = field.file_name().unwrap_or_default().to_owned();
-                let content_type = field.content_type().unwrap_or_default().to_owned();
-                let content = field
-                    .bytes()
-                    .await
-                    .map_err(|_| ApiError::BadRequest("Dokumen tidak dapat dibaca."))?;
-                let file_name = validate_application_pdf(&file_name, &content_type, &content)?;
-                documents.push(UploadedApplicationDocument {
-                    document_type,
-                    file_name,
-                    content: content.to_vec(),
-                });
-            }
-            _ => {
-                return Err(ApiError::BadRequest(
-                    "Formulir berisi kolom yang tidak dikenal.",
-                ))
-            }
-        }
-    }
-
-    let fields = ApplicationSubmissionFields {
-        job_id: job_id.unwrap_or_default().trim().to_owned(),
-        employee_number: employee_number.unwrap_or_default().trim().to_owned(),
-        applicant_full_name: applicant_full_name.unwrap_or_default().trim().to_owned(),
-        origin_division: origin_division.unwrap_or_default().trim().to_owned(),
-        origin_unit: origin_unit.unwrap_or_default().trim().to_owned(),
-        education_level: education_level.unwrap_or_default().trim().to_owned(),
-        study_field: study_field.unwrap_or_default().trim().to_owned(),
-        motivation: motivation.unwrap_or_default().trim().to_owned(),
-    };
-    if fields.job_id.is_empty() || fields.job_id.len() > 64 {
-        return Err(ApiError::BadRequest("Lowongan wajib dipilih."));
-    }
-    if fields.employee_number.is_empty()
-        || fields.employee_number.len() > 40
-        || fields.employee_number.chars().any(char::is_control)
-    {
-        return Err(ApiError::BadRequest(
-            "NIP wajib diisi dan maksimal 40 karakter.",
-        ));
-    }
-    if fields.applicant_full_name.is_empty() || fields.applicant_full_name.len() > 200 {
-        return Err(ApiError::BadRequest(
-            "Nama sesuai ID wajib diisi dan maksimal 200 karakter.",
-        ));
-    }
-    if fields.origin_division.is_empty() || fields.origin_division.len() > 160 {
-        return Err(ApiError::BadRequest(
-            "Divisi asal wajib diisi dan maksimal 160 karakter.",
-        ));
-    }
-    if fields.origin_unit.is_empty() || fields.origin_unit.len() > 160 {
-        return Err(ApiError::BadRequest(
-            "Departemen atau unit asal wajib diisi dan maksimal 160 karakter.",
-        ));
-    }
-    if !matches!(
-        fields.education_level.as_str(),
-        "SMA/SMK" | "D1" | "D2" | "D3" | "D4/S1" | "S2" | "S3" | "Lainnya"
-    ) {
-        return Err(ApiError::BadRequest("Jenjang pendidikan wajib dipilih."));
-    }
-    if fields.study_field.is_empty() || fields.study_field.len() > 160 {
-        return Err(ApiError::BadRequest(
-            "Jurusan atau bidang studi wajib diisi dan maksimal 160 karakter.",
-        ));
-    }
-    if fields.motivation.is_empty() || fields.motivation.len() > 3000 {
-        return Err(ApiError::BadRequest(
-            "Alasan melamar wajib diisi dan maksimal 3000 karakter.",
-        ));
-    }
-    if documents.is_empty() {
-        return Err(ApiError::BadRequest(
-            "Setidaknya satu berkas PDF pendukung wajib diunggah.",
-        ));
-    }
-
-    Ok((fields, documents))
-}
-
-async fn set_application_text(
-    target: &mut Option<String>,
-    field: axum::extract::multipart::Field<'_>,
-) -> Result<(), ApiError> {
-    if target.is_some() {
-        return Err(ApiError::BadRequest(
-            "Kolom formulir lamaran tidak boleh dikirim berulang.",
-        ));
-    }
-    *target = Some(
-        field
-            .text()
-            .await
-            .map_err(|_| ApiError::BadRequest("Formulir lamaran tidak dapat dibaca."))?,
-    );
-    Ok(())
-}
-
-fn validate_application_pdf(
-    file_name: &str,
-    content_type: &str,
-    content: &[u8],
-) -> Result<String, ApiError> {
-    if content.is_empty() || content.len() > MAX_APPLICATION_FILE_BYTES {
-        return Err(ApiError::BadRequest(
-            "Setiap dokumen harus berukuran maksimal 5 MB.",
-        ));
-    }
-    if !content_type.is_empty()
-        && !content_type.eq_ignore_ascii_case("application/pdf")
-        && !content_type.eq_ignore_ascii_case("application/octet-stream")
-    {
-        return Err(ApiError::BadRequest("Dokumen harus berformat PDF."));
-    }
-    if !content.starts_with(b"%PDF-") {
-        return Err(ApiError::BadRequest(
-            "Isi dokumen bukan berkas PDF yang valid.",
-        ));
-    }
-    let file_name = file_name
-        .rsplit(|character| character == '/' || character == '\\')
-        .next()
-        .unwrap_or_default()
-        .trim();
-    if file_name.is_empty()
-        || file_name.len() > 255
-        || file_name.chars().any(char::is_control)
-        || !file_name.to_ascii_lowercase().ends_with(".pdf")
-    {
-        return Err(ApiError::BadRequest("Nama berkas PDF tidak valid."));
-    }
-    Ok(file_name.to_owned())
-}
-
-async fn create_application(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    multipart: Multipart,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
-    let (fields, documents) = parse_application_submission(multipart).await?;
-
-    let is_open: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM job_postings WHERE id = $1 AND is_open = TRUE)",
-    )
-    .bind(&fields.job_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    if !is_open {
-        return Err(ApiError::NotFound(
-            "Lowongan tidak ditemukan atau sudah ditutup.",
-        ));
-    }
-
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let public_id = Ulid::new().to_string();
-    let application = sqlx::query_as::<_, (i64, String)>(
-        "INSERT INTO applications (applicant_id, job_id, public_id, employee_number, applicant_full_name, origin_division, origin_unit, education_level, study_field, motivation) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (applicant_id, job_id) DO NOTHING RETURNING id, public_id",
-    )
-    .bind(applicant_id)
-    .bind(&fields.job_id)
-    .bind(&public_id)
-    .bind(fields.employee_number)
-    .bind(fields.applicant_full_name)
-    .bind(fields.origin_division)
-    .bind(fields.origin_unit)
-    .bind(fields.education_level)
-    .bind(fields.study_field)
-    .bind(fields.motivation)
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(internal_error)?;
-    let Some((application_id, public_id)) = application else {
-        return Err(ApiError::Conflict("Anda sudah melamar posisi ini."));
-    };
-
-    for document in documents {
-        let file_size = i32::try_from(document.content.len()).map_err(internal_error)?;
-        sqlx::query(
-            "INSERT INTO application_documents (application_id, document_type, file_name, content_type, file_size, content) VALUES ($1, $2, $3, 'application/pdf', $4, $5)",
-        )
-        .bind(application_id)
-        .bind(document.document_type)
-        .bind(document.file_name)
-        .bind(file_size)
-        .bind(document.content)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-    }
-
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(
-        json!({ "message": "Lamaran berhasil dikirim.", "application_id": public_id }),
-    ))
-}
-
 async fn authorized_applicant(
     pool: &PgPool,
     headers: &HeaderMap,
@@ -2838,7 +843,10 @@ async fn authorized_applicant(
         .ok_or(ApiError::Unauthorized)
 }
 
-async fn authorized_admin(pool: &PgPool, headers: &HeaderMap) -> Result<(i64, String), ApiError> {
+async fn authorized_admin_context(
+    pool: &PgPool,
+    headers: &HeaderMap,
+) -> Result<AdminContext, ApiError> {
     let bearer = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -2846,16 +854,51 @@ async fn authorized_admin(pool: &PgPool, headers: &HeaderMap) -> Result<(i64, St
         .filter(|value| !value.is_empty())
         .ok_or(ApiError::Unauthorized)?;
     let token_hash = hash_token(bearer);
-    let admin_id: Option<i64> = sqlx::query_scalar(
-        "SELECT admin_tokens.admin_id FROM admin_tokens JOIN admins ON admins.id = admin_tokens.admin_id WHERE admin_tokens.token_hash = $1 AND admin_tokens.expires_at > NOW() AND admins.is_active = TRUE",
+    let admin = sqlx::query_as::<_, (i64, String, Option<i64>, Option<i64>, Vec<String>)>(
+        "SELECT admins.id, admins.admin_role, admins.division_id, admins.department_id, COALESCE((SELECT array_agg(admin_permissions.permission_key ORDER BY admin_permissions.permission_key) FROM admin_permissions WHERE admin_permissions.admin_id = admins.id), ARRAY[]::TEXT[]) FROM admin_tokens JOIN admins ON admins.id = admin_tokens.admin_id WHERE admin_tokens.token_hash = $1 AND admin_tokens.expires_at > NOW() AND admins.is_active = TRUE",
     )
     .bind(&token_hash)
     .fetch_optional(pool)
     .await
     .map_err(internal_error)?;
-    admin_id
-        .map(|admin_id| (admin_id, token_hash))
-        .ok_or(ApiError::Unauthorized)
+    let Some((id, admin_role, division_id, department_id, permissions)) = admin else {
+        return Err(ApiError::Unauthorized);
+    };
+    Ok(AdminContext {
+        id,
+        token_hash,
+        admin_role,
+        division_id,
+        department_id,
+        permissions,
+    })
+}
+
+async fn authorized_admin(pool: &PgPool, headers: &HeaderMap) -> Result<(i64, String), ApiError> {
+    let admin = authorized_admin_context(pool, headers).await?;
+    Ok((admin.id, admin.token_hash))
+}
+
+async fn authorized_super_admin(
+    pool: &PgPool,
+    headers: &HeaderMap,
+) -> Result<AdminContext, ApiError> {
+    let admin = authorized_admin_context(pool, headers).await?;
+    if admin.admin_role != "super_admin" {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(admin)
+}
+
+async fn authorized_operational_admin(
+    pool: &PgPool,
+    headers: &HeaderMap,
+) -> Result<AdminContext, ApiError> {
+    let admin = authorized_admin_context(pool, headers).await?;
+    if !matches!(admin.admin_role.as_str(), "super_admin" | "admin") {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(admin)
 }
 
 async fn authorized_account(
@@ -2939,15 +982,11 @@ fn validate_profile_photo(content_type: &str, content: &[u8]) -> Result<&'static
 }
 
 fn validate_account_password(role: &str, password: &str) -> Result<(), ApiError> {
-    let min_length = if role == "admin" { 12 } else { 8 };
-    if !(min_length..=128).contains(&password.len()) {
-        return Err(ApiError::BadRequest(if role == "admin" {
-            "Kata sandi admin harus terdiri dari 12 sampai 128 karakter."
-        } else {
-            "Kata sandi harus terdiri dari 8 sampai 128 karakter."
-        }));
+    if role == "admin" {
+        validate_admin_password(password)
+    } else {
+        validate_applicant_password(password)
     }
-    Ok(())
 }
 
 fn validate_applicant_account(name: &str, email: &str, password: &str) -> Result<(), ApiError> {
@@ -2968,12 +1007,7 @@ fn validate_applicant_name_and_email(name: &str, email: &str) -> Result<(), ApiE
 }
 
 fn validate_applicant_password(password: &str) -> Result<(), ApiError> {
-    if !(8..=128).contains(&password.len()) {
-        return Err(ApiError::BadRequest(
-            "Kata sandi harus terdiri dari 8 sampai 128 karakter.",
-        ));
-    }
-    Ok(())
+    validate_password_strength(password)
 }
 
 fn validate_admin_account(name: &str, email: &str, password: &str) -> Result<(), ApiError> {
@@ -2982,9 +1016,28 @@ fn validate_admin_account(name: &str, email: &str, password: &str) -> Result<(),
 }
 
 fn validate_admin_password(password: &str) -> Result<(), ApiError> {
-    if !(12..=128).contains(&password.len()) {
+    validate_password_strength(password)
+}
+
+fn validate_password_strength(password: &str) -> Result<(), ApiError> {
+    if !(8..=128).contains(&password.len()) {
         return Err(ApiError::BadRequest(
-            "Kata sandi admin harus terdiri dari 12 sampai 128 karakter.",
+            "Kata sandi harus terdiri dari 8 sampai 128 karakter.",
+        ));
+    }
+    if !password
+        .bytes()
+        .any(|character| character.is_ascii_lowercase())
+        || !password
+            .bytes()
+            .any(|character| character.is_ascii_uppercase())
+        || !password.bytes().any(|character| character.is_ascii_digit())
+        || !password
+            .chars()
+            .any(|character| "._!@#$%^&*()-+=?".contains(character))
+    {
+        return Err(ApiError::BadRequest(
+            "Kata sandi harus memuat huruf besar, huruf kecil, angka, dan simbol (contoh: . atau !).",
         ));
     }
     Ok(())
@@ -3050,10 +1103,11 @@ async fn seed_admin(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
         tracing::warn!("Admin bootstrap skipped because ADMIN_* variables are not configured.");
         return Ok(());
     };
-    if name.trim().len() > 200 || !is_valid_email(&email) || !(12..=128).contains(&password.len()) {
-        return Err(
-            "Admin bootstrap settings have an invalid name, email, or password length".into(),
-        );
+    if name.trim().len() > 200
+        || !is_valid_email(&email)
+        || validate_admin_password(&password).is_err()
+    {
+        return Err("Admin bootstrap settings have an invalid name, email, or password".into());
     }
 
     let salt = SaltString::generate(&mut OsRng);
@@ -3075,7 +1129,28 @@ async fn seed_admin(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use super::admin_accounts::is_valid_admin_scope_shape;
+    use super::admin_applications::is_valid_application_status_transition;
+    use super::applications::{validate_application_pdf, validate_application_status_reason};
+    use super::jobs::{
+        is_valid_job_status_update, validate_admin_job, validate_job_type_name,
+        validate_optional_organization_name, validate_organization_description,
+    };
     use super::*;
+
+    #[test]
+    fn api_responses_are_not_cacheable() {
+        let mut response = Response::new(Body::empty());
+        set_api_no_store(&mut response);
+
+        assert_eq!(
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store")
+        );
+    }
 
     #[test]
     fn job_json_fields_are_returned_as_arrays() {
@@ -3085,7 +1160,11 @@ mod tests {
             division: "Test division".to_owned(),
             department: "Test department".to_owned(),
             unit: "Test unit".to_owned(),
-            bureau_id: 1,
+            unit_type: "bengkel".to_owned(),
+            target_level: "bureau".to_owned(),
+            division_id: 1,
+            department_id: Some(2),
+            bureau_id: Some(3),
             location: "Test location".to_owned(),
             quota: 1,
             posted: "Hari ini".to_owned(),
@@ -3093,7 +1172,8 @@ mod tests {
             summary: "Test summary".to_owned(),
             skills: SqlJson(vec!["Test specification".to_owned()]),
             responsibilities: SqlJson(vec!["Task".to_owned()]),
-            is_open: true,
+            status: "open".to_owned(),
+            has_applications: None,
         };
 
         let response = serde_json::to_value(job).expect("job should serialize");
@@ -3106,7 +1186,10 @@ mod tests {
     fn admin_jobs_require_tasks_and_internal_specs() {
         let mut fields = AdminJobFields {
             title: "Test role".to_owned(),
-            bureau_id: 1,
+            target_level: "bureau".to_owned(),
+            division_id: Some(1),
+            department_id: Some(2),
+            bureau_id: Some(3),
             location: "Test location".to_owned(),
             quota: 1,
             posted: "Hari ini".to_owned(),
@@ -3114,9 +1197,21 @@ mod tests {
             summary: "Test summary".to_owned(),
             skills: vec!["Internal experience".to_owned()],
             responsibilities: vec!["Test task".to_owned()],
-            is_open: true,
         };
         assert!(validate_admin_job("POS-2026-001", &fields).is_ok());
+
+        fields.target_level = "department".to_owned();
+        fields.bureau_id = None;
+        assert!(validate_admin_job("POS-2026-001", &fields).is_ok());
+        fields.target_level = "division".to_owned();
+        fields.department_id = None;
+        assert!(validate_admin_job("POS-2026-001", &fields).is_ok());
+        fields.target_level = "division".to_owned();
+        fields.department_id = Some(2);
+        assert!(validate_admin_job("POS-2026-001", &fields).is_err());
+        fields.target_level = "bureau".to_owned();
+        fields.department_id = Some(2);
+        fields.bureau_id = Some(3);
 
         fields.skills = vec!["  ".to_owned()];
         assert!(validate_admin_job("POS-2026-001", &fields).is_err());
@@ -3134,6 +1229,29 @@ mod tests {
         );
         assert!(validate_job_type_name("  ").is_err());
         assert!(validate_job_type_name(&"x".repeat(81)).is_err());
+    }
+
+    #[test]
+    fn organization_descriptions_and_secretariat_names_are_validated() {
+        assert_eq!(
+            validate_organization_description("  Deskripsi unit  ").unwrap(),
+            "Deskripsi unit"
+        );
+        assert!(validate_organization_description(&"x".repeat(4001)).is_err());
+        assert_eq!(
+            validate_optional_organization_name("  Sekretariat Divisi  ").unwrap(),
+            "Sekretariat Divisi"
+        );
+        assert_eq!(validate_optional_organization_name("  ").unwrap(), "");
+        assert!(validate_optional_organization_name(&"x".repeat(161)).is_err());
+    }
+
+    #[test]
+    fn job_status_toggle_only_allows_open_or_closed() {
+        assert!(is_valid_job_status_update("open"));
+        assert!(is_valid_job_status_update("closed"));
+        assert!(!is_valid_job_status_update("draft"));
+        assert!(!is_valid_job_status_update("unknown"));
     }
 
     #[test]
@@ -3184,6 +1302,61 @@ mod tests {
     }
 
     #[test]
+    fn application_status_transitions_only_move_forward() {
+        assert!(is_valid_application_status_transition(
+            "submitted",
+            "screening"
+        ));
+        assert!(is_valid_application_status_transition(
+            "submitted",
+            "interview"
+        ));
+        assert!(is_valid_application_status_transition(
+            "screening",
+            "interview"
+        ));
+        assert!(is_valid_application_status_transition(
+            "screening",
+            "accepted"
+        ));
+        assert!(is_valid_application_status_transition(
+            "screening",
+            "rejected"
+        ));
+        assert!(is_valid_application_status_transition(
+            "interview",
+            "accepted"
+        ));
+        assert!(is_valid_application_status_transition(
+            "interview",
+            "rejected"
+        ));
+        assert!(is_valid_application_status_transition(
+            "submitted",
+            "submitted"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "submitted",
+            "accepted"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "submitted",
+            "rejected"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "interview",
+            "screening"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "accepted", "rejected"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "rejected",
+            "screening"
+        ));
+    }
+
+    #[test]
     fn status_change_reasons_are_optional_but_limited() {
         assert_eq!(
             validate_application_status_reason("screening", None, true).unwrap(),
@@ -3219,10 +1392,67 @@ mod tests {
 
     #[test]
     fn account_password_length_matches_role() {
-        assert!(validate_account_password("applicant", &"a".repeat(8)).is_ok());
-        assert!(validate_account_password("applicant", &"a".repeat(7)).is_err());
-        assert!(validate_account_password("admin", &"a".repeat(11)).is_err());
-        assert!(validate_account_password("admin", &"a".repeat(12)).is_ok());
+        assert!(validate_account_password("applicant", "Abcdef1!").is_ok());
+        assert!(validate_account_password("applicant", "Abcd1!").is_err());
+        assert!(validate_account_password("admin", "Abcdef1!").is_ok());
+        assert!(validate_account_password("admin", "abcdef1!").is_err());
+        assert!(validate_account_password("admin", "ABCDEF1!").is_err());
+        assert!(validate_account_password("admin", "Abcdefg!").is_err());
+        assert!(validate_account_password("admin", "Abcdefg1").is_err());
+    }
+
+    #[test]
+    fn admin_account_scopes_match_the_login_roles() {
+        assert!(is_valid_admin_scope_shape("super_admin", None, None, None));
+        assert!(is_valid_admin_scope_shape("admin", None, None, None));
+        assert!(is_valid_admin_scope_shape(
+            "division_head",
+            Some(1),
+            None,
+            None
+        ));
+        assert!(is_valid_admin_scope_shape(
+            "department_head",
+            None,
+            Some(1),
+            None
+        ));
+        assert!(!is_valid_admin_scope_shape(
+            "bureau_head",
+            None,
+            None,
+            Some(1)
+        ));
+        assert!(!is_valid_admin_scope_shape(
+            "department_head",
+            Some(1),
+            Some(2),
+            None
+        ));
+    }
+
+    #[test]
+    fn super_admin_bypasses_custom_grants_but_scoped_admins_do_not() {
+        let scoped_admin = AdminContext {
+            id: 1,
+            token_hash: String::new(),
+            admin_role: "division_head".to_owned(),
+            division_id: Some(10),
+            department_id: None,
+            permissions: vec![JOBS_VIEW.to_owned()],
+        };
+        assert!(scoped_admin.has_permission(JOBS_VIEW));
+        assert!(!scoped_admin.has_permission(JOBS_DELETE));
+
+        let super_admin = AdminContext {
+            id: 2,
+            token_hash: String::new(),
+            admin_role: "super_admin".to_owned(),
+            division_id: None,
+            department_id: None,
+            permissions: Vec::new(),
+        };
+        assert!(super_admin.has_permission(APPLICANT_ACCOUNTS_MANAGE));
     }
 
     #[test]

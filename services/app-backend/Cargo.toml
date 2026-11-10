@@ -19,3 +19,6 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ulid = "1"
+
+[features]
+postgres-migration-tests = []

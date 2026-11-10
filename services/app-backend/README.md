@@ -10,7 +10,7 @@ Axum recruitment API with PostgreSQL, applicant accounts, bearer-token authentic
 
 ## Run locally
 
-From the project root, copy the example environment file, set the PostgreSQL connection, and configure all three `ADMIN_*` bootstrap values with a unique password of at least 12 characters:
+From the project root, copy the example environment file, set the PostgreSQL connection, and configure all three `ADMIN_*` bootstrap values with a unique password of 8–128 characters containing uppercase and lowercase letters, a number, and a symbol:
 
 ```powershell
 Copy-Item .env.example .env
@@ -28,11 +28,23 @@ Start the frontend and backend together from the project root:
 npm run dev
 ```
 
-Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema and six sample positions on startup. Press `Ctrl+C` to stop both processes.
+Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema and the four official organization divisions on startup. Press `Ctrl+C` to stop both processes.
 
 To enable forgotten-password emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `APP_PUBLIC_URL` in the server environment. Do not commit SMTP credentials.
 
 To run the production-style build instead, use `npm run build` followed by `cargo run -p app-backend`; the backend serves the built React app and API on port 8000.
+
+## Verify PostgreSQL migrations
+
+The CI backend job starts a disposable PostgreSQL 16 service and runs every checked-in migration against a fresh test database. To run the same integration test locally, use a PostgreSQL connection whose role can create databases; SQLx creates and cleans up a separate temporary database for the test:
+
+```powershell
+$env:DATABASE_URL = "postgres://postgres:YOUR_PASSWORD@127.0.0.1:5432/postgres"
+cargo test -p app-backend --features postgres-migration-tests --test migrations
+Remove-Item Env:DATABASE_URL
+```
+
+Use a local or disposable PostgreSQL instance, never production. The regular `cargo test --workspace` suite does not require PostgreSQL; the migration integration test is enabled explicitly with `postgres-migration-tests`.
 
 ## API
 
@@ -69,6 +81,10 @@ To run the production-style build instead, use `npm run build` followed by `carg
 - `POST /api/account/password` changes the signed-in user's password after verifying the current password.
 - `POST /api/password/forgot` sends a one-hour, single-use reset link when SMTP is configured; `POST /api/password/reset` consumes the link and invalidates active sessions.
 
-Passwords are stored as Argon2 hashes. Applicant tokens expire after 24 hours and admin tokens after 8 hours; both are stored as SHA-256 hashes.
+Admin accounts combine a fixed role/scope with per-account grants. Super Admin always has full access; only Super Admin can manage administrator accounts or the organization structure. Other administrators can be granted `jobs.view/create/update/delete/change_status`, `applications.view/change_status/download_documents`, and—only for the unscoped Admin role—`job_types.manage` and `applicant_accounts.manage`. Write and document permissions require their corresponding read permission. Division and department scope is still enforced by backend queries and mutations, regardless of grants. Existing Admin accounts receive the former operational permissions during migration; division and department heads receive the former scoped permissions.
+
+Passwords are stored as Argon2 hashes. Applicant and admin tokens expire after 30 days and are stored as SHA-256 hashes.
 All `/api/admin/*` data endpoints and `/api/monitoring/positions` require an admin bearer token.
 Application IDs exposed in API routes are ULIDs; numeric database IDs remain internal. Existing applications receive a ULID on startup. Application details and PDF documents are persisted in PostgreSQL; document bytes are never exposed by public endpoints.
+
+All API responses include `Cache-Control: no-store`. If Cloudflare is used, configure `/api/*` to bypass cache and do not enable Cache Everything for API routes.
