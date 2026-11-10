@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ArrowLeft,
   ArrowRight,
+  Bell,
   BriefcaseBusiness,
   Building2,
+  Camera,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -14,6 +17,7 @@ import {
   GraduationCap,
   Info,
   List,
+  KeyRound,
   LogIn,
   LogOut,
   MapPin,
@@ -21,12 +25,14 @@ import {
   Save,
   RotateCcw,
   Search,
+  Settings,
   Shield,
   SlidersHorizontal,
   Trash2,
   UploadCloud,
   Users,
   UserPlus,
+  UserRound,
   Wrench,
   X,
 } from 'lucide-react'
@@ -35,6 +41,7 @@ import '../css/App.css'
 
 const MAX_APPLICATION_FILE_BYTES = 5 * 1024 * 1024
 const MAX_APPLICATION_DOCUMENTS = 5
+const PUBLIC_JOBS_PER_PAGE = 12
 
 function Brand() {
   return (
@@ -52,6 +59,15 @@ function Brand() {
   )
 }
 
+function AccountAvatar({ avatarUrl, alt = '', className = 'account-avatar', iconSize = 24 }) {
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState(null)
+
+  if (avatarUrl && avatarUrl !== failedAvatarUrl) {
+    return <img alt={alt} className={className} onError={() => setFailedAvatarUrl(avatarUrl)} src={avatarUrl} />
+  }
+  return <UserRound aria-hidden="true" className={`${className} account-avatar-fallback`} size={iconSize} />
+}
+
 function AuthDialog({ initialMode, onClose, onSuccess }) {
   const [mode, setMode] = useState(initialMode)
   const [name, setName] = useState('')
@@ -59,6 +75,7 @@ function AuthDialog({ initialMode, onClose, onSuccess }) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const backdropPointer = useRef(null)
 
@@ -84,8 +101,17 @@ function AuthDialog({ initialMode, onClose, onSuccess }) {
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    setNotice('')
     setIsSubmitting(true)
     try {
+      if (mode === 'forgot') {
+        const response = await apiRequest('/password/forgot', {
+          method: 'POST',
+          body: JSON.stringify({ email: email.trim() }),
+        })
+        setNotice(response.message)
+        return
+      }
       const session = await apiRequest(mode === 'register' ? '/register' : '/login', {
         method: 'POST',
         body: JSON.stringify(
@@ -119,15 +145,16 @@ function AuthDialog({ initialMode, onClose, onSuccess }) {
         role="dialog"
       >
         <div className="modal-heading">
-          <span className="section-kicker">{mode === 'register' ? 'AKUN PELAMAR' : 'AKUN ANDA'}</span>
           <button aria-label="Tutup" className="icon-button" onClick={onClose} type="button"><X size={20} /></button>
         </div>
         <div className="auth-dialog-content">
-          <h2 id="auth-title">{mode === 'register' ? 'Buat akun pelamar' : 'Masuk ke akun Anda'}</h2>
+          <h2 id="auth-title">{mode === 'register' ? 'Buat akun pelamar' : mode === 'forgot' ? 'Lupa kata sandi?' : 'Masuk ke akun Anda'}</h2>
           <p className="login-description">
             {mode === 'register'
-              ? 'Belum punya akun? Daftar terlebih dahulu. Jika sudah memiliki akun, pilih Masuk untuk melanjutkan pendaftaran posisi.'
-              : 'Setelah berhasil masuk, formulir untuk posisi yang Anda pilih akan terbuka.'}
+              ? 'Daftar untuk melanjutkan proses lamaran posisi yang Anda pilih.'
+              : mode === 'forgot'
+                ? 'Masukkan email akun Anda. Jika terdaftar, tautan reset akan dikirim.'
+                : 'Masuk untuk melanjutkan proses lamaran posisi yang Anda pilih.'}
           </p>
           <form className="login-form" onSubmit={handleSubmit}>
             {mode === 'register' && (
@@ -138,31 +165,385 @@ function AuthDialog({ initialMode, onClose, onSuccess }) {
             )}
             <label htmlFor="auth-email">Email</label>
             <input autoComplete="email" id="auth-email" onChange={(event) => setEmail(event.target.value)} placeholder="nama@email.com" required type="email" value={email} />
-            <label htmlFor="auth-password">Kata sandi</label>
-            <div className="password-field">
-              <input autoComplete={mode === 'register' ? 'new-password' : 'current-password'} id="auth-password" maxLength={128} minLength={mode === 'register' ? 8 : undefined} onChange={(event) => setPassword(event.target.value)} placeholder={mode === 'register' ? 'Minimal 8 karakter' : 'Masukkan kata sandi'} required type={showPassword ? 'text' : 'password'} value={password} />
-              <button aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'} onClick={() => setShowPassword((shown) => !shown)} type="button">
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
+            {mode !== 'forgot' && (
+              <>
+                <label htmlFor="auth-password">Kata sandi</label>
+                <div className="password-field">
+                  <input autoComplete={mode === 'register' ? 'new-password' : 'current-password'} id="auth-password" maxLength={128} minLength={mode === 'register' ? 8 : undefined} onChange={(event) => setPassword(event.target.value)} placeholder={mode === 'register' ? 'Minimal 8 karakter' : 'Masukkan kata sandi'} required type={showPassword ? 'text' : 'password'} value={password} />
+                  <button aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'} onClick={() => setShowPassword((shown) => !shown)} type="button">
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </>
+            )}
             {error && <p className="login-error" role="alert">{error}</p>}
+            {notice && <p className="account-settings-notice" role="status">{notice}</p>}
             <button className="primary-button login-submit" disabled={isSubmitting} type="submit">
-              {isSubmitting
-                ? (mode === 'register' ? 'Membuat akun...' : 'Memeriksa akun...')
-                : (mode === 'register' ? 'Buat akun & lanjutkan' : 'Masuk')}
-              <ArrowRight size={17} />
+              <span>
+                {isSubmitting
+                  ? (mode === 'register' ? 'Membuat akun...' : mode === 'forgot' ? 'Mengirim...' : 'Memeriksa akun...')
+                  : (mode === 'register' ? 'Buat akun & lanjutkan' : mode === 'forgot' ? 'Kirim tautan reset' : 'Masuk')}
+              </span>
+              {mode === 'register' && <ArrowRight size={17} />}
             </button>
           </form>
+          {mode === 'login' && (
+            <button className="auth-forgot-button" onClick={() => { setMode('forgot'); setError(''); setNotice('') }} type="button">
+              Lupa kata sandi?
+            </button>
+          )}
           <p className="auth-switch">
-            {mode === 'register' ? 'Sudah punya akun?' : 'Belum punya akun?'}{' '}
-            <button onClick={() => { setMode(mode === 'register' ? 'login' : 'register'); setError('') }} type="button">
-              {mode === 'register' ? 'Masuk' : 'Buat akun'}
+            {mode === 'forgot' ? 'Ingat kata sandi?' : mode === 'register' ? 'Sudah punya akun?' : 'Belum punya akun?'}{' '}
+            <button onClick={() => { setMode(mode === 'register' || mode === 'forgot' ? 'login' : 'register'); setError(''); setNotice('') }} type="button">
+              {mode === 'forgot' ? 'Masuk' : mode === 'register' ? 'Masuk' : 'Buat akun'}
             </button>
           </p>
         </div>
       </section>
     </div>
   )
+}
+
+function AccountSettingsMenu({ onSelect }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    function closeOnOutsideClick(event) {
+      if (!menuRef.current?.contains(event.target)) setIsOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
+  }, [])
+
+  return (
+    <div className="account-settings-menu" ref={menuRef}>
+      <button
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-label="Pengaturan akun"
+        className="account-settings-trigger"
+        onClick={() => setIsOpen((current) => !current)}
+        title="Pengaturan akun"
+        type="button"
+      >
+        <Settings size={17} />
+      </button>
+      {isOpen && (
+        <div className="account-settings-dropdown" role="menu">
+          <button className="account-settings-option" onClick={() => { setIsOpen(false); onSelect('profile') }} role="menuitem" type="button">
+            <UserRound size={16} /> Profil
+          </button>
+          <button className="account-settings-option" onClick={() => { setIsOpen(false); onSelect('security') }} role="menuitem" type="button">
+            <KeyRound size={16} /> Keamanan &amp; kata sandi
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AccountSettingsPage({
+  avatarUrl,
+  onAvatarChanged,
+  onBack,
+  onProfileUpdated,
+  onSectionChange,
+  section,
+  session,
+}) {
+  const [name, setName] = useState(session.user.name)
+  const [email, setEmail] = useState(session.user.email)
+  const [selectedPhoto, setSelectedPhoto] = useState(null)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [isSavingPhoto, setIsSavingPhoto] = useState(false)
+  const [isSavingPassword, setIsSavingPassword] = useState(false)
+  const photoInput = useRef(null)
+
+  useEffect(() => {
+    let active = true
+    apiRequest('/account/profile', { token: session.token })
+      .then((profile) => {
+        if (!active) return
+        setName(profile.name)
+        setEmail(profile.email)
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.message)
+      })
+      .finally(() => {
+        if (active) setIsLoading(false)
+      })
+    return () => { active = false }
+  }, [session.token])
+
+  async function saveProfile(event) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    setIsSavingProfile(true)
+    try {
+      const profile = await apiRequest('/account/profile', {
+        method: 'PATCH',
+        token: session.token,
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      setName(profile.name)
+      setEmail(profile.email)
+      onProfileUpdated(profile)
+      setNotice('Profil berhasil diperbarui.')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  async function savePhoto() {
+    if (!selectedPhoto) return
+    setError('')
+    setNotice('')
+    setIsSavingPhoto(true)
+    try {
+      const formData = new FormData()
+      formData.append('photo', selectedPhoto)
+      await apiRequest('/account/avatar', {
+        method: 'POST',
+        token: session.token,
+        body: formData,
+      })
+      setSelectedPhoto(null)
+      if (photoInput.current) photoInput.current.value = ''
+      onAvatarChanged()
+      setNotice('Foto profil berhasil diperbarui.')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSavingPhoto(false)
+    }
+  }
+
+  async function removePhoto() {
+    setError('')
+    setNotice('')
+    setIsSavingPhoto(true)
+    try {
+      await apiRequest('/account/avatar', { method: 'DELETE', token: session.token })
+      onAvatarChanged()
+      setNotice('Foto profil berhasil dihapus.')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSavingPhoto(false)
+    }
+  }
+
+  async function savePassword(event) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    if (newPassword !== confirmPassword) {
+      setError('Konfirmasi kata sandi baru tidak sama.')
+      return
+    }
+    setIsSavingPassword(true)
+    try {
+      const response = await apiRequest('/account/password', {
+        method: 'POST',
+        token: session.token,
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      })
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setNotice(response.message)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSavingPassword(false)
+    }
+  }
+
+  return (
+    <section aria-labelledby="account-settings-title" className="account-settings-page">
+      <div className="account-settings-page-heading">
+        <button className="account-settings-back" onClick={onBack} type="button">
+          {session.role === 'admin' && <ArrowLeft aria-hidden="true" size={16} />}
+          Kembali
+        </button>
+        <div>
+          <span className="section-kicker">PENGATURAN AKUN</span>
+          <h1 id="account-settings-title">{section === 'profile' ? 'Profil' : 'Keamanan & kata sandi'}</h1>
+          <p>Kelola informasi dan keamanan akun Anda.</p>
+        </div>
+      </div>
+      <nav aria-label="Bagian pengaturan akun" className="account-settings-tabs">
+        <button className={section === 'profile' ? 'active' : ''} onClick={() => onSectionChange('profile')} type="button">
+          <UserRound size={16} /> Profil
+        </button>
+        <button className={section === 'security' ? 'active' : ''} onClick={() => onSectionChange('security')} type="button">
+          <KeyRound size={16} /> Keamanan &amp; kata sandi
+        </button>
+      </nav>
+      {isLoading ? <p className="admin-loading">Memuat profil...</p> : (
+        <>
+          {section === 'profile' && (
+            <>
+            <section className="account-settings-photo">
+              <AccountAvatar alt="Foto profil" avatarUrl={avatarUrl} className="account-settings-avatar" iconSize={40} />
+              <div>
+                <strong>Foto profil</strong>
+                <span>JPG, PNG, atau WebP · maksimal 2 MB</span>
+                <input
+                  accept="image/jpeg,image/png,image/webp"
+                  aria-label="Pilih foto profil"
+                  onChange={(event) => {
+                    setError('')
+                    setSelectedPhoto(event.target.files?.[0] || null)
+                  }}
+                  ref={photoInput}
+                  type="file"
+                />
+                <div className="account-settings-actions">
+                  <button className="admin-small-button" disabled={!selectedPhoto || isSavingPhoto} onClick={() => void savePhoto()} type="button">
+                    <Camera size={15} /> {isSavingPhoto ? 'Menyimpan...' : 'Pasang foto'}
+                  </button>
+                  {avatarUrl && <button className="detail-button" disabled={isSavingPhoto} onClick={() => void removePhoto()} type="button">Hapus foto</button>}
+                </div>
+              </div>
+            </section>
+            <form className="account-settings-form" onSubmit={(event) => void saveProfile(event)}>
+              <label>Nama
+                <input autoComplete="name" maxLength={200} onChange={(event) => setName(event.target.value)} required value={name} />
+              </label>
+              <label>Email akun
+                <input autoComplete="email" readOnly value={email} />
+              </label>
+              <button className="apply-button" disabled={isSavingProfile} type="submit">
+                {isSavingProfile ? 'Menyimpan...' : 'Simpan profil'}
+              </button>
+            </form>
+            </>
+          )}
+          {section === 'security' && (
+            <form className="account-settings-form" onSubmit={(event) => void savePassword(event)}>
+              <h3><KeyRound size={17} /> Ganti kata sandi</h3>
+              <label>Kata sandi saat ini
+                <input autoComplete="current-password" maxLength={128} onChange={(event) => setCurrentPassword(event.target.value)} required type="password" value={currentPassword} />
+              </label>
+              <label>Kata sandi baru
+                <input autoComplete="new-password" maxLength={128} minLength={session.role === 'admin' ? 12 : 8} onChange={(event) => setNewPassword(event.target.value)} required type="password" value={newPassword} />
+              </label>
+              <label>Konfirmasi kata sandi baru
+                <input autoComplete="new-password" maxLength={128} onChange={(event) => setConfirmPassword(event.target.value)} required type="password" value={confirmPassword} />
+              </label>
+              <button className="apply-button" disabled={isSavingPassword} type="submit">
+                {isSavingPassword ? 'Menyimpan...' : 'Ganti kata sandi'}
+              </button>
+            </form>
+          )}
+        </>
+      )}
+      {error && <p className="login-error" role="alert">{error}</p>}
+      {notice && <p className="account-settings-notice" role="status">{notice}</p>}
+    </section>
+  )
+}
+
+function PasswordResetPage({ token }) {
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setError('')
+    if (newPassword !== confirmPassword) {
+      setError('Konfirmasi kata sandi tidak sama.')
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      const response = await apiRequest('/password/reset', {
+        method: 'POST',
+        body: JSON.stringify({ token, new_password: newPassword }),
+      })
+      setNotice(response.message)
+      window.history.replaceState(null, '', '/')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <main className="app-shell">
+      <header className="site-header"><div className="header-inner"><Brand /></div></header>
+      <div className="page-content password-reset-page">
+        <section className="detail-modal password-reset-card">
+          <h1>Atur ulang kata sandi</h1>
+          {notice ? (
+            <>
+              <p className="account-settings-notice" role="status">{notice}</p>
+              <button className="apply-button" onClick={() => window.location.assign('/')} type="button">Kembali ke halaman utama</button>
+            </>
+          ) : (
+            <form className="account-settings-form" onSubmit={(event) => void handleSubmit(event)}>
+              <p>Tautan reset berlaku selama satu jam. Gunakan kata sandi baru minimal 8 karakter (12 untuk admin).</p>
+              <label>Kata sandi baru
+                <input autoComplete="new-password" maxLength={128} minLength={8} onChange={(event) => setNewPassword(event.target.value)} required type="password" value={newPassword} />
+              </label>
+              <label>Konfirmasi kata sandi baru
+                <input autoComplete="new-password" maxLength={128} onChange={(event) => setConfirmPassword(event.target.value)} required type="password" value={confirmPassword} />
+              </label>
+              {error && <p className="login-error" role="alert">{error}</p>}
+              <button className="apply-button" disabled={isSubmitting} type="submit">
+                {isSubmitting ? 'Menyimpan...' : 'Atur kata sandi'}
+              </button>
+            </form>
+          )}
+        </section>
+      </div>
+    </main>
+  )
+}
+
+function useAccountAvatar(sessionToken) {
+  const [avatarUrl, setAvatarUrl] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    if (!sessionToken) return undefined
+    let active = true
+    let objectUrl = ''
+    apiDownload('/account/avatar', { token: sessionToken })
+      .then((blob) => {
+        if (!active) return
+        objectUrl = URL.createObjectURL(blob)
+        setAvatarUrl(objectUrl)
+      })
+      .catch(() => {
+        if (active) setAvatarUrl('')
+      })
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [sessionToken, refreshKey])
+
+  return [avatarUrl, () => setRefreshKey((current) => current + 1)]
 }
 
 function JobDetail({ job, onClose, onApply, isApplying, hasApplied }) {
@@ -416,24 +797,19 @@ function ApplicationForm({ job, session, divisions, isSubmitting, onClose, onSub
 }
 
 function DatasetMonitor({ sessionToken }) {
-  const [activeDataset, setActiveDataset] = useState('positions')
+  const [search, setSearch] = useState('')
+  const [positionStatusFilter, setPositionStatusFilter] = useState('all')
+  const [positionDivisionFilter, setPositionDivisionFilter] = useState('all')
   const [positions, setPositions] = useState([])
-  const [applicationRows, setApplicationRows] = useState([])
-  const [totalApplications, setTotalApplications] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     let active = true
-    Promise.all([
-      apiRequest('/monitoring/positions', { token: sessionToken }),
-      apiRequest('/monitoring/applications', { token: sessionToken }),
-    ])
-      .then(([positionResponse, applicationResponse]) => {
+    apiRequest('/monitoring/positions', { token: sessionToken })
+      .then((response) => {
         if (!active) return
-        setPositions(positionResponse.data)
-        setApplicationRows(applicationResponse.data)
-        setTotalApplications(applicationResponse.total_applications)
+        setPositions(response.data)
       })
       .catch((requestError) => {
         if (active) setError(requestError.message)
@@ -444,100 +820,97 @@ function DatasetMonitor({ sessionToken }) {
     return () => { active = false }
   }, [sessionToken])
 
+  const divisions = [...new Set(positions.map((position) => position.division).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, 'id'))
+  const filteredPositions = positions.filter((position) => {
+    const query = search.trim().toLocaleLowerCase('id')
+    const matchesSearch = `${position.id} ${position.title} ${position.division} ${position.department} ${position.unit}`
+      .toLocaleLowerCase('id')
+      .includes(query)
+    const matchesStatus = positionStatusFilter === 'all'
+      || (position.is_open ? 'open' : 'closed') === positionStatusFilter
+    const matchesDivision = positionDivisionFilter === 'all' || position.division === positionDivisionFilter
+    return matchesSearch && matchesStatus && matchesDivision
+  })
+
   return (
     <section className="dataset-monitor-page">
       <header className="dataset-overview">
         <div className="dataset-overview-copy">
-          <h1><Database size={25} /> Monitoring Relasi &amp; Dataset Terpetakan</h1>
-          <p>Data master hirarki posisi rekrutmen dan rekap jumlah lamaran.</p>
-        </div>
-        <div aria-label="Pilih dataset monitoring" className="dataset-tabs" role="tablist">
-          <button aria-selected={activeDataset === 'positions'} className={activeDataset === 'positions' ? 'dataset-tab active' : 'dataset-tab'} onClick={() => setActiveDataset('positions')} role="tab">
-            Dataset Posisi (master_posisi)
-          </button>
-          <button aria-selected={activeDataset === 'applications'} className={activeDataset === 'applications' ? 'dataset-tab active' : 'dataset-tab'} onClick={() => setActiveDataset('applications')} role="tab">
-            Dataset Apply (lamaran) <span>{totalApplications}</span>
-          </button>
+          <h1><Database size={25} /> Master Posisi</h1>
+          <p>Data posisi, struktur organisasi, kuota, dan status lowongan.</p>
         </div>
       </header>
 
       <section className="dataset-table-panel">
         <div className="dataset-table-heading">
-          <span className="dataset-table-title"><i /> {activeDataset === 'positions' ? 'MASTER STRUKTUR POSISI & KUOTA' : 'REKAP DATA APPLY PER POSISI'}</span>
-          <span>{activeDataset === 'positions'
-            ? <>Total Mapping: <strong>{positions.length}</strong> Posisi</>
-            : <>Total Lamaran: <strong>{totalApplications}</strong></>}</span>
+          <span className="dataset-table-title"><i /> MASTER STRUKTUR POSISI &amp; KUOTA</span>
+          <span>Total Mapping: <strong>{positions.length}</strong> Posisi</span>
         </div>
         {isLoading ? (
           <div className="dataset-table-state">Memuat data monitoring...</div>
         ) : error ? (
           <div className="dataset-table-state error" role="alert">{error}</div>
-        ) : activeDataset === 'positions' ? (
-          <div className="dataset-table-scroll">
-            <table className="admin-table monitoring-table">
-              <thead>
-                <tr>
-                  <th>KODE POSISI</th>
-                  <th>NAMA POSISI</th>
-                  <th>DIVISI TUJUAN</th>
-                  <th>DEPARTEMEN</th>
-                  <th>BIRO / BENGKEL</th>
-                  <th>KUOTA</th>
-                  <th>STATUS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((position) => (
-                  <tr key={position.id}>
-                    <td className="position-code">{position.id}</td>
-                    <td className="position-name">{position.title}</td>
-                    <td>{position.division}</td>
-                    <td>{position.department}</td>
-                    <td>{position.unit}</td>
-                    <td className="quota-cell">{position.quota}</td>
-                    <td><span className={position.is_open ? 'status-pill open' : 'status-pill closed'}>{position.is_open ? 'OPEN' : 'CLOSED'}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         ) : (
-          <div className="dataset-table-scroll">
-            <table className="admin-table monitoring-table">
-              <thead>
-                <tr>
-                  <th>KODE POSISI</th>
-                  <th>NAMA POSISI</th>
-                  <th>DIVISI</th>
-                  <th>DEPARTEMEN</th>
-                  <th>BIRO / BENGKEL</th>
-                  <th>JUMLAH LAMARAN</th>
-                  <th>STATUS POSISI</th>
-                </tr>
-              </thead>
-              <tbody>
-                {applicationRows.map((row) => (
-                  <tr key={row.job_id}>
-                    <td className="position-code">{row.job_id}</td>
-                    <td className="position-name">{row.job_title}</td>
-                    <td>{row.division}</td>
-                    <td>{row.department}</td>
-                    <td>{row.unit}</td>
-                    <td className="quota-cell">{row.application_count}</td>
-                    <td><span className={row.is_open ? 'status-pill open' : 'status-pill closed'}>{row.is_open ? 'OPEN' : 'CLOSED'}</span></td>
+          <>
+            <AdminTableToolbar
+              filters={[
+                {
+                  label: 'Status posisi',
+                  value: positionStatusFilter,
+                  onChange: setPositionStatusFilter,
+                  options: [{ value: 'open', label: 'Dibuka' }, { value: 'closed', label: 'Ditutup' }],
+                },
+                {
+                  label: 'Divisi',
+                  value: positionDivisionFilter,
+                  onChange: setPositionDivisionFilter,
+                  options: divisions.map((division) => ({ value: division, label: division })),
+                },
+              ]}
+              onSearchChange={setSearch}
+              resultCount={filteredPositions.length}
+              search={search}
+              searchPlaceholder="Cari kode, posisi, divisi, departemen..."
+              totalCount={positions.length}
+            />
+            <div className="dataset-table-scroll">
+              <table className="admin-table monitoring-table">
+                <thead>
+                  <tr>
+                    <th>KODE POSISI</th>
+                    <th>NAMA POSISI</th>
+                    <th>DIVISI TUJUAN</th>
+                    <th>DEPARTEMEN</th>
+                    <th>BIRO / BENGKEL</th>
+                    <th>KUOTA</th>
+                    <th>STATUS</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="privacy-note">Ditampilkan sebagai rekap agregat; nama dan email pelamar tidak ditampilkan.</p>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredPositions.map((position) => (
+                    <tr key={position.id}>
+                      <td className="position-code">{position.id}</td>
+                      <td className="position-name">{position.title}</td>
+                      <td>{position.division}</td>
+                      <td>{position.department}</td>
+                      <td>{position.unit}</td>
+                      <td className="quota-cell">{position.quota}</td>
+                      <td><span className={position.is_open ? 'status-pill open' : 'status-pill closed'}>{position.is_open ? 'OPEN' : 'CLOSED'}</span></td>
+                    </tr>
+                  ))}
+                  {!filteredPositions.length && <tr><td className="admin-table-empty" colSpan={7}>Tidak ada posisi yang cocok.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
     </section>
   )
 }
 
-function JobCatalog({ session, onLogin, onLogout }) {
+function JobCatalog({ session, onLogin, onLogout, onProfileUpdated }) {
   const [activeTab, setActiveTab] = useState('jobs')
   const [jobs, setJobs] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -548,6 +921,7 @@ function JobCatalog({ session, onLogin, onLogout }) {
   const [division, setDivision] = useState('')
   const [department, setDepartment] = useState('')
   const [unit, setUnit] = useState('')
+  const [jobPage, setJobPage] = useState(1)
   const [selectedJob, setSelectedJob] = useState(null)
   const [authMode, setAuthMode] = useState(null)
   const [applicationFormOpen, setApplicationFormOpen] = useState(false)
@@ -557,9 +931,19 @@ function JobCatalog({ session, onLogin, onLogout }) {
   const [userApplications, setUserApplications] = useState([])
   const [applicationsLoadedFor, setApplicationsLoadedFor] = useState(null)
   const [applicationsErrorFor, setApplicationsErrorFor] = useState(null)
+  const [notifications, setNotifications] = useState([])
+  const [notificationsLoadedFor, setNotificationsLoadedFor] = useState(null)
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
+  const [notificationsError, setNotificationsError] = useState('')
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [markingNotificationId, setMarkingNotificationId] = useState(null)
+  const [accountSection, setAccountSection] = useState(null)
   const sessionToken = session?.token
+  const [avatarUrl, refreshAvatar] = useAccountAvatar(sessionToken)
   const currentUserApplications = applicationsLoadedFor === sessionToken ? userApplications : []
   const isApplicationsLoading = Boolean(sessionToken && applicationsLoadedFor !== sessionToken)
+  const currentUserNotifications = notificationsLoadedFor === sessionToken ? notifications : []
+  const currentUnreadNotificationCount = notificationsLoadedFor === sessionToken ? unreadNotificationCount : 0
 
   useEffect(() => {
     let active = true
@@ -579,22 +963,55 @@ function JobCatalog({ session, onLogin, onLogout }) {
   useEffect(() => {
     let active = true
     if (!sessionToken) return () => { active = false }
-    apiRequest('/applications', { token: sessionToken })
-      .then((response) => {
+    async function loadApplications() {
+      try {
+        const response = await apiRequest('/applications', { token: sessionToken })
         if (!active) return
         setUserApplications(response.data)
         setAppliedJobIds(new Set(response.data.map((application) => application.job_id)))
         setApplicationsLoadedFor(sessionToken)
         setApplicationsErrorFor(null)
         setApplicationsError('')
-      })
-      .catch((requestError) => {
+      } catch (requestError) {
         if (!active) return
         setApplicationsError(requestError.message)
         setApplicationsErrorFor(sessionToken)
         setApplicationsLoadedFor(sessionToken)
-      })
-    return () => { active = false }
+      }
+    }
+    void loadApplications()
+    const intervalId = window.setInterval(() => void loadApplications(), 15000)
+    window.addEventListener('focus', loadApplications)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', loadApplications)
+    }
+  }, [sessionToken])
+
+  useEffect(() => {
+    let active = true
+    if (!sessionToken) return () => { active = false }
+    async function loadNotifications() {
+      try {
+        const response = await apiRequest('/notifications', { token: sessionToken })
+        if (!active) return
+        setNotifications(response.data)
+        setUnreadNotificationCount(response.unread_count)
+        setNotificationsLoadedFor(sessionToken)
+        setNotificationsError('')
+      } catch (requestError) {
+        if (active) setNotificationsError(requestError.message)
+      }
+    }
+    void loadNotifications()
+    const intervalId = window.setInterval(() => void loadNotifications(), 15000)
+    window.addEventListener('focus', loadNotifications)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', loadNotifications)
+    }
   }, [sessionToken])
 
   const divisions = useMemo(() => [...new Set(jobs.map((job) => job.division))], [jobs])
@@ -613,11 +1030,18 @@ function JobCatalog({ session, onLogin, onLogout }) {
       && (!unit || job.unit === unit)
     ))
   }, [jobs, division, department, unit])
+  const jobPageCount = Math.ceil(filteredJobs.length / PUBLIC_JOBS_PER_PAGE)
+  const currentJobPage = Math.min(jobPage, Math.max(1, jobPageCount))
+  const visibleJobs = filteredJobs.slice(
+    (currentJobPage - 1) * PUBLIC_JOBS_PER_PAGE,
+    currentJobPage * PUBLIC_JOBS_PER_PAGE,
+  )
 
   function resetFilters() {
     setDivision('')
     setDepartment('')
     setUnit('')
+    setJobPage(1)
   }
 
   async function submitApplication(job, token, body) {
@@ -680,6 +1104,29 @@ function JobCatalog({ session, onLogin, onLogout }) {
     setPendingJob(null)
   }
 
+  async function openApplicantNotification(notification) {
+    setActiveTab('applications')
+    setIsNotificationsOpen(false)
+    if (notification.read_at) return
+    setMarkingNotificationId(notification.id)
+    setNotificationsError('')
+    try {
+      await apiRequest(`/notifications/${notification.id}/read`, {
+        method: 'PATCH',
+        token: sessionToken,
+      })
+      const readAt = new Date().toISOString()
+      setNotifications((current) => current.map((item) => (
+        item.id === notification.id ? { ...item, read_at: readAt } : item
+      )))
+      setUnreadNotificationCount((current) => Math.max(0, current - 1))
+    } catch (requestError) {
+      setNotificationsError(requestError.message)
+    } finally {
+      setMarkingNotificationId(null)
+    }
+  }
+
   async function handleLogout() {
     setLogoutError('')
     try {
@@ -689,6 +1136,11 @@ function JobCatalog({ session, onLogin, onLogout }) {
       setApplicationsLoadedFor(null)
       setApplicationsErrorFor(null)
       setApplicationsError('')
+      setNotifications([])
+      setNotificationsLoadedFor(null)
+      setUnreadNotificationCount(0)
+      setNotificationsError('')
+      setIsNotificationsOpen(false)
       setActiveTab('jobs')
     } catch (requestError) {
       setLogoutError(requestError.message)
@@ -703,7 +1155,75 @@ function JobCatalog({ session, onLogin, onLogout }) {
           <div className="header-account">
             {session ? (
               <div className="signed-in-user">
+                <AccountAvatar avatarUrl={avatarUrl} />
                 <span>{session.applicant.name} <strong>{session.applicant.email}</strong></span>
+                {!accountSection && activeTab === 'jobs' && (
+                  <button
+                    className="header-applications-button"
+                    onClick={() => setActiveTab('applications')}
+                    type="button"
+                  >
+                    <FileText size={16} /> Lamaran Saya <span>{currentUserApplications.length}</span>
+                  </button>
+                )}
+                <div className="applicant-notification-menu">
+                  <button
+                    aria-expanded={isNotificationsOpen}
+                    aria-haspopup="dialog"
+                    aria-label={`Notifikasi, ${currentUnreadNotificationCount} belum dibaca`}
+                    className="applicant-notification-button"
+                    onClick={() => setIsNotificationsOpen((current) => !current)}
+                    title="Notifikasi"
+                    type="button"
+                  >
+                    <Bell size={18} />
+                    {currentUnreadNotificationCount > 0 && (
+                      <span className="applicant-notification-count">
+                        {currentUnreadNotificationCount > 99 ? '99+' : currentUnreadNotificationCount}
+                      </span>
+                    )}
+                  </button>
+                  {isNotificationsOpen && (
+                    <section aria-label="Notifikasi status lamaran" className="applicant-notification-panel" role="dialog">
+                      <header>
+                        <strong>Notifikasi</strong>
+                        <button aria-label="Tutup notifikasi" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
+                      </header>
+                      {notificationsError ? (
+                        <p className="applicant-notification-error" role="alert">{notificationsError}</p>
+                      ) : notificationsLoadedFor !== sessionToken ? (
+                        <p className="applicant-notification-empty">Memuat notifikasi...</p>
+                      ) : currentUserNotifications.length ? (
+                        <ul>
+                          {currentUserNotifications.map((notification) => {
+                            const previousStatus = applicationStatusOptions.find((status) => status.value === notification.previous_status)?.label || notification.previous_status
+                            const newStatus = applicationStatusOptions.find((status) => status.value === notification.new_status)?.label || notification.new_status
+                            return (
+                              <li className={notification.read_at ? '' : 'unread'} key={notification.id}>
+                                <span className="applicant-notification-status">{newStatus}</span>
+                                <strong>{notification.job_title}</strong>
+                                <p>Status berubah dari {previousStatus} menjadi {newStatus}.</p>
+                                {notification.reason && <p>Alasan: {notification.reason}</p>}
+                                <time dateTime={notification.created_at}>{new Date(notification.created_at).toLocaleString('id-ID')}</time>
+                                <button
+                                  className="applicant-notification-open"
+                                  disabled={markingNotificationId === notification.id}
+                                  onClick={() => void openApplicantNotification(notification)}
+                                  type="button"
+                                >
+                                  {markingNotificationId === notification.id ? 'Membuka...' : 'Lihat lamaran'}
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="applicant-notification-empty">Belum ada notifikasi status lamaran.</p>
+                      )}
+                    </section>
+                  )}
+                </div>
+                <AccountSettingsMenu onSelect={setAccountSection} />
                 <button aria-label="Keluar dari portal" onClick={handleLogout} title="Keluar"><LogOut size={17} /></button>
               </div>
             ) : (
@@ -717,7 +1237,17 @@ function JobCatalog({ session, onLogin, onLogout }) {
       </header>
 
       <div className="page-content">
-        {activeTab === 'jobs' ? (
+        {accountSection ? (
+          <AccountSettingsPage
+            avatarUrl={avatarUrl}
+            onAvatarChanged={refreshAvatar}
+            onBack={() => setAccountSection(null)}
+            onProfileUpdated={onProfileUpdated}
+            onSectionChange={setAccountSection}
+            section={accountSection}
+            session={{ role: session.role, token: session.token, user: session.applicant }}
+          />
+        ) : activeTab === 'jobs' ? (
           <>
             <section className="hero-panel">
               <div className="hero-copy">
@@ -738,19 +1268,19 @@ function JobCatalog({ session, onLogin, onLogout }) {
               </div>
               <div className="filter-grid">
                 <label>Divisi Tujuan
-                  <select onChange={(event) => { setDivision(event.target.value); setDepartment(''); setUnit('') }} value={division}>
+                  <select onChange={(event) => { setDivision(event.target.value); setDepartment(''); setUnit(''); setJobPage(1) }} value={division}>
                     <option value="">Semua Divisi</option>
                     {divisions.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <label>Departemen Tujuan
-                  <select onChange={(event) => { setDepartment(event.target.value); setUnit('') }} value={department}>
+                  <select onChange={(event) => { setDepartment(event.target.value); setUnit(''); setJobPage(1) }} value={department}>
                     <option value="">Semua Departemen</option>
                     {departments.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <label>Biro / Bengkel
-                  <select onChange={(event) => setUnit(event.target.value)} value={unit}>
+                  <select onChange={(event) => { setUnit(event.target.value); setJobPage(1) }} value={unit}>
                     <option value="">Semua Biro &amp; Bengkel</option>
                     {units.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
@@ -760,7 +1290,6 @@ function JobCatalog({ session, onLogin, onLogout }) {
 
             <div className="results-bar">
               <span>Menampilkan <strong>{filteredJobs.length}</strong> lowongan pekerjaan aktif</span>
-              <span className="open-note"><i /> Lowongan dapat dilihat tanpa login</span>
             </div>
             {logoutError && <p className="login-error" role="alert">{logoutError}</p>}
             {applicationsError && <p className="login-error" role="alert">{applicationsError}</p>}
@@ -770,8 +1299,8 @@ function JobCatalog({ session, onLogin, onLogout }) {
             ) : jobsError ? (
               <section className="empty-state"><h2>Lowongan belum dapat dimuat</h2><p role="alert">{jobsError}</p></section>
             ) : filteredJobs.length ? (
-              <section className="job-grid" aria-label="Daftar lowongan aktif">
-                {filteredJobs.map((job) => (
+              <section className="job-grid public-job-grid" aria-label="Daftar lowongan aktif">
+                {visibleJobs.map((job) => (
                   <JobCard
                     hasApplied={appliedJobIds.has(job.id)}
                     isApplying={applyingJobId === job.id}
@@ -785,45 +1314,94 @@ function JobCatalog({ session, onLogin, onLogout }) {
             ) : (
               <section className="empty-state"><Search size={24} /><h2>Lowongan tidak ditemukan</h2><p>Coba pilih divisi, departemen, atau biro / bengkel lain.</p><button className="reset-button" onClick={resetFilters}>Reset Filter</button></section>
             )}
+            {jobPageCount > 1 && (
+              <nav aria-label="Halaman daftar lowongan" className="job-pagination">
+                <button
+                  aria-label="Halaman sebelumnya"
+                  className="job-pagination-control"
+                  disabled={currentJobPage === 1}
+                  onClick={() => setJobPage(currentJobPage - 1)}
+                  type="button"
+                >
+                  Sebelumnya
+                </button>
+                {Array.from({ length: jobPageCount }, (_, index) => index + 1).map((page) => (
+                  <button
+                    aria-current={currentJobPage === page ? 'page' : undefined}
+                    aria-label={`Halaman ${page}`}
+                    className={`job-pagination-page${currentJobPage === page ? ' active' : ''}`}
+                    key={page}
+                    onClick={() => setJobPage(page)}
+                    type="button"
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  aria-label="Halaman berikutnya"
+                  className="job-pagination-control"
+                  disabled={currentJobPage === jobPageCount}
+                  onClick={() => setJobPage(currentJobPage + 1)}
+                  type="button"
+                >
+                  Berikutnya
+                </button>
+              </nav>
+            )}
           </>
         ) : activeTab === 'applications' && session ? (
-          <section aria-labelledby="my-applications-title">
-            <section className="hero-panel">
-              <div className="hero-copy">
-                <span className="hero-badge"><FileText size={14} /> Perkembangan proses</span>
+          <section aria-labelledby="my-applications-title" className="applications-page">
+            <button className="application-back-button" onClick={() => setActiveTab('jobs')} type="button">Kembali ke lowongan</button>
+            <div className="applications-page-heading">
+              <div className="applications-page-intro">
+                <span className="section-kicker">PORTAL PELAMAR</span>
                 <h1 id="my-applications-title">Lamaran Saya</h1>
-                <p>Pantau status setiap lamaran yang Anda kirim. Tim Human Capital akan memperbarui status saat proses seleksi berjalan.</p>
+                <p>Pantau status dan perkembangan lamaran Anda.</p>
               </div>
-              <div className="hero-stats">
-                <div><strong>{currentUserApplications.length}</strong><span>Total lamaran</span></div>
-                <div><strong>{currentUserApplications.filter((application) => application.status === 'screening' || application.status === 'interview').length}</strong><span>Dalam proses</span></div>
-                <div><strong>{currentUserApplications.filter((application) => application.status === 'accepted').length}</strong><span>Diterima</span></div>
+              <div aria-label="Ringkasan lamaran" className="applications-summary-grid">
+                <article><span>Total lamaran</span><strong>{currentUserApplications.length}</strong></article>
+                <article>
+                  <span>Dalam proses</span>
+                  <strong>{currentUserApplications.filter((application) => ['submitted', 'screening', 'interview'].includes(application.status)).length}</strong>
+                </article>
+                <article>
+                  <span>Selesai</span>
+                  <strong>{currentUserApplications.filter((application) => ['accepted', 'rejected'].includes(application.status)).length}</strong>
+                </article>
               </div>
-            </section>
+            </div>
             {applicationsErrorFor === sessionToken && applicationsError ? (
-              <section className="empty-state"><h2>Riwayat belum dapat dimuat</h2><p role="alert">{applicationsError}</p></section>
+              <section className="applications-page-state"><h2>Riwayat belum dapat dimuat</h2><p role="alert">{applicationsError}</p></section>
             ) : isApplicationsLoading ? (
-              <section className="empty-state"><h2>Memuat riwayat lamaran...</h2></section>
+              <section className="applications-page-state"><h2>Memuat riwayat lamaran...</h2></section>
             ) : currentUserApplications.length ? (
-              <section aria-label="Riwayat lamaran" className="job-grid">
+              <section aria-label="Riwayat lamaran" className="applications-card-grid">
                 {currentUserApplications.map((application) => {
                   const job = jobs.find((item) => item.id === application.job_id)
                   const status = applicationStatusOptions.find((item) => item.value === application.status)
+                  const submittedAt = new Date(application.created_at)
                   return (
-                    <article className="job-card" key={application.job_id}>
-                      <div className="card-top">
-                        <span className="division-tag">{status?.label || application.status}</span>
-                        <span className="job-id">{application.job_id}</span>
+                    <article className="application-card" key={application.id}>
+                      <div className="application-card-top">
+                        <span className={`status-pill status-${application.status}`}>{status?.label || application.status}</span>
+                        <time dateTime={application.created_at}>{submittedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</time>
                       </div>
                       <h2>{job?.title || 'Posisi tidak lagi tersedia'}</h2>
-                      <p className="job-summary">{applicationStatusDescriptions[application.status] || 'Status lamaran sedang diperbarui.'}</p>
-                      {job && <div className="job-organization"><span>{job.division}</span><span>{job.department}</span></div>}
+                      {job ? (
+                        <div className="application-card-organization">
+                          <span><Building2 size={15} />{job.division}</span>
+                          <span><Users size={15} />{job.department}</span>
+                          <span><Wrench size={15} />{job.unit}</span>
+                        </div>
+                      ) : <p className="application-card-unavailable">Detail posisi sudah tidak tersedia.</p>}
+                      <p className="application-card-summary">{applicationStatusDescriptions[application.status] || 'Status lamaran sedang diperbarui.'}</p>
+                      <footer><span>ID lamaran</span><code>{application.id}</code></footer>
                     </article>
                   )
                 })}
               </section>
             ) : (
-              <section className="empty-state">
+              <section className="applications-page-state">
                 <FileText size={24} />
                 <h2>Belum ada lamaran</h2>
                 <p>Temukan posisi yang sesuai dengan pengalaman Anda, lalu kirim lamaran untuk mulai mengikuti proses seleksi.</p>
@@ -831,19 +1409,6 @@ function JobCatalog({ session, onLogin, onLogout }) {
             )}
           </section>
         ) : null}
-        {session && (
-          <div className="page-section-navigation">
-            {activeTab === 'jobs' ? (
-              <button className="application-nav-button" onClick={() => setActiveTab('applications')}>
-                <FileText size={17} /> Lamaran Saya <span>{currentUserApplications.length}</span>
-              </button>
-            ) : (
-              <button className="application-nav-button" onClick={() => setActiveTab('jobs')}>
-                Kembali ke lowongan aktif
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       <footer className="site-footer">
@@ -909,6 +1474,34 @@ function AdminToast({ message, onClose }) {
   )
 }
 
+function AdminTableToolbar({ search, onSearchChange, searchPlaceholder, filters = [], resultCount, totalCount }) {
+  return (
+    <div className="admin-table-toolbar">
+      <label className="admin-table-search">
+        <Search aria-hidden="true" size={16} />
+        <input
+          aria-label={searchPlaceholder}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={searchPlaceholder}
+          value={search}
+        />
+      </label>
+      {filters.map((filter) => (
+        <label className="admin-table-filter" key={filter.label}>
+          <span>{filter.label}</span>
+          <select onChange={(event) => filter.onChange(event.target.value)} value={filter.value}>
+            <option value="all">{filter.allLabel || 'Semua'}</option>
+            {filter.options.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+      ))}
+      <span className="admin-table-count">Menampilkan <strong>{resultCount}</strong> dari {totalCount}</span>
+    </div>
+  )
+}
+
 function ConfirmDialog({ title, message, error, isBusy, onCancel, onConfirm }) {
   return (
     <div className="modal-backdrop admin-confirm-backdrop" onClick={() => { if (!isBusy) onCancel() }} role="presentation">
@@ -929,6 +1522,26 @@ function ConfirmDialog({ title, message, error, isBusy, onCancel, onConfirm }) {
             {isBusy ? 'Menghapus...' : 'Delete'}
           </button>
         </div>
+      </section>
+    </div>
+  )
+}
+
+function AdminFormDialog({ title, onClose, children, className = '' }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="presentation">
+      <section
+        aria-labelledby="admin-form-dialog-title"
+        aria-modal="true"
+        className={`detail-modal admin-editor-modal ${className}`}
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="modal-heading">
+          <h2 id="admin-form-dialog-title">{title}</h2>
+          <button aria-label="Tutup form" className="icon-button" onClick={onClose} type="button"><X size={20} /></button>
+        </div>
+        {children}
       </section>
     </div>
   )
@@ -1087,10 +1700,13 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
   const parents = definition.parentCollection ? organization[definition.parentCollection] : []
   const [name, setName] = useState('')
   const [parentId, setParentId] = useState('')
+  const [search, setSearch] = useState('')
+  const [parentFilter, setParentFilter] = useState('all')
   const [editingId, setEditingId] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -1098,6 +1714,7 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
     setName('')
     setParentId('')
     setEditingId(null)
+    setIsCreateModalOpen(false)
   }
 
   function getParentName(item) {
@@ -1111,6 +1728,15 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
     }
     return '—'
   }
+
+  const filteredItems = items.filter((item) => {
+    const query = search.trim().toLocaleLowerCase('id')
+    const matchesSearch = `${item.name} ${getParentName(item)}`.toLocaleLowerCase('id').includes(query)
+    const matchesParent = !definition.parentField
+      || parentFilter === 'all'
+      || String(item[definition.parentField]) === parentFilter
+    return matchesSearch && matchesParent
+  })
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -1155,6 +1781,7 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
   }
 
   function editItem(item) {
+    setIsCreateModalOpen(false)
     setEditingId(item.id)
     setName(item.name)
     setParentId('')
@@ -1162,15 +1789,15 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
     setNotice('')
   }
 
-  return (
-    <section className="admin-organization-view">
-      <div className="admin-table-heading">
-        <div>
-          <h2>Kelola {definition.label.toLocaleLowerCase('id')}</h2>
-          <p>{items.length} {definition.label.toLocaleLowerCase('id')} terdaftar</p>
-        </div>
-      </div>
-      <form className="organization-form" onSubmit={handleSubmit}>
+  function openCreateForm() {
+    resetForm()
+    setError('')
+    setNotice('')
+    setIsCreateModalOpen(true)
+  }
+
+  const editorForm = (
+    <form className={isCreateModalOpen ? 'organization-form admin-popup-form' : 'organization-form'} onSubmit={handleSubmit}>
         <label>
           {definition.label}
           <input maxLength={160} onChange={(event) => setName(event.target.value)} required value={name} />
@@ -1203,21 +1830,55 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
         {error && <p className="admin-alert error" role="alert">{error}</p>}
         <div className="organization-form-actions">
           {editingId && <button className="detail-button" onClick={resetForm} type="button">Batal edit</button>}
+          {isCreateModalOpen && <button className="detail-button" onClick={resetForm} type="button">Batal</button>}
           <button className="apply-button" disabled={isSaving || (definition.parentField && !editingId && !parents.length)} type="submit">
             {isSaving ? 'Menyimpan...' : editingId ? 'Simpan perubahan' : `Tambah ${definition.label.toLocaleLowerCase('id')}`}
           </button>
         </div>
-      </form>
+  </form>
+  )
+
+  return (
+    <section className="admin-organization-view">
+      <div className="admin-table-heading">
+        <div>
+          <h2>Kelola {definition.label.toLocaleLowerCase('id')}</h2>
+          <p>{items.length} {definition.label.toLocaleLowerCase('id')} terdaftar</p>
+        </div>
+        <button className="apply-button" onClick={openCreateForm} type="button"><Plus size={16} /> Tambah {definition.label.toLocaleLowerCase('id')}</button>
+      </div>
+      {editingId && (
+        <AdminFormDialog
+          className="admin-compact-editor-modal"
+          onClose={resetForm}
+          title={`Edit ${definition.label.toLocaleLowerCase('id')}`}
+        >
+          {editorForm}
+        </AdminFormDialog>
+      )}
+      <AdminTableToolbar
+        filters={definition.parentField ? [{
+          label: definition.parentLabel,
+          value: parentFilter,
+          onChange: setParentFilter,
+          options: parents.map((parent) => ({ value: String(parent.id), label: parent.name })),
+        }] : []}
+        onSearchChange={setSearch}
+        resultCount={filteredItems.length}
+        search={search}
+        searchPlaceholder={`Cari ${definition.label.toLocaleLowerCase('id')}${definition.parentField ? ' atau induknya' : ''}...`}
+        totalCount={items.length}
+      />
       <div className="admin-table-scroll">
         {isLoading ? (
           <div className="admin-loading">Memuat struktur organisasi...</div>
-        ) : items.length ? (
+        ) : filteredItems.length ? (
           <table className="admin-table organization-table">
             <thead>
               <tr><th>NAMA</th>{definition.parentField && <th>{definition.parentLabel.toUpperCase()}</th>}<th>AKSI</th></tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {filteredItems.map((item) => (
                 <tr key={item.id}>
                   <td className="position-name">{item.name}</td>
                   {definition.parentField && <td>{getParentName(item)}</td>}
@@ -1230,10 +1891,15 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
             </tbody>
           </table>
         ) : (
-          <div className="admin-loading">Belum ada {definition.label.toLocaleLowerCase('id')}.</div>
+          <div className="admin-loading">{items.length ? 'Tidak ada data yang cocok.' : `Belum ada ${definition.label.toLocaleLowerCase('id')}.`}</div>
         )}
       </div>
       <AdminToast message={notice} onClose={setNotice} />
+      {isCreateModalOpen && (
+        <AdminFormDialog className="admin-compact-editor-modal" onClose={resetForm} title={`Tambah ${definition.label.toLocaleLowerCase('id')}`}>
+          {editorForm}
+        </AdminFormDialog>
+      )}
       {pendingDelete && (
         <ConfirmDialog
           error={error}
@@ -1248,9 +1914,12 @@ function OrganizationManager({ level, organization, isLoading, sessionToken, onR
   )
 }
 
-function JobTypeManager({ jobTypes, isLoading, sessionToken, onRefresh }) {
+function JobTypeManager({ jobTypes, isLoading, loadError, sessionToken, onRefresh }) {
   const [name, setName] = useState('')
+  const [search, setSearch] = useState('')
+  const [usageFilter, setUsageFilter] = useState('all')
   const [editingId, setEditingId] = useState(null)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -1260,6 +1929,7 @@ function JobTypeManager({ jobTypes, isLoading, sessionToken, onRefresh }) {
   function resetForm() {
     setName('')
     setEditingId(null)
+    setIsCreateModalOpen(false)
   }
 
   async function handleSubmit(event) {
@@ -1301,11 +1971,43 @@ function JobTypeManager({ jobTypes, isLoading, sessionToken, onRefresh }) {
   }
 
   function editItem(jobType) {
+    setIsCreateModalOpen(false)
     setEditingId(jobType.id)
     setName(jobType.name)
     setError('')
     setNotice('')
   }
+
+  function openCreateForm() {
+    resetForm()
+    setError('')
+    setNotice('')
+    setIsCreateModalOpen(true)
+  }
+
+  const filteredJobTypes = jobTypes.filter((jobType) => {
+    const matchesSearch = jobType.name.toLocaleLowerCase('id').includes(search.trim().toLocaleLowerCase('id'))
+    const matchesUsage = usageFilter === 'all'
+      || (jobType.job_count > 0 ? 'used' : 'unused') === usageFilter
+    return matchesSearch && matchesUsage
+  })
+
+  const editorForm = (
+    <form className={isCreateModalOpen ? 'organization-form job-type-form admin-popup-form' : 'organization-form job-type-form'} onSubmit={handleSubmit}>
+      <label>
+        Jenis pekerjaan <em>*</em>
+        <input maxLength={80} onChange={(event) => setName(event.target.value)} required value={name} />
+      </label>
+      {error && !pendingDelete && <p className="admin-alert error" role="alert">{error}</p>}
+      <div className="organization-form-actions">
+        {editingId && <button className="detail-button" onClick={resetForm} type="button">Batal edit</button>}
+        {isCreateModalOpen && <button className="detail-button" onClick={resetForm} type="button">Batal</button>}
+        <button className="apply-button" disabled={isSaving || isLoading} type="submit">
+          {isSaving ? 'Menyimpan...' : editingId ? 'Simpan perubahan' : 'Tambah jenis pekerjaan'}
+        </button>
+      </div>
+    </form>
+  )
 
   return (
     <section className="admin-organization-view">
@@ -1314,29 +2016,40 @@ function JobTypeManager({ jobTypes, isLoading, sessionToken, onRefresh }) {
           <h2>Kelola jenis pekerjaan</h2>
           <p>{jobTypes.length} jenis pekerjaan terdaftar</p>
         </div>
+        <button className="apply-button" disabled={isLoading || Boolean(loadError)} onClick={openCreateForm} type="button"><Plus size={16} /> Tambah jenis pekerjaan</button>
       </div>
-      <form className="organization-form job-type-form" onSubmit={handleSubmit}>
-        <label>
-          Jenis pekerjaan <em>*</em>
-          <input maxLength={80} onChange={(event) => setName(event.target.value)} required value={name} />
-        </label>
-        <p className="organization-help">Daftar ini menjadi pilihan pada formulir tambah dan edit lowongan. Jenis yang sudah dipakai lowongan tidak dapat dihapus.</p>
-        {error && !pendingDelete && <p className="admin-alert error" role="alert">{error}</p>}
-        <div className="organization-form-actions">
-          {editingId && <button className="detail-button" onClick={resetForm} type="button">Batal edit</button>}
-          <button className="apply-button" disabled={isSaving || isLoading} type="submit">
-            {isSaving ? 'Menyimpan...' : editingId ? 'Simpan perubahan' : 'Tambah jenis pekerjaan'}
-          </button>
-        </div>
-      </form>
+      <p className="organization-help job-type-description">Daftar ini menjadi pilihan pada formulir tambah dan edit lowongan. Jenis yang sudah dipakai lowongan tidak dapat dihapus.</p>
+      {editingId && (
+        <AdminFormDialog className="admin-compact-editor-modal" onClose={resetForm} title="Edit jenis pekerjaan">
+          {editorForm}
+        </AdminFormDialog>
+      )}
+      <AdminTableToolbar
+        filters={[{
+          label: 'Penggunaan',
+          value: usageFilter,
+          onChange: setUsageFilter,
+          options: [{ value: 'used', label: 'Sudah digunakan' }, { value: 'unused', label: 'Belum digunakan' }],
+        }]}
+        onSearchChange={setSearch}
+        resultCount={filteredJobTypes.length}
+        search={search}
+        searchPlaceholder="Cari jenis pekerjaan..."
+        totalCount={jobTypes.length}
+      />
       <div className="admin-table-scroll">
         {isLoading ? (
           <div className="admin-loading">Memuat jenis pekerjaan...</div>
-        ) : jobTypes.length ? (
+        ) : loadError ? (
+          <div className="admin-loading account-load-error" role="alert">
+            <p>{loadError}</p>
+            <button className="admin-small-button" onClick={onRefresh} type="button">Coba lagi</button>
+          </div>
+        ) : filteredJobTypes.length ? (
           <table className="admin-table organization-table">
             <thead><tr><th>JENIS PEKERJAAN</th><th>LOWONGAN TERKAIT</th><th>AKSI</th></tr></thead>
             <tbody>
-              {jobTypes.map((jobType) => (
+              {filteredJobTypes.map((jobType) => (
                 <tr key={jobType.id}>
                   <td className="position-name">{jobType.name}</td>
                   <td>{jobType.job_count}</td>
@@ -1357,10 +2070,15 @@ function JobTypeManager({ jobTypes, isLoading, sessionToken, onRefresh }) {
             </tbody>
           </table>
         ) : (
-          <div className="admin-loading">Belum ada jenis pekerjaan.</div>
+          <div className="admin-loading">{jobTypes.length ? 'Tidak ada jenis pekerjaan yang cocok.' : 'Belum ada jenis pekerjaan.'}</div>
         )}
       </div>
       <AdminToast message={notice} onClose={setNotice} />
+      {isCreateModalOpen && (
+        <AdminFormDialog className="admin-compact-editor-modal" onClose={resetForm} title="Tambah jenis pekerjaan">
+          {editorForm}
+        </AdminFormDialog>
+      )}
       {pendingDelete && (
         <ConfirmDialog
           error={error}
@@ -1387,7 +2105,9 @@ function AccountListManager({ accountType, sessionToken, currentAdminId }) {
   const [loadError, setLoadError] = useState('')
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [editingId, setEditingId] = useState(null)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [pendingDelete, setPendingDelete] = useState(null)
@@ -1423,6 +2143,7 @@ function AccountListManager({ accountType, sessionToken, currentAdminId }) {
   function resetForm() {
     setForm({ name: '', email: '', password: '' })
     setEditingId(null)
+    setIsCreateModalOpen(false)
   }
 
   async function submitAccount(event) {
@@ -1451,10 +2172,18 @@ function AccountListManager({ accountType, sessionToken, currentAdminId }) {
   }
 
   function editAccount(account) {
+    setIsCreateModalOpen(false)
     setEditingId(account.id)
     setForm({ name: account.name, email: account.email, password: '' })
     setError('')
     setNotice('')
+  }
+
+  function openCreateForm() {
+    resetForm()
+    setError('')
+    setNotice('')
+    setIsCreateModalOpen(true)
   }
 
   async function setAccountActive(account, isActive) {
@@ -1498,52 +2227,70 @@ function AccountListManager({ accountType, sessionToken, currentAdminId }) {
   }
 
   const filteredAccounts = accounts.filter((account) => (
-    `${account.name} ${account.email}`.toLocaleLowerCase('id').includes(search.toLocaleLowerCase('id'))
+    `${account.name} ${account.email}`.toLocaleLowerCase('id').includes(search.trim().toLocaleLowerCase('id'))
+    && (statusFilter === 'all' || (account.is_active ? 'active' : 'inactive') === statusFilter)
   ))
   const activeCount = accounts.filter((account) => account.is_active).length
+  const accountForm = (
+    <form className="organization-form account-manager-form" onSubmit={submitAccount}>
+      <label>Nama lengkap
+        <input autoComplete="name" maxLength={200} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} />
+      </label>
+      <label>Email
+        <input autoComplete="email" maxLength={254} onChange={(event) => setForm({ ...form, email: event.target.value })} required type="email" value={form.email} />
+      </label>
+      <label>Kata sandi {editingId ? '(opsional untuk reset)' : 'awal'}
+        <input
+          autoComplete="new-password"
+          maxLength={128}
+          minLength={editingId && !form.password ? undefined : minimumPasswordLength}
+          onChange={(event) => setForm({ ...form, password: event.target.value })}
+          placeholder={editingId ? 'Kosongkan jika tidak diubah' : `Minimal ${minimumPasswordLength} karakter`}
+          required={!editingId}
+          type="password"
+          value={form.password}
+        />
+      </label>
+      <p className="organization-help account-form-help">
+        {editingId
+          ? 'Menyimpan perubahan akan mengakhiri semua sesi aktif akun.'
+          : `Gunakan kata sandi awal yang aman dan sampaikan kepada pemilik akun melalui jalur privat. Minimal ${minimumPasswordLength} karakter.`}
+      </p>
+      {error && <p className="admin-alert error" role="alert">{error}</p>}
+      <div className="organization-form-actions">
+        {editingId && <button className="detail-button" onClick={resetForm} type="button">Batal edit</button>}
+        {!editingId && isCreateModalOpen && <button className="detail-button" onClick={resetForm} type="button">Batal</button>}
+        <button className="apply-button" disabled={isSaving} type="submit">
+          {isSaving ? 'Menyimpan...' : editingId ? 'Simpan perubahan' : <><Plus size={16} /> Tambah akun</>}
+        </button>
+      </div>
+    </form>
+  )
 
   return (
     <section className="account-manager">
       <div className="admin-table-heading">
         <div><h2>Monitoring akun {accountKind}</h2><p>{accounts.length} akun terdaftar · {activeCount} aktif</p></div>
-        {isAdminAccount ? <Shield size={22} /> : <Users size={22} />}
+        <button className="apply-button" onClick={openCreateForm} type="button"><Plus size={16} /> Tambah akun {accountKind}</button>
       </div>
-      <form className="organization-form account-manager-form" onSubmit={submitAccount}>
-        <label>Nama lengkap
-          <input autoComplete="name" maxLength={200} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} />
-        </label>
-        <label>Email
-          <input autoComplete="email" maxLength={254} onChange={(event) => setForm({ ...form, email: event.target.value })} required type="email" value={form.email} />
-        </label>
-        <label>Kata sandi {editingId ? '(opsional untuk reset)' : 'awal'}
-          <input
-            autoComplete="new-password"
-            maxLength={128}
-            minLength={editingId && !form.password ? undefined : minimumPasswordLength}
-            onChange={(event) => setForm({ ...form, password: event.target.value })}
-            placeholder={editingId ? 'Kosongkan jika tidak diubah' : `Minimal ${minimumPasswordLength} karakter`}
-            required={!editingId}
-            type="password"
-            value={form.password}
-          />
-        </label>
-        <p className="organization-help account-form-help">
-          {editingId
-            ? 'Menyimpan perubahan akan mengakhiri semua sesi aktif akun.'
-            : `Gunakan kata sandi awal yang aman dan sampaikan kepada pemilik akun melalui jalur privat. Minimal ${minimumPasswordLength} karakter.`}
-        </p>
-        {error && <p className="admin-alert error" role="alert">{error}</p>}
-        <div className="organization-form-actions">
-          {editingId && <button className="detail-button" onClick={resetForm} type="button">Batal edit</button>}
-          <button className="apply-button" disabled={isSaving} type="submit">
-            {isSaving ? 'Menyimpan...' : editingId ? 'Simpan perubahan' : <><Plus size={16} /> Tambah akun</>}
-          </button>
-        </div>
-      </form>
-      <div className="account-list-toolbar">
-        <label><Search size={16} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama atau email" value={search} /></label>
-        <span>{filteredAccounts.length} akun ditampilkan</span>
-      </div>
+      {editingId && (
+        <AdminFormDialog className="admin-account-editor-modal" onClose={resetForm} title={`Edit akun ${accountKind}`}>
+          {accountForm}
+        </AdminFormDialog>
+      )}
+      <AdminTableToolbar
+        filters={[{
+          label: 'Status akun',
+          value: statusFilter,
+          onChange: setStatusFilter,
+          options: [{ value: 'active', label: 'Aktif' }, { value: 'inactive', label: 'Nonaktif' }],
+        }]}
+        onSearchChange={setSearch}
+        resultCount={filteredAccounts.length}
+        search={search}
+        searchPlaceholder="Cari nama atau email..."
+        totalCount={accounts.length}
+      />
       <div className="admin-table-scroll">
         {isLoading ? (
           <div className="admin-loading">Memuat akun {accountKind}...</div>
@@ -1589,7 +2336,7 @@ function AccountListManager({ accountType, sessionToken, currentAdminId }) {
             </tbody>
           </table>
         ) : (
-          <div className="admin-loading">{search ? 'Akun tidak ditemukan.' : `Belum ada akun ${accountKind}.`}</div>
+          <div className="admin-loading">{accounts.length ? 'Tidak ada akun yang cocok.' : `Belum ada akun ${accountKind}.`}</div>
         )}
       </div>
       <p className="admin-table-note">
@@ -1598,6 +2345,11 @@ function AccountListManager({ accountType, sessionToken, currentAdminId }) {
           : 'Akun yang dinonaktifkan tidak dapat masuk, tetapi data lamaran dan dokumen tetap dipertahankan. Reset kata sandi akan mengakhiri sesi aktif pelamar.'}
       </p>
       <AdminToast message={notice} onClose={setNotice} />
+      {isCreateModalOpen && (
+        <AdminFormDialog onClose={resetForm} title={`Tambah akun ${accountKind}`}>
+          {accountForm}
+        </AdminFormDialog>
+      )}
       {pendingDelete && (
         <ConfirmDialog
           error={error}
@@ -1646,6 +2398,7 @@ function AccountManager({ session }) {
 
 function ApplicationReview({ application, onClose, onSave, isSaving, sessionToken }) {
   const [status, setStatus] = useState(application.status)
+  const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [downloadingDocumentId, setDownloadingDocumentId] = useState(null)
 
@@ -1674,8 +2427,12 @@ function ApplicationReview({ application, onClose, onSave, isSaving, sessionToke
 
   async function handleSave() {
     setError('')
+    if (status === 'rejected' && !reason.trim()) {
+      setError('Alasan wajib diisi saat status lamaran menjadi Ditolak.')
+      return
+    }
     try {
-      await onSave(status)
+      await onSave(status, reason.trim())
       onClose()
     } catch (saveError) {
       setError(saveError.message)
@@ -1741,6 +2498,18 @@ function ApplicationReview({ application, onClose, onSave, isSaving, sessionToke
             {applicationStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
+        {status !== application.status && (
+          <label className="application-status-select">Alasan perubahan status{status === 'rejected' ? ' (wajib)' : ' (opsional)'}
+            <textarea
+              maxLength={1000}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Jelaskan alasan atau informasi untuk pelamar"
+              required={status === 'rejected'}
+              rows={3}
+              value={reason}
+            />
+          </label>
+        )}
         {error && <p className="login-error" role="alert">{error}</p>}
         <div className="detail-actions">
           <button className="detail-button" onClick={onClose} type="button">Tutup</button>
@@ -1753,7 +2522,7 @@ function ApplicationReview({ application, onClose, onSave, isSaving, sessionToke
   )
 }
 
-function AdminDashboard({ session, onLogout }) {
+function AdminDashboard({ session, onLogout, onProfileUpdated }) {
   const [activeView, setActiveView] = useState('dashboard')
   const [metrics, setMetrics] = useState(null)
   const [jobs, setJobs] = useState([])
@@ -1761,18 +2530,29 @@ function AdminDashboard({ session, onLogout }) {
   const [organization, setOrganization] = useState({ divisions: [], departments: [], bureaus: [] })
   const [jobTypes, setJobTypes] = useState([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isJobTypesLoading, setIsJobTypesLoading] = useState(true)
+  const [jobTypesError, setJobTypesError] = useState('')
   const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [editorJob, setEditorJob] = useState(null)
   const [isCreatingJob, setIsCreatingJob] = useState(false)
+  const [jobSearch, setJobSearch] = useState('')
+  const [jobStatusFilter, setJobStatusFilter] = useState('all')
+  const [jobTypeFilter, setJobTypeFilter] = useState('all')
+  const [jobDivisionFilter, setJobDivisionFilter] = useState('all')
+  const [applicationSearch, setApplicationSearch] = useState('')
+  const [applicationStatusFilter, setApplicationStatusFilter] = useState('all')
+  const [applicationJobFilter, setApplicationJobFilter] = useState('all')
   const [pendingJobDelete, setPendingJobDelete] = useState(null)
   const [jobDeleteError, setJobDeleteError] = useState('')
   const [isDeletingJob, setIsDeletingJob] = useState(false)
   const [selectedApplication, setSelectedApplication] = useState(null)
   const [logoutError, setLogoutError] = useState('')
+  const [accountSection, setAccountSection] = useState(null)
   const sessionToken = session.token
+  const [avatarUrl, refreshAvatar] = useAccountAvatar(sessionToken)
 
   useEffect(() => {
     let active = true
@@ -1781,15 +2561,13 @@ function AdminDashboard({ session, onLogout }) {
       apiRequest('/admin/jobs', { token: sessionToken }),
       apiRequest('/admin/applications', { token: sessionToken }),
       apiRequest('/admin/organization', { token: sessionToken }),
-      apiRequest('/admin/job-types', { token: sessionToken }),
     ])
-      .then(([dashboard, jobResponse, applicationResponse, organizationResponse, jobTypeResponse]) => {
+      .then(([dashboard, jobResponse, applicationResponse, organizationResponse]) => {
         if (!active) return
         setMetrics(dashboard)
         setJobs(jobResponse.data)
         setApplications(applicationResponse.data)
         setOrganization(organizationResponse)
-        setJobTypes(jobTypeResponse.data)
         setError('')
       })
       .catch((requestError) => {
@@ -1798,11 +2576,29 @@ function AdminDashboard({ session, onLogout }) {
       .finally(() => {
         if (active) setIsLoading(false)
       })
+    apiRequest('/admin/job-types', { token: sessionToken })
+      .then((response) => {
+        if (!Array.isArray(response.data)) {
+          throw new Error('Daftar jenis pekerjaan dari server tidak valid.')
+        }
+        if (active) setJobTypes(response.data)
+      })
+      .catch((requestError) => {
+        if (active) {
+          setJobTypes([])
+          setJobTypesError(requestError.message)
+        }
+      })
+      .finally(() => {
+        if (active) setIsJobTypesLoading(false)
+      })
     return () => { active = false }
   }, [sessionToken, refreshKey])
 
   function refresh() {
     setIsLoading(true)
+    setIsJobTypesLoading(true)
+    setJobTypesError('')
     setRefreshKey((current) => current + 1)
   }
 
@@ -1873,13 +2669,13 @@ function AdminDashboard({ session, onLogout }) {
     }
   }
 
-  async function saveApplicationStatus(status) {
+  async function saveApplicationStatus(status, reason) {
     setIsSavingStatus(true)
     try {
       await apiRequest(`/admin/applications/${selectedApplication.id}/status`, {
         method: 'PATCH',
         token: sessionToken,
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, reason }),
       })
       setNotice('Status lamaran berhasil diperbarui.')
       setError('')
@@ -1898,6 +2694,36 @@ function AdminDashboard({ session, onLogout }) {
     }
   }
 
+  const jobTypeOptions = [...new Set(jobs.map((job) => job.type || job.job_type).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, 'id'))
+  const jobDivisionOptions = [...new Set(jobs.map((job) => job.division).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, 'id'))
+  const filteredJobs = jobs.filter((job) => {
+    const query = jobSearch.trim().toLocaleLowerCase('id')
+    const type = job.type || job.job_type || ''
+    const matchesSearch = `${job.id} ${job.title} ${job.division} ${job.unit} ${job.location} ${type}`
+      .toLocaleLowerCase('id')
+      .includes(query)
+    const matchesStatus = jobStatusFilter === 'all'
+      || (job.is_open ? 'open' : 'closed') === jobStatusFilter
+    const matchesType = jobTypeFilter === 'all' || type === jobTypeFilter
+    const matchesDivision = jobDivisionFilter === 'all' || job.division === jobDivisionFilter
+    return matchesSearch && matchesStatus && matchesType && matchesDivision
+  })
+  const applicationJobOptions = [...new Map(applications.map((application) => [
+    application.job_id,
+    { value: String(application.job_id), label: `${application.job_title} (${application.job_id})` },
+  ])).values()].sort((left, right) => left.label.localeCompare(right.label, 'id'))
+  const filteredApplications = applications.filter((application) => {
+    const query = applicationSearch.trim().toLocaleLowerCase('id')
+    const matchesSearch = `${application.applicant_name} ${application.applicant_email} ${application.employee_number || ''} ${application.job_title} ${application.job_id} ${application.created_at}`
+      .toLocaleLowerCase('id')
+      .includes(query)
+    const matchesStatus = applicationStatusFilter === 'all' || application.status === applicationStatusFilter
+    const matchesJob = applicationJobFilter === 'all' || String(application.job_id) === applicationJobFilter
+    return matchesSearch && matchesStatus && matchesJob
+  })
+
   const views = [
     { id: 'dashboard', label: 'Dashboard', icon: <Database size={17} /> },
     { id: 'jobs', label: 'Lowongan', icon: <BriefcaseBusiness size={17} /> },
@@ -1907,7 +2733,7 @@ function AdminDashboard({ session, onLogout }) {
     { id: 'divisions', label: 'Divisi', icon: <Building2 size={17} /> },
     { id: 'departments', label: 'Departemen', icon: <Users size={17} /> },
     { id: 'bureaus', label: 'Biro', icon: <Wrench size={17} /> },
-    { id: 'monitoring', label: 'Monitoring Dataset', icon: <Search size={17} /> },
+    { id: 'monitoring', label: 'Master Posisi', icon: <Database size={17} /> },
   ]
 
   return (
@@ -1916,19 +2742,33 @@ function AdminDashboard({ session, onLogout }) {
         <div className="admin-header-inner">
           <Brand />
           <div className="admin-header-user">
+            <AccountAvatar avatarUrl={avatarUrl} />
             <span>{session.admin.name}<strong>{session.admin.email}</strong></span>
+            <AccountSettingsMenu onSelect={setAccountSection} />
             <button className="signed-in-user-button" onClick={handleLogout} title="Keluar dari admin"><LogOut size={17} /></button>
           </div>
         </div>
       </header>
       <div className="admin-content">
-        <div className="admin-page-heading">
-          <div><span className="section-kicker">PANEL ADMINISTRATOR</span><h1>Dashboard Rekrutmen</h1></div>
-        </div>
-        <div className="admin-workspace">
+        {accountSection ? (
+          <AccountSettingsPage
+            avatarUrl={avatarUrl}
+            onAvatarChanged={refreshAvatar}
+            onBack={() => setAccountSection(null)}
+            onProfileUpdated={onProfileUpdated}
+            onSectionChange={setAccountSection}
+            section={accountSection}
+            session={{ role: session.role, token: session.token, user: session.admin }}
+          />
+        ) : (
+          <>
+            <div className="admin-page-heading">
+              <div><span className="section-kicker">PANEL ADMINISTRATOR</span><h1>Dashboard Rekrutmen</h1></div>
+            </div>
+            <div className="admin-workspace">
           <nav aria-label="Navigasi dashboard admin" className="admin-tabs">
             {views.map((view) => (
-              <button className={activeView === view.id ? 'admin-tab active' : 'admin-tab'} key={view.id} onClick={() => setActiveView(view.id)}>
+              <button className={activeView === view.id ? 'admin-tab active' : 'admin-tab'} key={view.id} onClick={() => setActiveView(view.id)} type="button">
                 {view.icon} {view.label}
               </button>
             ))}
@@ -1963,13 +2803,40 @@ function AdminDashboard({ session, onLogout }) {
           <section className="admin-table-panel">
             <div className="admin-table-heading">
               <div><h2>Kelola lowongan</h2><p>{jobs.length} posisi terdaftar</p></div>
-              <button className="apply-button" disabled={isLoading || !jobTypes.length} onClick={() => setIsCreatingJob(true)} type="button"><Plus size={17} /> Tambah lowongan</button>
+              <button className="apply-button" disabled={isLoading || isJobTypesLoading || !jobTypes.length} onClick={() => setIsCreatingJob(true)} type="button"><Plus size={17} /> Tambah lowongan</button>
             </div>
+            <AdminTableToolbar
+              filters={[
+                {
+                  label: 'Status',
+                  value: jobStatusFilter,
+                  onChange: setJobStatusFilter,
+                  options: [{ value: 'open', label: 'Dibuka' }, { value: 'closed', label: 'Ditutup' }],
+                },
+                {
+                  label: 'Jenis pekerjaan',
+                  value: jobTypeFilter,
+                  onChange: setJobTypeFilter,
+                  options: jobTypeOptions.map((type) => ({ value: type, label: type })),
+                },
+                {
+                  label: 'Divisi',
+                  value: jobDivisionFilter,
+                  onChange: setJobDivisionFilter,
+                  options: jobDivisionOptions.map((division) => ({ value: division, label: division })),
+                },
+              ]}
+              onSearchChange={setJobSearch}
+              resultCount={filteredJobs.length}
+              search={jobSearch}
+              searchPlaceholder="Cari kode, posisi, divisi, unit..."
+              totalCount={jobs.length}
+            />
             <div className="admin-table-scroll">
               <table className="admin-table">
                 <thead><tr><th>KODE</th><th>POSISI</th><th>DIVISI / UNIT</th><th>KUOTA</th><th>STATUS</th><th>AKSI</th></tr></thead>
                 <tbody>
-                  {jobs.map((job) => {
+                  {filteredJobs.map((job) => {
                     const hasApplications = applications.some((application) => application.job_id === job.id)
                     return (
                       <tr key={job.id}>
@@ -1994,6 +2861,7 @@ function AdminDashboard({ session, onLogout }) {
                       </tr>
                     )
                   })}
+                  {!filteredJobs.length && <tr><td className="admin-table-empty" colSpan={6}>{jobs.length ? 'Tidak ada lowongan yang cocok.' : 'Belum ada lowongan.'}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -2002,8 +2870,9 @@ function AdminDashboard({ session, onLogout }) {
         )}
         {activeView === 'job-types' && (
           <JobTypeManager
-            isLoading={isLoading}
+            isLoading={isJobTypesLoading}
             jobTypes={jobTypes}
+            loadError={jobTypesError}
             onRefresh={refresh}
             sessionToken={sessionToken}
           />
@@ -2011,31 +2880,61 @@ function AdminDashboard({ session, onLogout }) {
         {activeView === 'applications' && (
           <section className="admin-table-panel">
             <div className="admin-table-heading"><div><h2>Lamaran masuk</h2><p>{applications.length} lamaran</p></div></div>
-            {isLoading ? <div className="admin-loading">Memuat lamaran...</div> : applications.length ? (
+            {!isLoading && (
+              <AdminTableToolbar
+                filters={[
+                  {
+                    label: 'Status lamaran',
+                    value: applicationStatusFilter,
+                    onChange: setApplicationStatusFilter,
+                    options: applicationStatusOptions.map((status) => ({ value: status.value, label: status.label })),
+                  },
+                  {
+                    label: 'Lowongan',
+                    value: applicationJobFilter,
+                    onChange: setApplicationJobFilter,
+                    options: applicationJobOptions,
+                  },
+                ]}
+                onSearchChange={setApplicationSearch}
+                resultCount={filteredApplications.length}
+                search={applicationSearch}
+                searchPlaceholder="Cari pelamar, email, NIP, posisi..."
+                totalCount={applications.length}
+              />
+            )}
+            {isLoading ? <div className="admin-loading">Memuat lamaran...</div> : filteredApplications.length ? (
               <div className="admin-table-scroll">
                 <table className="admin-table application-table">
-                  <thead><tr><th>PELAMAR</th><th>NIP</th><th>POSISI</th><th>TANGGAL MASUK</th><th>STATUS</th><th>AKSI</th></tr></thead>
+                  <thead><tr><th>REG ID / WAKTU</th><th>NIP &amp; NAMA</th><th>UNIT ASAL</th><th>POSISI DILAMAR</th><th>PENDIDIKAN</th><th>FILE DOKUMEN</th><th>STATUS TAHAPAN</th><th>AKSI</th></tr></thead>
                   <tbody>
-                    {applications.map((application) => (
-                      <tr key={application.id}>
-                        <td className="position-name">{application.applicant_name}<span className="admin-table-subtext">{application.applicant_email}</span></td>
-                        <td>{application.employee_number || '—'}</td>
-                        <td>{application.job_title}</td>
-                        <td>{application.created_at}</td>
-                        <td><span className={`status-pill status-${application.status}`}>{applicationStatusOptions.find((status) => status.value === application.status)?.label || application.status}</span></td>
-                        <td><button className="admin-small-button" onClick={() => void openApplication(application.id)} type="button">Tinjau</button></td>
-                      </tr>
-                    ))}
+                    {filteredApplications.map((application) => {
+                      const createdAt = new Date(application.created_at)
+                      const registrationId = `REG-${createdAt.getFullYear()}-${String(application.id).padStart(4, '0')}`
+                      return (
+                        <tr key={application.id}>
+                          <td className="position-code">{registrationId}<span className="admin-table-subtext">{createdAt.toLocaleString('id-ID')}</span></td>
+                          <td className="position-name">{application.applicant_name}<span className="admin-table-subtext">NIP: {application.employee_number || '—'} · {application.applicant_email}</span></td>
+                          <td>{application.origin_division || application.current_unit || '—'}<span className="admin-table-subtext">{application.origin_unit || application.current_position || ''}</span></td>
+                          <td className="position-name">{application.job_title}<span className="admin-table-subtext">{application.job_id}</span></td>
+                          <td>{application.education_level || '—'}<span className="admin-table-subtext">{application.study_field || ''}</span></td>
+                          <td>{application.documents_count ? `${application.documents_count} berkas` : 'Belum ada'}</td>
+                          <td><span className={`status-pill status-${application.status}`}>{applicationStatusOptions.find((status) => status.value === application.status)?.label || application.status}</span></td>
+                          <td><button className="admin-small-button" onClick={() => void openApplication(application.id)} type="button">Tinjau</button></td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
-            ) : <div className="admin-loading">Belum ada lamaran masuk.</div>}
+            ) : <div className="admin-loading">{applications.length ? 'Tidak ada lamaran yang cocok.' : 'Belum ada lamaran masuk.'}</div>}
           </section>
         )}
         {activeView === 'accounts' && <AccountManager key={sessionToken} session={session} />}
         {['divisions', 'departments', 'bureaus'].includes(activeView) && (
           <OrganizationManager
             isLoading={isLoading}
+            key={activeView}
             level={activeView}
             onRefresh={refresh}
             organization={organization}
@@ -2043,8 +2942,10 @@ function AdminDashboard({ session, onLogout }) {
           />
         )}
         {activeView === 'monitoring' && <DatasetMonitor sessionToken={sessionToken} />}
-          </div>
-        </div>
+            </div>
+            </div>
+          </>
+        )}
       </div>
       <AdminToast message={notice} onClose={setNotice} />
       {isCreatingJob && <JobEditor jobTypes={jobTypes} key="new" onClose={() => setIsCreatingJob(false)} onSave={saveJob} organization={organization} />}
@@ -2075,6 +2976,10 @@ function AdminDashboard({ session, onLogout }) {
 export default function App() {
   const [session, setSession] = useState(null)
   const [adminSession, setAdminSession] = useState(null)
+  const resetHash = window.location.hash.slice(1)
+  const resetToken = resetHash.startsWith('reset_token=')
+    ? new URLSearchParams(resetHash).get('reset_token')
+    : null
 
   function handleLogin(newSession) {
     if (newSession.role === 'admin' || newSession.admin) {
@@ -2094,9 +2999,25 @@ export default function App() {
     setAdminSession(null)
   }
 
-  if (adminSession) {
-    return <AdminDashboard onLogout={handleAdminLogout} session={adminSession} />
+  function handleProfileUpdated(profile) {
+    if (profile.role === 'admin') {
+      setAdminSession((current) => current
+        ? { ...current, admin: { ...current.admin, name: profile.name, email: profile.email } }
+        : current)
+    } else {
+      setSession((current) => current
+        ? { ...current, applicant: { ...current.applicant, name: profile.name, email: profile.email } }
+        : current)
+    }
   }
 
-  return <JobCatalog onLogin={handleLogin} onLogout={handleLogout} session={session} />
+  if (resetToken) {
+    return <PasswordResetPage token={resetToken} />
+  }
+
+  if (adminSession) {
+    return <AdminDashboard onLogout={handleAdminLogout} onProfileUpdated={handleProfileUpdated} session={adminSession} />
+  }
+
+  return <JobCatalog onLogin={handleLogin} onLogout={handleLogout} onProfileUpdated={handleProfileUpdated} session={session} />
 }

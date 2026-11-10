@@ -7,7 +7,16 @@ export async function apiRequest(path, { token, ...options } = {}) {
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers })
-  const payload = await response.json().catch(() => ({}))
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.toLowerCase().includes('json')) {
+    throw new Error('Respons API tidak valid. Pastikan backend sudah diperbarui.')
+  }
+  let payload
+  try {
+    payload = await response.json()
+  } catch {
+    throw new Error('Respons API tidak valid. Silakan coba lagi.')
+  }
 
   if (!response.ok) {
     throw new Error(payload.message || 'Permintaan gagal. Silakan coba lagi.')

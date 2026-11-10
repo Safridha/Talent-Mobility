@@ -30,13 +30,14 @@ npm run dev
 
 Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema and six sample positions on startup. Press `Ctrl+C` to stop both processes.
 
+To enable forgotten-password emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `APP_PUBLIC_URL` in the server environment. Do not commit SMTP credentials.
+
 To run the production-style build instead, use `npm run build` followed by `cargo run -p app-backend`; the backend serves the built React app and API on port 8000.
 
 ## API
 
 - `GET /api/jobs` returns open jobs publicly.
 - `GET /api/monitoring/positions` returns the position-to-division/department/unit mapping and requires an admin bearer token.
-- `GET /api/monitoring/applications` returns application counts per position and requires an admin bearer token.
 - `POST /api/admin/login` remains available as a legacy admin-only login endpoint.
 - `POST /api/admin/logout` revokes the admin bearer token.
 - `GET /api/admin/dashboard` returns position and application counts by status.
@@ -50,7 +51,7 @@ To run the production-style build instead, use `npm run build` followed by `carg
 - `PATCH /api/admin/jobs/{id}/status` opens or closes a position.
 - `GET /api/admin/applications` lists applicant details; `GET /api/admin/applications/{id}` returns one application.
 - `GET /api/admin/applications/{id}/documents/{document_id}` downloads a private application PDF and requires an admin bearer token.
-- `PATCH /api/admin/applications/{id}/status` updates its review status.
+- `PATCH /api/admin/applications/{id}/status` accepts `status` and an optional `reason` (up to 1000 characters), updates the review status, and creates a notification for the applicant when the status changes. A reason is required when the new status is `rejected`; any supplied reason is included in the notification.
 - `GET /api/admin/accounts` lists applicant accounts and application counts; `POST /api/admin/accounts` creates an account.
 - `PUT /api/admin/accounts/{id}` updates an account and optionally resets its password; `DELETE /api/admin/accounts/{id}` deactivates it without deleting application history.
 - `PATCH /api/admin/accounts/{id}/status` reactivates or deactivates an account. Deactivation revokes active applicant sessions.
@@ -60,9 +61,14 @@ To run the production-style build instead, use `npm run build` followed by `carg
 - `POST /api/register` accepts `name`, `email`, and `password`, then returns an applicant session.
 - `POST /api/login` accepts `email` and `password`, then returns an applicant or admin session with its `role`.
 - `GET /api/applications` lists the signed-in applicant's applications.
+- `GET /api/notifications` lists the signed-in applicant's application-status notifications and unread count; `PATCH /api/notifications/{id}/read` marks an owned notification as read.
 - `POST /api/applications` accepts `multipart/form-data` with `job_id`, `employee_number`, `applicant_full_name`, `origin_division`, `origin_unit`, `education_level`, `study_field`, `motivation`, and one to five repeated `supporting_document` PDF fields. Each file is limited to 5 MB and requires an applicant bearer token.
 - `POST /api/logout` revokes the current applicant token.
+- `GET /api/account/profile` returns the signed-in applicant/admin profile; `PATCH` updates the display name.
+- `GET`, `POST`, and `DELETE /api/account/avatar` view, upload, or remove the signed-in account's JPG, PNG, or WebP profile photo (maximum 2 MB).
+- `POST /api/account/password` changes the signed-in user's password after verifying the current password.
+- `POST /api/password/forgot` sends a one-hour, single-use reset link when SMTP is configured; `POST /api/password/reset` consumes the link and invalidates active sessions.
 
 Passwords are stored as Argon2 hashes. Applicant tokens expire after 24 hours and admin tokens after 8 hours; both are stored as SHA-256 hashes.
-All `/api/admin/*` data endpoints and both `/api/monitoring/*` endpoints require an admin bearer token.
-Application details and PDF documents are persisted in PostgreSQL; document bytes are never exposed by public endpoints.
+All `/api/admin/*` data endpoints and `/api/monitoring/positions` require an admin bearer token.
+Application IDs exposed in API routes are ULIDs; numeric database IDs remain internal. Existing applications receive a ULID on startup. Application details and PDF documents are persisted in PostgreSQL; document bytes are never exposed by public endpoints.
