@@ -401,8 +401,8 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             <section className="hero-panel">
               <div className="hero-copy">
                 <span className="hero-badge"><span><Megaphone aria-hidden="true" size={12} /></span> Program Internal Mobility Periode 2026</span>
-                <h1>Kembangkan Karier Anda di Unit &amp; Divisi Baru</h1>
-                <p>Fasilitasi perpindahan internal transparan antardivisi, biro, dan bengkel produksi. Perluas keahlian teknis dan manajerial Anda untuk kemajuan bersama perusahaan.</p>
+                <h1>Reskilling, Upskilling, Mobility in Production</h1>
+                <p>Program PAL Indonesia melalui reskilling, upskilling, dan mobilitas talenta lintas fungsi untuk memberdayakan karyawan menjadi kekuatan nyata dalam proses produksi.</p>
               </div>
               <div className="hero-stats" aria-label="Ringkasan lowongan">
                 <div><strong>{statusFilteredJobs.length}</strong><span>{jobStatusLabels.title}</span></div>
