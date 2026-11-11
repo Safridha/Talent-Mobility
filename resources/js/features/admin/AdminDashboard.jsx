@@ -375,7 +375,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   }
 
   const activeViewDescription = {
-    dashboard: 'Pantau ringkasan posisi, lamaran, dan tahapan seleksi.',
+    dashboard: 'Program PAL Indonesia melalui reskilling, upskilling, dan mobilitas talenta lintas fungsi untuk memberdayakan karyawan menjadi kekuatan nyata dalam proses produksi.',
     jobs: 'Kelola lowongan, kebutuhan posisi, dan status publikasi.',
     'job-types': 'Atur jenis pekerjaan yang digunakan pada lowongan.',
     applications: 'Tinjau data pelamar dan perbarui tahapan seleksi.',
