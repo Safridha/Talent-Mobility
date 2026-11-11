@@ -125,16 +125,15 @@ fn parse_vapid_keys(
     public_key: &str,
     private_key: &str,
 ) -> Result<ES256KeyPair, Box<dyn std::error::Error>> {
-    let private_key_bytes = URL_SAFE_NO_PAD.decode(private_key).map_err(|_| {
-        "VAPID_PRIVATE_KEY must be base64url without padding (43 characters)."
-    })?;
-    let vapid_key = ES256KeyPair::from_bytes(&private_key_bytes).map_err(|_| {
-        "VAPID_PRIVATE_KEY is not a valid P-256 private key (expected 32 bytes)."
-    })?;
+    let private_key_bytes = URL_SAFE_NO_PAD
+        .decode(private_key)
+        .map_err(|_| "VAPID_PRIVATE_KEY must be base64url without padding (43 characters).")?;
+    let vapid_key = ES256KeyPair::from_bytes(&private_key_bytes)
+        .map_err(|_| "VAPID_PRIVATE_KEY is not a valid P-256 private key (expected 32 bytes).")?;
 
-    let configured_bytes = URL_SAFE_NO_PAD.decode(public_key).map_err(|_| {
-        "VAPID_PUBLIC_KEY must be base64url without padding (87 characters)."
-    })?;
+    let configured_bytes = URL_SAFE_NO_PAD
+        .decode(public_key)
+        .map_err(|_| "VAPID_PUBLIC_KEY must be base64url without padding (87 characters).")?;
     if configured_bytes.len() != 65 || configured_bytes[0] != 0x04 {
         return Err(
             "VAPID_PUBLIC_KEY must be an uncompressed P-256 public key (65 bytes, 87 characters)."
@@ -485,9 +484,12 @@ mod tests {
     fn mismatched_vapid_pair_is_rejected() {
         let first = ES256KeyPair::generate();
         let second = ES256KeyPair::generate();
-        let error = parse_vapid_keys(&browser_public_key(&second, false), &private_key_string(&first))
-            .err()
-            .expect("a public key from another pair must be rejected");
+        let error = parse_vapid_keys(
+            &browser_public_key(&second, false),
+            &private_key_string(&first),
+        )
+        .err()
+        .expect("a public key from another pair must be rejected");
         assert_eq!(
             error.to_string(),
             "VAPID_PUBLIC_KEY does not match VAPID_PRIVATE_KEY."
