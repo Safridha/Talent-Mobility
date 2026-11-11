@@ -192,7 +192,8 @@ pub(super) async fn admin_set_application_status(
     let Some((application_id, applicant_id, previous_status)) = current else {
         return Err(ApiError::NotFound("Lamaran tidak ditemukan."));
     };
-    if previous_status != status {
+    let status_changed = previous_status != status;
+    if status_changed {
         if !is_valid_application_status_transition(&previous_status, &status) {
             return Err(ApiError::Conflict(
                 "Perubahan status tidak sesuai tahapan lamaran.",
@@ -219,6 +220,9 @@ pub(super) async fn admin_set_application_status(
         .map_err(internal_error)?;
     }
     transaction.commit().await.map_err(internal_error)?;
+    if status_changed {
+        dispatch_applicant_push(state.pool.clone(), state.push_service.clone(), applicant_id);
+    }
     Ok(Json(
         json!({ "message": "Status lamaran berhasil diperbarui." }),
     ))
@@ -233,6 +237,7 @@ pub(super) fn is_valid_application_status_transition(
             (previous_status, new_status),
             ("submitted", "screening")
                 | ("submitted", "interview")
+                | ("submitted", "accepted" | "rejected")
                 | ("screening", "interview")
                 | ("screening", "accepted" | "rejected")
                 | ("interview", "accepted" | "rejected")

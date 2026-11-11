@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Plus, Shield, Users } from 'lucide-react'
+import { Eye, EyeOff, Plus, Shield, Users } from 'lucide-react'
 import { apiRequest } from '../../api'
+import SearchableSelect from '../../components/SearchableSelect'
 import { AdminTableToolbar, ConfirmDialog, AdminFormDialog } from './AdminPrimitives'
+import { AdminTablePagination } from './AdminPagination'
+import { useAdminPagination } from './useAdminPagination'
 import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 
@@ -89,6 +92,8 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [form, setForm] = useState(emptyAccountForm)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [updatingStatusId, setUpdatingStatusId] = useState(null)
@@ -124,6 +129,8 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
 
   function resetForm() {
     setForm(emptyAccountForm())
+    setShowPassword(false)
+    setShowPasswordConfirmation(false)
     setEditingId(null)
     setIsCreateModalOpen(false)
   }
@@ -137,7 +144,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
       return
     }
     if (isAdminAccount && form.admin_role !== 'super_admin' && form.permissions.length === 0) {
-      setError('Pilih minimal satu hak akses untuk akun admin ini.')
+      setError('Akun admin harus memiliki setidaknya satu hak akses.')
       return
     }
     setIsSaving(true)
@@ -171,6 +178,8 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
   function editAccount(account) {
     setIsCreateModalOpen(false)
     setEditingId(account.id)
+    setShowPassword(false)
+    setShowPasswordConfirmation(false)
     setForm({
       ...emptyAccountForm(),
       name: account.name,
@@ -261,6 +270,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
     `${account.name} ${account.email} ${account.admin_role || ''} ${account.scope_label || ''}`.toLocaleLowerCase('id').includes(search.trim().toLocaleLowerCase('id'))
     && (statusFilter === 'all' || (account.is_active ? 'active' : 'inactive') === statusFilter)
   ))
+  const { items: pageAccounts, page, setPage } = useAdminPagination(filteredAccounts)
   const activeCount = accounts.filter((account) => account.is_active).length
   const activeSuperAdminCount = accounts.filter((account) => account.is_active && account.admin_role === 'super_admin').length
   const accountForm = (
@@ -275,28 +285,50 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
         <input autoComplete="email" maxLength={254} onChange={(event) => setForm({ ...form, email: event.target.value })} required type="email" value={form.email} />
       </label>
       <label><span>Kata sandi {editingId ? '(opsional untuk reset)' : 'awal'} {!editingId && <em>*</em>}</span>
-        <input
-          autoComplete="new-password"
-          maxLength={128}
-          minLength={editingId && !form.password ? undefined : minimumPasswordLength}
-          onChange={(event) => setForm({ ...form, password: event.target.value })}
-          placeholder={editingId ? 'Kosongkan jika tidak diubah' : 'Min. 8 karakter: huruf besar/kecil, angka, simbol'}
-          required={!editingId}
-          type="password"
-          value={form.password}
-        />
+        <div className="password-field account-password-field">
+          <input
+            autoComplete="new-password"
+            maxLength={128}
+            minLength={editingId && !form.password ? undefined : minimumPasswordLength}
+            onChange={(event) => setForm({ ...form, password: event.target.value })}
+            placeholder={editingId ? 'Kosongkan jika tidak diubah' : 'Min. 8 karakter: huruf besar/kecil, angka, simbol'}
+            required={!editingId}
+            type={showPassword ? 'text' : 'password'}
+            value={form.password}
+          />
+          <button
+            aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+            aria-pressed={showPassword}
+            onClick={() => setShowPassword((shown) => !shown)}
+            type="button"
+          >
+            {showPassword ? <EyeOff aria-hidden="true" size={17} /> : <Eye aria-hidden="true" size={17} />}
+          </button>
+        </div>
       </label>
       <label><span>Konfirmasi kata sandi {!editingId && <em>*</em>}</span>
-        <input
-          autoComplete="new-password"
-          maxLength={128}
-          minLength={editingId && !form.password ? undefined : minimumPasswordLength}
-          onChange={(event) => setForm({ ...form, passwordConfirmation: event.target.value })}
-          placeholder={editingId && !form.password ? 'Isi jika kata sandi diubah' : 'Ulangi kata sandi'}
-          required={!editingId || Boolean(form.password)}
-          type="password"
-          value={form.passwordConfirmation}
-        />
+        <div className="password-field account-password-field">
+          <input
+            autoComplete="new-password"
+            maxLength={128}
+            minLength={editingId && !form.password ? undefined : minimumPasswordLength}
+            onChange={(event) => setForm({ ...form, passwordConfirmation: event.target.value })}
+            placeholder={editingId && !form.password ? 'Isi jika kata sandi diubah' : 'Ulangi kata sandi'}
+            required={!editingId || Boolean(form.password)}
+            type={showPasswordConfirmation ? 'text' : 'password'}
+            value={form.passwordConfirmation}
+          />
+          <button
+            aria-label={showPasswordConfirmation ? 'Sembunyikan konfirmasi kata sandi' : 'Tampilkan konfirmasi kata sandi'}
+            aria-pressed={showPasswordConfirmation}
+            onClick={() => setShowPasswordConfirmation((shown) => !shown)}
+            type="button"
+          >
+            {showPasswordConfirmation
+              ? <EyeOff aria-hidden="true" size={17} />
+              : <Eye aria-hidden="true" size={17} />}
+          </button>
+        </div>
       </label>
       {isAdminAccount && (
         <>
@@ -306,45 +338,53 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
             </label>
           ) : (
             <label><span>Peran admin <em>*</em></span>
-              <select
-                onChange={(event) => setForm((current) => ({
+              <SearchableSelect
+                onChange={(adminRole) => setForm((current) => ({
                   ...current,
-                  admin_role: event.target.value,
+                  admin_role: adminRole,
                   division_id: '',
                   department_id: '',
                   bureau_id: '',
-                  permissions: permissionsForRole(event.target.value),
+                  permissions: permissionsForRole(adminRole),
                 }))}
+                options={adminRoles}
+                placeholder="Pilih peran admin"
                 required
                 value={form.admin_role}
-              >
-                <option value="">Pilih peran admin</option>
-                {adminRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-              </select>
+              />
             </label>
           )}
           {form.admin_role === 'division_head' && (
             <label><span>Divisi yang dikelola <em>*</em></span>
-              <select onChange={(event) => setForm({ ...form, division_id: event.target.value })} required value={form.division_id}>
-                <option value="">Pilih divisi</option>
-                {divisions.map((division) => <option key={division.id} value={division.id}>{division.name}</option>)}
-              </select>
+              <SearchableSelect
+                onChange={(value) => setForm((current) => ({ ...current, division_id: value }))}
+                options={divisions.map((division) => ({ value: String(division.id), label: division.name }))}
+                placeholder="Pilih divisi"
+                required
+                value={form.division_id}
+              />
             </label>
           )}
           {form.admin_role === 'department_head' && (
             <label><span>Departemen yang dikelola <em>*</em></span>
-              <select onChange={(event) => setForm({ ...form, department_id: event.target.value })} required value={form.department_id}>
-                <option value="">Pilih departemen</option>
-                {departments.map((department) => {
+              <SearchableSelect
+                onChange={(value) => setForm((current) => ({ ...current, department_id: value }))}
+                options={departments.map((department) => {
                   const division = divisions.find((item) => item.id === department.division_id)
-                  return <option key={department.id} value={department.id}>{division ? `${division.name} / ` : ''}{department.name}</option>
+                  return {
+                    value: String(department.id),
+                    label: `${division ? `${division.name} / ` : ''}${department.name}`,
+                  }
                 })}
-              </select>
+                placeholder="Pilih departemen"
+                required
+                value={form.department_id}
+              />
             </label>
           )}
           {form.admin_role && form.admin_role !== 'super_admin' && (
             <fieldset className="account-permissions">
-              <legend>Hak akses akun <em>*</em> pilih minimal satu</legend>
+              <legend>Hak akses akun <em>*</em></legend>
               <p className="organization-help">
                 Izin di bawah hanya berlaku pada lingkup organisasi akun ini. Kepala divisi tetap terbatas pada divisinya; kepala departemen pada departemen dan biro/bengkelnya.
               </p>
@@ -421,11 +461,10 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
           onChange: setStatusFilter,
           options: [{ value: 'active', label: 'Aktif' }, { value: 'inactive', label: 'Nonaktif' }],
         }]}
+        onPageChange={setPage}
         onSearchChange={setSearch}
-        resultCount={filteredAccounts.length}
         search={search}
         searchPlaceholder="Cari nama atau email..."
-        totalCount={accounts.length}
         onDownloadPdf={() => downloadTablePdf(
           isAdminAccount ? 'akun-admin' : 'akun-pelamar',
           isAdminAccount ? 'Daftar Akun Admin' : 'Daftar Akun Pelamar',
@@ -464,7 +503,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
           <table className="admin-table account-table">
             <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <th>LAMARAN</th>}<th>TERDAFTAR</th><th>STATUS</th><th>AKSI</th></tr></thead>
             <tbody>
-              {filteredAccounts.map((account) => {
+              {pageAccounts.map((account) => {
                 const isCurrentAdmin = isAdminAccount && account.id === currentAdminId
                 const isLastActiveAdmin = isAdminAccount && account.is_active && account.admin_role === 'super_admin' && activeSuperAdminCount <= 1
                 return (
@@ -508,6 +547,9 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
           <div className="admin-loading">{accounts.length ? 'Tidak ada akun yang cocok.' : `Belum ada akun ${accountKind}.`}</div>
         )}
       </div>
+      {!isLoading && !loadError && (
+        <AdminTablePagination onPageChange={setPage} page={page} total={filteredAccounts.length} />
+      )}
       <p className="admin-table-note">
         {isAdminAccount
           ? 'Admin yang sedang digunakan tidak dapat diubah atau dinonaktifkan. Super Admin aktif terakhir tidak dapat dinonaktifkan atau diturunkan perannya. Perubahan akun mengakhiri sesi aktifnya.'

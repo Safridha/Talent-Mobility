@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr, path::Path as FsPath};
+use std::{env, net::SocketAddr, path::Path as FsPath, sync::Arc};
 
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -39,6 +39,7 @@ mod applications;
 mod auth;
 mod employee_directory;
 mod jobs;
+mod push;
 
 use admin_accounts::*;
 use admin_applications::*;
@@ -48,10 +49,12 @@ use applications::*;
 use auth::*;
 use employee_directory::*;
 use jobs::*;
+use push::*;
 
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
+    push_service: Option<Arc<PushService>>,
 }
 
 const MAX_APPLICATION_FILE_BYTES: usize = 5 * 1024 * 1024;
@@ -332,6 +335,13 @@ struct UploadedApplicationDocument {
 struct ApplicationSummary {
     id: String,
     job_id: String,
+    status: String,
+    created_at: String,
+    status_history: SqlJson<Vec<ApplicationStatusHistory>>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ApplicationStatusHistory {
     status: String,
     created_at: String,
 }
@@ -666,6 +676,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database_url = env::var("DATABASE_URL").map_err(|_| {
         "DATABASE_URL must be set; copy .env.example to .env and configure PostgreSQL"
     })?;
+    let app_public_url =
+        env::var("APP_PUBLIC_URL").unwrap_or_else(|_| "http://127.0.0.1:8000".to_owned());
+    let push_service = PushService::from_env(&app_public_url)?.map(Arc::new);
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
@@ -692,10 +705,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .layer(DefaultBodyLimit::max(MAX_PROFILE_PHOTO_BYTES + 64 * 1024)),
         )
         .route("/api/account/password", post(change_account_password))
+        .route("/api/push/config", get(public_push_config))
+        .route(
+            "/api/push/subscriptions",
+            put(upsert_push_subscription).delete(delete_push_subscription),
+        )
         .route("/api/jobs", get(list_jobs))
         .route("/api/organization", get(public_list_organization))
         .route("/api/admin/login", post(admin_login))
         .route("/api/admin/logout", post(admin_logout))
+        .route("/api/admin/session", get(admin_session_check))
         .route("/api/admin/dashboard", get(admin_dashboard))
         .route("/api/admin/audit-log", get(admin_list_audit_events))
         .route(
@@ -793,7 +812,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route_layer(middleware::from_fn(prevent_api_caching))
         .fallback_service(ServeDir::new("public").fallback(ServeFile::new("public/spa/index.html")))
         .layer(TraceLayer::new_for_http())
-        .with_state(AppState { pool });
+        .with_state(AppState { pool, push_service });
 
     let address: SocketAddr = env::var("APP_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:8000".to_owned())
@@ -875,6 +894,14 @@ async fn authorized_admin_context(
         department_id,
         permissions,
     })
+}
+
+async fn admin_session_check(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    authorized_admin_context(&state.pool, &headers).await?;
+    Ok(Json(json!({ "active": true })))
 }
 
 async fn authorized_admin(pool: &PgPool, headers: &HeaderMap) -> Result<(i64, String), ApiError> {
@@ -1135,7 +1162,7 @@ async fn insert_bootstrap_admin(
     password_hash: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO admins (name, email, password_hash) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING",
+        "INSERT INTO admins (name, email, password_hash, admin_role) VALUES ($1, $2, $3, 'super_admin') ON CONFLICT (email) DO NOTHING",
     )
     .bind(name)
     .bind(email)
@@ -1171,8 +1198,8 @@ mod tests {
             .await
             .expect("repeated bootstrap should not fail");
 
-        let account = sqlx::query_as::<_, (String, String)>(
-            "SELECT name, password_hash FROM admins WHERE email = $1",
+        let account = sqlx::query_as::<_, (String, String, String)>(
+            "SELECT name, password_hash, admin_role FROM admins WHERE email = $1",
         )
         .bind("bootstrap@example.com")
         .fetch_one(&pool)
@@ -1181,6 +1208,7 @@ mod tests {
 
         assert_eq!(account.0, "Bootstrap Admin");
         assert_eq!(account.1, "initial-hash");
+        assert_eq!(account.2, "super_admin");
     }
 
     #[cfg(feature = "postgres-migration-tests")]
@@ -1230,7 +1258,10 @@ mod tests {
                 .0
         }
 
-        let state = AppState { pool };
+        let state = AppState {
+            pool,
+            push_service: None,
+        };
         let super_password = "Admin!Pass123";
         insert_bootstrap_admin(
             &state.pool,
@@ -1457,11 +1488,41 @@ mod tests {
         .unwrap();
         let mut updated_job_fields = job_fields();
         updated_job_fields.title = "Audit Position Updated".to_owned();
+        assert!(matches!(
+            admin_update_job(
+                State(state.clone()),
+                super_headers.clone(),
+                Path("AUDIT-JOB-001".to_owned()),
+                Json(job_fields()),
+            )
+            .await,
+            Err(ApiError::Conflict(_))
+        ));
+        let _ = admin_set_job_status(
+            State(state.clone()),
+            super_headers.clone(),
+            Path("AUDIT-JOB-001".to_owned()),
+            Json(JobStatusRequest {
+                status: "closed".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
         let _ = admin_update_job(
             State(state.clone()),
             super_headers.clone(),
             Path("AUDIT-JOB-001".to_owned()),
             Json(updated_job_fields),
+        )
+        .await
+        .unwrap();
+        let _ = admin_set_job_status(
+            State(state.clone()),
+            super_headers.clone(),
+            Path("AUDIT-JOB-001".to_owned()),
+            Json(JobStatusRequest {
+                status: "open".to_owned(),
+            }),
         )
         .await
         .unwrap();
@@ -2344,6 +2405,14 @@ mod tests {
             "interview"
         ));
         assert!(is_valid_application_status_transition(
+            "submitted",
+            "accepted"
+        ));
+        assert!(is_valid_application_status_transition(
+            "submitted",
+            "rejected"
+        ));
+        assert!(is_valid_application_status_transition(
             "screening",
             "interview"
         ));
@@ -2368,12 +2437,8 @@ mod tests {
             "submitted"
         ));
         assert!(!is_valid_application_status_transition(
-            "submitted",
-            "accepted"
-        ));
-        assert!(!is_valid_application_status_transition(
-            "submitted",
-            "rejected"
+            "screening",
+            "submitted"
         ));
         assert!(!is_valid_application_status_transition(
             "interview",
@@ -2381,6 +2446,17 @@ mod tests {
         ));
         assert!(!is_valid_application_status_transition(
             "accepted", "rejected"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "accepted",
+            "interview"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "rejected", "accepted"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "rejected",
+            "submitted"
         ));
         assert!(!is_valid_application_status_transition(
             "rejected",

@@ -28,9 +28,11 @@ Start the frontend and backend together from the project root:
 npm run dev
 ```
 
-Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema and the four official organization divisions on startup. Press `Ctrl+C` to stop both processes.
+Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema, four official divisions with their departments/bureaus, and initial job types on startup. The Super Admin bootstrap account is created from `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` when that email is not already registered. Press `Ctrl+C` to stop both processes.
 
 To enable forgotten-password emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `APP_PUBLIC_URL` in the server environment. Do not commit SMTP credentials.
+
+PWA assets are built from `pwa-assets/`; the service worker caches the application shell and static assets, but never API responses. Web Push is optional: configure a matching VAPID public/private key pair using `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`, plus an optional `VAPID_SUBJECT` (`mailto:` or HTTPS URL). Browser subscriptions are stored per active account and can be removed from its notification panel. Push is sent to admins in the application scope when a new application arrives and to applicants when their application status changes. Production origins must use HTTPS.
 
 To run the production-style build instead, use `npm run build` followed by `cargo run -p app-backend`; the backend serves the built React app and API on port 8000.
 
@@ -48,7 +50,7 @@ Use a local or disposable PostgreSQL instance, never production. The regular `ca
 
 ## API
 
-- `GET /api/jobs` returns open jobs publicly.
+- `GET /api/jobs` returns open jobs by default; `?status=closed` lists closed jobs and `?status=all` lists open and closed jobs. Drafts are never public.
 - `GET /api/monitoring/positions` returns the position-to-division/department/unit mapping and requires an admin bearer token.
 - `POST /api/admin/login` remains available as a legacy admin-only login endpoint.
 - `POST /api/admin/logout` revokes the admin bearer token.

@@ -134,7 +134,7 @@ pub(super) fn validate_admin_permissions(
     }
     if submitted.is_empty() {
         return Err(ApiError::BadRequest(
-            "Pilih minimal satu hak akses untuk akun admin.",
+            "Akun admin harus memiliki setidaknya satu hak akses.",
         ));
     }
     Ok(())

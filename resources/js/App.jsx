@@ -27,10 +27,18 @@ export default function App() {
   const queryClient = useQueryClient()
   const [session, setSession] = useState(() => readStoredSession(APPLICANT_SESSION_KEY))
   const [adminSession, setAdminSession] = useState(() => readStoredSession(ADMIN_SESSION_KEY))
+  const [sessionNotice, setSessionNotice] = useState('')
   const resetHash = window.location.hash.slice(1)
   const resetToken = resetHash.startsWith('reset_token=')
     ? new URLSearchParams(resetHash).get('reset_token')
     : null
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((error) => {
+      console.error('PWA service worker registration failed.', error)
+    })
+  }, [])
 
   useEffect(() => {
     function clearExpiredSession() {
@@ -39,6 +47,7 @@ export default function App() {
       queryClient.clear()
       setSession(null)
       setAdminSession(null)
+      setSessionNotice('Sesi Anda berakhir atau akses akun berubah. Silakan masuk kembali.')
     }
 
     window.addEventListener('talent-mobility:session-expired', clearExpiredSession)
@@ -47,6 +56,7 @@ export default function App() {
 
   function handleLogin(newSession) {
     queryClient.clear()
+    setSessionNotice('')
     if (newSession.role === 'admin' || newSession.admin) {
       localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(newSession))
       localStorage.removeItem(APPLICANT_SESSION_KEY)
@@ -65,6 +75,7 @@ export default function App() {
     localStorage.removeItem(APPLICANT_SESSION_KEY)
     queryClient.clear()
     setSession(null)
+    setSessionNotice('')
   }
 
   async function handleAdminLogout() {
@@ -72,6 +83,7 @@ export default function App() {
     localStorage.removeItem(ADMIN_SESSION_KEY)
     queryClient.clear()
     setAdminSession(null)
+    setSessionNotice('')
   }
 
   function handleProfileUpdated(profile) {
@@ -100,5 +112,5 @@ export default function App() {
     return <AdminDashboard onLogout={handleAdminLogout} onProfileUpdated={handleProfileUpdated} session={adminSession} />
   }
 
-  return <JobCatalog onLogin={handleLogin} onLogout={handleLogout} onProfileUpdated={handleProfileUpdated} session={session} />
+  return <JobCatalog onLogin={handleLogin} onLogout={handleLogout} onProfileUpdated={handleProfileUpdated} session={session} sessionNotice={sessionNotice} />
 }

@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import { Save, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
+import SearchableSelect from '../../components/SearchableSelect'
 
-export function JobEditor({ job, onClose, onSave, organization, jobTypes, adminRole = 'super_admin', hasApplications = false }) {
+function toDateTimeLocal(value) {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/.exec(value || '')
+  return match ? `${match[1]}T${match[2] || '00:00'}` : ''
+}
+
+export function JobEditor({ job, onClose, onSave, organization, jobTypes, adminRole = 'super_admin', admin = {}, hasApplications = false }) {
   const [form, setForm] = useState(() => job ? {
     id: job.id,
     title: job.title,
@@ -33,6 +39,24 @@ export function JobEditor({ job, onClose, onSave, organization, jobTypes, adminR
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const editing = Boolean(job)
+  const isDivisionHead = adminRole === 'division_head'
+  const isDepartmentHead = adminRole === 'department_head'
+  const fixedDepartmentId = isDepartmentHead ? String(admin.department_id ?? '') : ''
+  const fixedDepartment = organization.departments.find(
+    (department) => String(department.id) === fixedDepartmentId,
+  )
+  const divisionId = isDivisionHead
+    ? String(admin.division_id ?? '')
+    : isDepartmentHead
+      ? String(fixedDepartment?.division_id ?? '')
+      : form.division_id
+  const departmentId = isDepartmentHead ? fixedDepartmentId : form.department_id
+  const selectedDivision = organization.divisions.find(
+    (division) => String(division.id) === divisionId,
+  )
+  const scopeReady = (!isDivisionHead || Boolean(divisionId))
+    && (!isDepartmentHead || Boolean(divisionId && departmentId))
+  const dateTimeValue = toDateTimeLocal(form.posted)
 
   function updateField(event) {
     const { name, value, type, checked } = event.target
@@ -49,8 +73,8 @@ export function JobEditor({ job, onClose, onSave, organization, jobTypes, adminR
         id: form.id.trim(),
         title: form.title,
         target_level: form.target_level,
-        division_id: Number(form.division_id),
-        department_id: ['department', 'bureau'].includes(form.target_level) ? Number(form.department_id) : null,
+        division_id: Number(divisionId),
+        department_id: ['department', 'bureau'].includes(form.target_level) ? Number(departmentId) : null,
         bureau_id: form.target_level === 'bureau' ? Number(form.bureau_id) : null,
         location: form.location,
         quota: Number(form.quota),
@@ -80,59 +104,83 @@ export function JobEditor({ job, onClose, onSave, organization, jobTypes, adminR
           <label><span>Kode posisi <em>*</em></span><input disabled={editing} maxLength={64} name="id" onChange={updateField} required value={form.id} /></label>
           <label><span>Nama posisi <em>*</em></span><input name="title" onChange={updateField} required value={form.title} /></label>
           <label><span>Tingkat target lowongan <em>*</em></span>
-            <select
+            <SearchableSelect
               disabled={hasApplications}
-              onChange={(event) => {
-                const targetLevel = event.target.value
-                const selectedDivision = organization.divisions.find(
-                  (division) => String(division.id) === form.division_id,
-                )
+              onChange={(targetLevel) => {
                 setForm((current) => ({
                   ...current,
                   target_level: targetLevel,
-                  division_id: targetLevel === 'secretariat' && !selectedDivision?.secretariat_name
+                  division_id: !isDivisionHead
+                    && !isDepartmentHead
+                    && targetLevel === 'secretariat'
+                    && !selectedDivision?.secretariat_name
                     ? ''
                     : current.division_id,
-                  department_id: ['department', 'bureau'].includes(targetLevel) ? current.department_id : '',
+                  department_id: isDepartmentHead
+                    ? current.department_id
+                    : ['department', 'bureau'].includes(targetLevel) ? current.department_id : '',
                   bureau_id: targetLevel === 'bureau' ? current.bureau_id : '',
                 }))
               }}
+              options={[
+                ...(!isDepartmentHead ? [{ value: 'division', label: 'Divisi' }] : []),
+                ...(!isDepartmentHead && (isDivisionHead
+                  ? Boolean(selectedDivision?.secretariat_name)
+                  : organization.divisions.some((division) => division.secretariat_name))
+                  ? [{ value: 'secretariat', label: 'Sekretariat Divisi' }]
+                  : []),
+                { value: 'department', label: 'Departemen' },
+                { value: 'bureau', label: 'Biro / Bengkel' },
+              ]}
               required
               value={form.target_level}
-            >
-              {adminRole !== 'department_head' && <option value="division">Divisi</option>}
-              {adminRole !== 'department_head' && organization.divisions.some((division) => division.secretariat_name) && (
-                <option value="secretariat">Sekretariat Divisi</option>
-              )}
-              <option value="department">Departemen</option>
-              <option value="bureau">Biro / Bengkel</option>
-            </select>
+            />
           </label>
-          <label><span>Divisi <em>*</em></span>
-            <select disabled={hasApplications} onChange={(event) => setForm((current) => ({ ...current, division_id: event.target.value, department_id: '', bureau_id: '' }))} required value={form.division_id}>
-              <option value="">Pilih divisi</option>
-              {organization.divisions
+          {isDivisionHead && <p className="organization-help admin-form-wide">
+            Divisi: {selectedDivision?.name || 'Memuat divisi akun...'} — otomatis mengikuti cakupan akun Anda.
+          </p>}
+          {isDepartmentHead && <p className="organization-help admin-form-wide">
+            Departemen: {fixedDepartment?.name || 'Memuat departemen akun...'}{selectedDivision ? ` — ${selectedDivision.name}` : ''}. Target otomatis mengikuti cakupan akun Anda.
+          </p>}
+          {!isDivisionHead && !isDepartmentHead && <label><span>Divisi <em>*</em></span>
+            <SearchableSelect
+              disabled={hasApplications}
+              onChange={(value) => setForm((current) => ({ ...current, division_id: value, department_id: '', bureau_id: '' }))}
+              options={organization.divisions
                 .filter((division) => form.target_level !== 'secretariat' || division.secretariat_name)
-                .map((division) => <option key={division.id} value={division.id}>{division.name}</option>)}
-            </select>
-          </label>
-          {['department', 'bureau'].includes(form.target_level) && <label><span>Departemen <em>*</em></span>
-            <select disabled={hasApplications || !form.division_id} onChange={(event) => setForm((current) => ({ ...current, department_id: event.target.value, bureau_id: '' }))} required value={form.department_id}>
-              <option value="">Pilih departemen</option>
-              {organization.departments.filter((department) => String(department.division_id) === form.division_id).map((department) => (
-                <option key={department.id} value={department.id}>{department.name}</option>
-              ))}
-            </select>
+                .map((division) => ({ value: String(division.id), label: division.name }))}
+              placeholder="Pilih divisi"
+              required
+              value={form.division_id}
+            />
+          </label>}
+          {!isDepartmentHead && ['department', 'bureau'].includes(form.target_level) && <label><span>Departemen <em>*</em></span>
+            <SearchableSelect
+              disabled={hasApplications || !divisionId}
+              onChange={(value) => setForm((current) => ({ ...current, department_id: value, bureau_id: '' }))}
+              options={organization.departments
+                .filter((department) => String(department.division_id) === divisionId)
+                .map((department) => ({ value: String(department.id), label: department.name }))}
+              placeholder="Pilih departemen"
+              required
+              value={departmentId}
+            />
           </label>}
           {form.target_level === 'bureau' && <label><span>Biro / bengkel <em>*</em></span>
-            <select disabled={hasApplications || !form.department_id} name="bureau_id" onChange={updateField} required value={form.bureau_id}>
-              <option value="">Pilih biro / bengkel</option>
-              {organization.bureaus.filter((bureau) => String(bureau.department_id) === form.department_id).map((bureau) => (
-                <option key={bureau.id} value={bureau.id}>
-                  {bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — {bureau.name}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              disabled={hasApplications || !departmentId}
+              name="bureau_id"
+              onChange={(value) => setForm((current) => ({ ...current, bureau_id: value }))}
+              options={organization.bureaus
+                .filter((bureau) => String(bureau.department_id) === departmentId)
+                .map((bureau) => ({
+                  value: String(bureau.id),
+                  label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+                }))}
+              placeholder="Pilih biro / bengkel"
+              required
+              value={form.bureau_id}
+            />
           </label>}
           <p className="organization-help admin-form-wide">
             {hasApplications
@@ -144,14 +192,29 @@ export function JobEditor({ job, onClose, onSave, organization, jobTypes, adminR
             <small className="admin-field-help">Kota atau area kerja unit tujuan; informasi ini ditampilkan kepada pelamar.</small>
           </label>
           <label><span>Kuota <em>*</em></span><input min="0" name="quota" onChange={updateField} required type="number" value={form.quota} /></label>
-          <label><span>Tanggal / waktu tayang <em>*</em></span><input name="posted" onChange={updateField} required value={form.posted} /></label>
+          <label><span>Tanggal / waktu tayang <em>*</em></span>
+            <input
+              name="posted"
+              onChange={updateField}
+              required={!editing || Boolean(dateTimeValue)}
+              type="datetime-local"
+              value={dateTimeValue}
+            />
+            {editing && !dateTimeValue && form.posted && (
+              <small className="admin-field-help">
+                Nilai tayang saat ini ({form.posted}) akan dipertahankan jika tidak diubah.
+              </small>
+            )}
+          </label>
           <label><span>Jenis pekerjaan <em>*</em></span>
-            <select name="job_type" onChange={updateField} required value={form.job_type}>
-              <option value="">Pilih jenis pekerjaan</option>
-              {jobTypes.map((jobType) => (
-                <option key={jobType.id} value={jobType.name}>{jobType.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              name="job_type"
+              onChange={(value) => setForm((current) => ({ ...current, job_type: value }))}
+              options={jobTypes.map((jobType) => ({ value: jobType.name, label: jobType.name }))}
+              placeholder="Pilih jenis pekerjaan"
+              required
+              value={form.job_type}
+            />
           </label>
           <label className="admin-form-wide"><span>Ringkasan tugas <em>*</em></span><textarea name="summary" onChange={updateField} placeholder="Ringkas tujuan posisi dan hasil utama yang diharapkan." required rows="3" value={form.summary} /></label>
           <label><span>Spesifikasi internal <em>*</em></span><textarea onChange={(event) => setInternalSpecsText(event.target.value)} placeholder="Satu kebutuhan per baris: pengalaman proses kerja, kompetensi, atau sertifikasi internal." required rows="3" value={internalSpecsText} /></label>
@@ -159,7 +222,7 @@ export function JobEditor({ job, onClose, onSave, organization, jobTypes, adminR
           {error && <p className="login-error admin-form-wide" role="alert">{error}</p>}
           <div className="admin-form-actions admin-form-wide">
             <button className="detail-button" onClick={onClose} type="button">Batal</button>
-            <button className="apply-button" disabled={isSaving} type="submit"><Save size={16} /> {isSaving ? 'Menyimpan...' : 'Simpan lowongan'}</button>
+            <button className="apply-button" disabled={isSaving || !scopeReady} type="submit"><Save size={16} /> {isSaving ? 'Menyimpan...' : 'Simpan lowongan'}</button>
           </div>
         </form>
       </section>

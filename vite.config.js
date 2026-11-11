@@ -6,7 +6,7 @@ import { defineConfig } from 'vite'
 export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
   base: command === 'serve' ? '/' : '/spa/',
-  publicDir: false,
+  publicDir: 'pwa-assets',
   build: {
     outDir: 'public/spa',
     emptyOutDir: true,

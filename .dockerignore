@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+!.env.docker.example
+node_modules
+target
+dist
+dist-ssr
+public/spa
+*.log

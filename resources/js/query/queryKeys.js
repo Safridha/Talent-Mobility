@@ -1,6 +1,7 @@
 export const queryKeys = {
   admin: ['admin'],
   adminDashboard: ['admin', 'dashboard'],
+  adminSession: ['admin', 'session'],
   adminJobs: ['admin', 'jobs'],
   adminApplications: ['admin', 'applications'],
   adminNotifications: ['admin', 'notifications'],

@@ -2,6 +2,20 @@ import { ArrowRight, BriefcaseBusiness, Building2, CalendarDays, ChevronRight, G
 import ModalBackdrop from '../../components/ModalBackdrop'
 import { getJobTargetLabels } from './jobTargetLabels'
 
+function formatPostedDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(value || '')
+  if (!match) return value
+  const [, year, month, day, hour, minute] = match
+  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour || 0), Number(minute || 0))
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    ...(hour ? { hour: '2-digit', minute: '2-digit' } : {}),
+  }).format(date)
+}
+
 export function JobDetail({ job, onClose, onApply, isApplying, hasApplied }) {
   return (
     <ModalBackdrop className="modal-backdrop job-detail-backdrop" onDismiss={onClose}>
@@ -17,6 +31,7 @@ export function JobDetail({ job, onClose, onApply, isApplying, hasApplied }) {
             <div className="job-detail-badges">
               <span className="job-detail-code">{job.id}</span>
               <span>Kuota: {job.quota} Orang</span>
+              <span className={`status-pill ${job.status}`}>{job.status.toUpperCase()}</span>
             </div>
             <button aria-label="Tutup detail" className="job-detail-close" onClick={onClose} type="button"><X size={21} /></button>
           </div>
@@ -32,7 +47,7 @@ export function JobDetail({ job, onClose, onApply, isApplying, hasApplied }) {
           <div className="job-detail-meta">
             <span><MapPin size={15} />{job.location}</span>
             <span><BriefcaseBusiness size={15} />{job.type}</span>
-            <span><CalendarDays size={15} />Tayang {job.posted}</span>
+            <span><CalendarDays size={15} />Tayang {formatPostedDate(job.posted)}</span>
           </div>
         </header>
         <div className="job-detail-body">
@@ -64,8 +79,8 @@ export function JobDetail({ job, onClose, onApply, isApplying, hasApplied }) {
         </div>
         <footer className="job-detail-footer">
           <button className="job-detail-dismiss" onClick={onClose} type="button">Tutup</button>
-          <button className="apply-button job-detail-apply" disabled={isApplying || hasApplied} onClick={() => onApply(job)} type="button">
-            {isApplying ? 'Mengirim...' : hasApplied ? 'Sudah mendaftar' : 'Daftar Posisi Ini'}
+          <button className="apply-button job-detail-apply" disabled={isApplying || hasApplied || job.status !== 'open'} onClick={() => onApply(job)} type="button">
+            {isApplying ? 'Mengirim...' : hasApplied ? 'Sudah mendaftar' : job.status !== 'open' ? 'Lowongan Ditutup' : 'Daftar Posisi Ini'}
             <ArrowRight size={17} />
           </button>
         </footer>
@@ -75,6 +90,7 @@ export function JobDetail({ job, onClose, onApply, isApplying, hasApplied }) {
 }
 
 export function JobCard({ job, onSelect, onApply, isApplying, hasApplied }) {
+  const isClosed = job.status !== 'open'
   return (
     <article className="job-card">
       <div className="card-top">
@@ -82,6 +98,9 @@ export function JobCard({ job, onSelect, onApply, isApplying, hasApplied }) {
         <span className="quota-tag">Kuota: <strong>{job.quota}</strong></span>
       </div>
       <h2>{job.title}</h2>
+      <div className="public-job-status">
+        <span className={`status-pill ${job.status}`}>{job.status.toUpperCase()}</span>
+      </div>
       <div className="job-organization">
         {job.target_level === 'division' ? (
           <span><Building2 size={15} />Posisi tingkat divisi</span>
@@ -95,14 +114,14 @@ export function JobCard({ job, onSelect, onApply, isApplying, hasApplied }) {
       <div className="job-meta">
         <span><MapPin size={14} />{job.location}</span>
         <span><BriefcaseBusiness size={14} />{job.type}</span>
-        <span><CalendarDays size={14} />Tayang {job.posted}</span>
+        <span><CalendarDays size={14} />Tayang {formatPostedDate(job.posted)}</span>
       </div>
       <p className="job-summary">{job.summary}</p>
       <div className="card-footer">
         <div className="card-actions">
           <button className="detail-button" onClick={() => onSelect(job)}>Detail <ChevronRight size={17} /></button>
-          <button className="apply-button" disabled={isApplying || hasApplied} onClick={() => onApply(job)}>
-            {isApplying ? 'Mengirim...' : hasApplied ? 'Terkirim' : 'Lamar'}
+          <button className="apply-button" disabled={isApplying || hasApplied || isClosed} onClick={() => onApply(job)}>
+            {isApplying ? 'Mengirim...' : hasApplied ? 'Terkirim' : isClosed ? 'Ditutup' : 'Lamar'}
           </button>
         </div>
       </div>

@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { apiRequest } from '../../api'
+import SearchableSelect from '../../components/SearchableSelect'
 import { AdminTableToolbar, ConfirmDialog, AdminFormDialog } from './AdminPrimitives'
+import { AdminTablePagination } from './AdminPagination'
+import { useAdminPagination } from './useAdminPagination'
 import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 
@@ -96,6 +99,7 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
       || String(item[definition.parentField]) === parentFilter
     return matchesSearch && matchesDivision && matchesParent
   })
+  const { items: pageItems, page, setPage } = useAdminPagination(filteredItems)
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -179,10 +183,12 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
         {level === 'bureaus' && (
           <label>
             <span>Jenis unit <em>*</em></span>
-            <select onChange={(event) => setForm((current) => ({ ...current, unit_type: event.target.value }))} required value={form.unit_type}>
-              <option value="biro">Biro</option>
-              <option value="bengkel">Bengkel</option>
-            </select>
+            <SearchableSelect
+              onChange={(value) => setForm((current) => ({ ...current, unit_type: value }))}
+              options={[{ value: 'biro', label: 'Biro' }, { value: 'bengkel', label: 'Bengkel' }]}
+              required
+              value={form.unit_type}
+            />
           </label>
         )}
         <label>
@@ -204,23 +210,19 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
         {definition.parentField && (
           <label>
             <span>{definition.parentLabel} {!editingId && <em>*</em>}</span>
-            <select
+            <SearchableSelect
               disabled={Boolean(editingId) || !parents.length}
-              onChange={(event) => setParentId(event.target.value)}
+              onChange={setParentId}
+              options={editingId
+                ? [{
+                    value: getParentName(items.find((item) => item.id === editingId)),
+                    label: getParentName(items.find((item) => item.id === editingId)),
+                  }]
+                : parents.map((parent) => ({ value: String(parent.id), label: getParentOptionName(parent) }))}
+              placeholder={`Pilih ${definition.parentLabel.toLocaleLowerCase('id')}`}
               required={!editingId}
               value={editingId ? getParentName(items.find((item) => item.id === editingId)) : parentId}
-            >
-              {editingId ? (
-                <option>{getParentName(items.find((item) => item.id === editingId))}</option>
-              ) : (
-                <>
-                  <option value="">Pilih {definition.parentLabel.toLocaleLowerCase('id')}</option>
-                  {parents.map((parent) => (
-                    <option key={parent.id} value={parent.id}>{getParentOptionName(parent)}</option>
-                  ))}
-                </>
-              )}
-            </select>
+            />
           </label>
         )}
         {definition.parentField && !parents.length && (
@@ -286,11 +288,10 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
               onChange: setParentFilter,
               options: parents.map((parent) => ({ value: String(parent.id), label: parent.name })),
             }] : []}
+        onPageChange={setPage}
         onSearchChange={setSearch}
-        resultCount={filteredItems.length}
         search={search}
         searchPlaceholder={`Cari ${definition.label.toLocaleLowerCase('id')}${definition.parentField ? ' atau induknya' : ''}...`}
-        totalCount={items.length}
         onDownloadPdf={() => downloadTablePdf(
           level,
           level === 'divisions'
@@ -327,7 +328,7 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item) => (
+              {pageItems.map((item) => (
                 <tr key={item.id}>
                   <td className="position-name">{item.name}</td>
                   {level === 'bureaus' && <td>{item.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'}</td>}
@@ -353,6 +354,9 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
           <div className="admin-loading">{items.length ? 'Tidak ada data yang cocok.' : `Belum ada ${definition.label.toLocaleLowerCase('id')}.`}</div>
         )}
       </div>
+      {!isLoading && (
+        <AdminTablePagination onPageChange={setPage} page={page} total={filteredItems.length} />
+      )}
       <SuccessPopup message={notice} onClose={setNotice} />
       {isCreateModalOpen && (
         <AdminFormDialog className="admin-compact-editor-modal" onClose={resetForm} title={`Tambah ${definition.label.toLocaleLowerCase('id')}`}>
@@ -450,6 +454,7 @@ export function JobTypeManager({ jobTypes, isLoading, loadError, sessionToken, o
       || (jobType.job_count > 0 ? 'used' : 'unused') === usageFilter
     return matchesSearch && matchesUsage
   })
+  const { items: pageJobTypes, page, setPage } = useAdminPagination(filteredJobTypes)
 
   const editorForm = (
     <form className={isCreateModalOpen ? 'organization-form job-type-form admin-popup-form' : 'organization-form job-type-form'} onSubmit={handleSubmit}>
@@ -478,13 +483,14 @@ export function JobTypeManager({ jobTypes, isLoading, loadError, sessionToken, o
         </div>
         <button className="apply-button" disabled={isLoading || Boolean(loadError)} onClick={openCreateForm} type="button"><Plus size={16} /> Tambah jenis pekerjaan</button>
       </div>
-      <p className="organization-help job-type-description">Daftar ini menjadi pilihan pada formulir tambah dan edit lowongan. Jenis yang sudah dipakai lowongan tidak dapat dihapus.</p>
+      <p className="organization-help job-type-description">Pilihan ini tersedia pada formulir lowongan. Jenis yang sudah digunakan tidak bisa dihapus.</p>
       {editingId && (
         <AdminFormDialog className="admin-compact-editor-modal" onClose={resetForm} title="Edit jenis pekerjaan">
           {editorForm}
         </AdminFormDialog>
       )}
       <AdminTableToolbar
+        onPageChange={setPage}
         filters={[{
           label: 'Penggunaan',
           value: usageFilter,
@@ -492,10 +498,8 @@ export function JobTypeManager({ jobTypes, isLoading, loadError, sessionToken, o
           options: [{ value: 'used', label: 'Sudah digunakan' }, { value: 'unused', label: 'Belum digunakan' }],
         }]}
         onSearchChange={setSearch}
-        resultCount={filteredJobTypes.length}
         search={search}
         searchPlaceholder="Cari jenis pekerjaan..."
-        totalCount={jobTypes.length}
         onDownloadPdf={() => downloadTablePdf(
           'jenis-pekerjaan',
           'Daftar Jenis Pekerjaan',
@@ -516,7 +520,7 @@ export function JobTypeManager({ jobTypes, isLoading, loadError, sessionToken, o
           <table className="admin-table organization-table">
             <thead><tr><th>JENIS PEKERJAAN</th><th>LOWONGAN TERKAIT</th><th>AKSI</th></tr></thead>
             <tbody>
-              {filteredJobTypes.map((jobType) => (
+              {pageJobTypes.map((jobType) => (
                 <tr key={jobType.id}>
                   <td className="position-name">{jobType.name}</td>
                   <td>{jobType.job_count}</td>
@@ -540,6 +544,9 @@ export function JobTypeManager({ jobTypes, isLoading, loadError, sessionToken, o
           <div className="admin-loading">{jobTypes.length ? 'Tidak ada jenis pekerjaan yang cocok.' : 'Belum ada jenis pekerjaan.'}</div>
         )}
       </div>
+      {!isLoading && !loadError && (
+        <AdminTablePagination onPageChange={setPage} page={page} total={filteredJobTypes.length} />
+      )}
       <SuccessPopup message={notice} onClose={setNotice} />
       {isCreateModalOpen && (
         <AdminFormDialog className="admin-compact-editor-modal" onClose={resetForm} title="Tambah jenis pekerjaan">

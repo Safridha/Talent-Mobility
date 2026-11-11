@@ -2,9 +2,12 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { apiRequest } from '../../api'
+import SearchableSelect from '../../components/SearchableSelect'
 import { queryKeys } from '../../query/queryKeys'
 import SuccessPopup from '../../components/SuccessPopup'
 import { AdminFormDialog, AdminTableToolbar } from './AdminPrimitives'
+import { AdminTablePagination } from './AdminPagination'
+import { useAdminPagination } from './useAdminPagination'
 import { downloadTablePdf } from './downloadPdf'
 
 const EMPTY_EMPLOYEES = []
@@ -59,6 +62,7 @@ export function EmployeeDirectoryManager({
         .includes(query)
     ))
   }, [employees, search])
+  const { items: pageEmployees, page, setPage } = useAdminPagination(visibleEmployees)
 
   const saveMutation = useMutation({
     mutationFn: ({ id, body }) => apiRequest(
@@ -155,11 +159,10 @@ export function EmployeeDirectoryManager({
       </div>
       {statusError && <p className="admin-alert error" role="alert">{statusError}</p>}
       <AdminTableToolbar
+        onPageChange={setPage}
         onSearchChange={setSearch}
-        resultCount={visibleEmployees.length}
         search={search}
         searchPlaceholder="Cari NIP, nama, jabatan, atau unit..."
-        totalCount={employees.length}
         onDownloadPdf={() => downloadTablePdf(
           'direktori-karyawan',
           'Direktori Karyawan',
@@ -188,7 +191,7 @@ export function EmployeeDirectoryManager({
               <tr><th>NIP</th><th>NAMA</th><th>JABATAN</th><th>UNIT KERJA</th><th>STATUS</th>{canManage && <th>AKSI</th>}</tr>
             </thead>
             <tbody>
-              {visibleEmployees.map((employee) => (
+              {pageEmployees.map((employee) => (
                 <tr key={employee.id}>
                   <td className="position-code">{employee.employee_number}</td>
                   <td className="position-name">{employee.name}</td>
@@ -216,6 +219,9 @@ export function EmployeeDirectoryManager({
       ) : (
         <div className="admin-loading">{employees.length ? 'Tidak ada karyawan yang cocok.' : 'Belum ada data karyawan.'}</div>
       )}
+      {!employeesQuery.isPending && !employeesQuery.error && !organizationLoading && (
+        <AdminTablePagination onPageChange={setPage} page={page} total={visibleEmployees.length} />
+      )}
       {isFormOpen && (
         <AdminFormDialog
           className="admin-compact-editor-modal"
@@ -238,61 +244,61 @@ export function EmployeeDirectoryManager({
             </label>
             <label>
               <span>Tingkat unit <em>*</em></span>
-              <select
-                onChange={(event) => setForm((current) => ({
+              <SearchableSelect
+                onChange={(targetLevel) => setForm((current) => ({
                   ...current,
-                  target_level: event.target.value,
+                  target_level: targetLevel,
                   department_id: '',
                   bureau_id: '',
                 }))}
+                options={[
+                  ...(canManageDivisionEmployees ? [{ value: 'division', label: 'Divisi' }] : []),
+                  ...(canManageDivisionEmployees && secretariats.length > 0 ? [{ value: 'secretariat', label: 'Sekretariat Divisi' }] : []),
+                  { value: 'department', label: 'Departemen' },
+                  { value: 'bureau', label: 'Biro / Bengkel' },
+                ]}
                 required
                 value={form.target_level}
-              >
-                {canManageDivisionEmployees && <option value="division">Divisi</option>}
-                {canManageDivisionEmployees && secretariats.length > 0 && <option value="secretariat">Sekretariat Divisi</option>}
-                <option value="department">Departemen</option>
-                <option value="bureau">Biro / Bengkel</option>
-              </select>
+              />
             </label>
             <label>
               <span>Divisi <em>*</em></span>
-              <select
-                onChange={(event) => setForm((current) => ({ ...current, division_id: event.target.value, department_id: '', bureau_id: '' }))}
+              <SearchableSelect
+                onChange={(value) => setForm((current) => ({ ...current, division_id: value, department_id: '', bureau_id: '' }))}
+                options={(form.target_level === 'secretariat' ? secretariats : organization.divisions).map((division) => ({
+                  value: String(division.id),
+                  label: form.target_level === 'secretariat' ? division.secretariat_name : division.name,
+                }))}
+                placeholder="Pilih divisi"
                 required
                 value={form.division_id}
-              >
-                <option value="">Pilih divisi</option>
-                {(form.target_level === 'secretariat' ? secretariats : organization.divisions).map((division) => (
-                  <option key={division.id} value={division.id}>
-                    {form.target_level === 'secretariat' ? division.secretariat_name : division.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             {['department', 'bureau'].includes(form.target_level) && (
               <label>
                 <span>Departemen <em>*</em></span>
-                <select
-                  onChange={(event) => setForm((current) => ({ ...current, department_id: event.target.value, bureau_id: '' }))}
+                <SearchableSelect
+                  onChange={(value) => setForm((current) => ({ ...current, department_id: value, bureau_id: '' }))}
+                  options={departments.map((department) => ({ value: String(department.id), label: department.name }))}
+                  placeholder="Pilih departemen"
                   required
                   value={form.department_id}
-                >
-                  <option value="">Pilih departemen</option>
-                  {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
-                </select>
+                />
               </label>
             )}
             {form.target_level === 'bureau' && (
               <label>
                 <span>Biro / Bengkel <em>*</em></span>
-                <select onChange={(event) => setForm((current) => ({ ...current, bureau_id: event.target.value }))} required value={form.bureau_id}>
-                  <option value="">Pilih unit</option>
-                  {bureaus.map((bureau) => (
-                    <option key={bureau.id} value={bureau.id}>
-                      {bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — {bureau.name}
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  onChange={(value) => setForm((current) => ({ ...current, bureau_id: value }))}
+                  options={bureaus.map((bureau) => ({
+                    value: String(bureau.id),
+                    label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+                  }))}
+                  placeholder="Pilih unit"
+                  required
+                  value={form.bureau_id}
+                />
               </label>
             )}
             {formError && <p className="admin-alert error admin-form-wide" role="alert">{formError}</p>}

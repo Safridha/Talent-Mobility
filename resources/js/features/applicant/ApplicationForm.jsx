@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowRight, UploadCloud, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
+import SearchableSelect from '../../components/SearchableSelect'
 import { getJobTargetLabels } from './jobTargetLabels'
 
 const MAX_APPLICATION_FILE_BYTES = 5 * 1024 * 1024
@@ -132,54 +133,69 @@ export default function ApplicationForm({ job, session, organization, isSubmitti
               </label>
               <label htmlFor="application-origin-division">
                 <span className="application-form-label">Divisi Asal Saat Ini <em>*</em></span>
-                <select disabled={!organization.divisions.length} id="application-origin-division" name="origin_division" onChange={updateField} required value={form.origin_division}>
-                  <option value="">-- Pilih Divisi Asal --</option>
-                  {organization.divisions.map((division) => <option key={division.id} value={division.name}>{division.name}</option>)}
-                </select>
+                <SearchableSelect
+                  disabled={!organization.divisions.length}
+                  id="application-origin-division"
+                  name="origin_division"
+                  onChange={(value) => {
+                    setForm((current) => ({ ...current, origin_division: value }))
+                    setOriginDepartmentId('')
+                    setOriginBureauId('')
+                  }}
+                  options={organization.divisions.map((division) => ({ value: division.name, label: division.name }))}
+                  placeholder="Pilih divisi asal"
+                  required
+                  value={form.origin_division}
+                />
               </label>
               <label htmlFor="application-origin-department">
                 <span className="application-form-label">Departemen / Sekretariat Asal <em>*</em></span>
-                <select
+                <SearchableSelect
                   disabled={!selectedOriginDivision}
                   id="application-origin-department"
-                  onChange={(event) => {
-                    setOriginDepartmentId(event.target.value)
+                  onChange={(value) => {
+                    setOriginDepartmentId(value)
                     setOriginBureauId('')
                   }}
+                  options={[
+                    ...(selectedOriginDivision?.secretariat_name
+                      ? [{ value: 'secretariat', label: `Sekretariat — ${selectedOriginDivision.secretariat_name}` }]
+                      : []),
+                    ...originDepartments.map((department) => ({ value: String(department.id), label: department.name })),
+                  ]}
+                  placeholder="Pilih departemen / sekretariat"
                   required
                   value={originDepartmentId}
-                >
-                  <option value="">-- Pilih Departemen / Sekretariat --</option>
-                  {selectedOriginDivision?.secretariat_name && (
-                    <option value="secretariat">Sekretariat — {selectedOriginDivision.secretariat_name}</option>
-                  )}
-                  {originDepartments.map((department) => (
-                    <option key={department.id} value={department.id}>{department.name}</option>
-                  ))}
-                </select>
+                />
               </label>
               <label htmlFor="application-origin-bureau">
                 <span className="application-form-label">Biro / Bengkel Asal (opsional)</span>
-                <select
+                <SearchableSelect
                   disabled={!selectedOriginDepartment}
                   id="application-origin-bureau"
-                  onChange={(event) => setOriginBureauId(event.target.value)}
+                  onChange={setOriginBureauId}
+                  options={[
+                    { value: '', label: 'Tidak ada / tingkat departemen' },
+                    ...originBureaus.map((bureau) => ({
+                      value: String(bureau.id),
+                      label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+                    })),
+                  ]}
+                  placeholder="Tidak ada / tingkat departemen"
                   value={originBureauId}
-                >
-                  <option value="">Tidak ada / tingkat departemen</option>
-                  {originBureaus.map((bureau) => (
-                    <option key={bureau.id} value={bureau.id}>
-                      {bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — {bureau.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <label htmlFor="application-education-level">
                 <span className="application-form-label">Jenjang Pendidikan <em>*</em></span>
-                <select id="application-education-level" name="education_level" onChange={updateField} required value={form.education_level}>
-                  <option value="">-- Pilih Jenjang --</option>
-                  {['SMA/SMK', 'D1', 'D2', 'D3', 'D4/S1', 'S2', 'S3', 'Lainnya'].map((level) => <option key={level} value={level}>{level}</option>)}
-                </select>
+                <SearchableSelect
+                  id="application-education-level"
+                  name="education_level"
+                  onChange={(value) => setForm((current) => ({ ...current, education_level: value }))}
+                  options={['SMA/SMK', 'D1', 'D2', 'D3', 'D4/S1', 'S2', 'S3', 'Lainnya'].map((level) => ({ value: level, label: level }))}
+                  placeholder="Pilih jenjang"
+                  required
+                  value={form.education_level}
+                />
               </label>
               <label htmlFor="application-study-field">
                 <span className="application-form-label">Jurusan / Bidang Studi <em>*</em></span>

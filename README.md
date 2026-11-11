@@ -29,6 +29,16 @@ Dashboard admin tersedia dari tombol **Admin**. Akun awal dibuat dari `ADMIN_NAM
 
 Detail API dan database tersedia di [`services/app-backend/README.md`](services/app-backend/README.md).
 
+## Deploy dengan Docker
+
+1. Salin `.env.docker.example` menjadi `.env.docker`, lalu atur `POSTGRES_PASSWORD` dan samakan nilainya pada `DATABASE_URL`. Gunakan kata sandi acak yang URL-safe, atau URL-encode karakter khusus.
+2. Atur `APP_PUBLIC_URL` ke alamat publik aplikasi. Isi `ADMIN_NAME`, `ADMIN_EMAIL`, dan `ADMIN_PASSWORD` di `.env.docker` untuk membuat akun Super Admin awal. Compose menolak start jika salah satu belum diisi.
+3. Jalankan `docker compose --env-file .env.docker up --build -d`, lalu buka `http://localhost:8000` (atau port yang ditentukan oleh `APP_PORT`).
+
+Compose membangun frontend dan API dalam satu image, menunggu PostgreSQL siap, lalu menjalankan migrasi saat API mulai. Migrasi mengisi data master Divisi, Departemen, Biro/Bengkel, serta jenis pekerjaan awal; Super Admin dibuat dari variabel lingkungan di atas, tanpa kredensial bawaan di source code. Data PostgreSQL disimpan pada volume `postgres-data`. Untuk melihat log jalankan `docker compose --env-file .env.docker logs -f app`; untuk menghentikan layanan gunakan `docker compose --env-file .env.docker down`. Volume database tetap tersimpan; `down -v` akan menghapusnya.
+
+PWA tersedia melalui manifest dan service worker dengan cache shell dasar untuk akses offline. Web Push memerlukan HTTPS (localhost untuk pengembangan) dan pasangan VAPID. Buat pasangan dengan `npx --yes web-push generate-vapid-keys`, lalu isi `VAPID_PUBLIC_KEY` dan `VAPID_PRIVATE_KEY` di `.env.docker`; `VAPID_SUBJECT` boleh berupa `mailto:...` atau URL HTTPS (nilai contoh pada `.env.docker.example` harus diganti dengan kontak Anda). Kunci privat hanya disimpan di server. Pengguna dapat mengaktifkan atau menonaktifkan push dari panel notifikasi; admin menerima push untuk lamaran baru dan pelamar menerima push saat status lamaran berubah.
+
 ## Pemeriksaan sebelum pull request
 
 Jalankan `npm run check` untuk lint, typecheck, dan build frontend. Untuk backend, jalankan `cargo fmt --all -- --check` dan `cargo test --workspace`. Pengujian backend tidak memerlukan database lokal.

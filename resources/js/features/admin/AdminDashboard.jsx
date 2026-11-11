@@ -7,9 +7,12 @@ import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
 import { applicationStatusOptions } from '../applications/status'
 import { AccountSettingsPage } from '../account/AccountSettings'
 import { useAccountAvatar } from '../account/useAccountAvatar.ts'
-import { AdminTableToolbar, ConfirmDialog } from './AdminPrimitives'
+import { AdminTableToolbar } from './AdminPrimitives'
+import { AdminTablePagination } from './AdminPagination'
+import { useAdminPagination } from './useAdminPagination'
 import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
+import PushNotificationControl from '../../components/PushNotificationControl'
 import { JobEditor } from './JobEditor'
 import { OrganizationManager, JobTypeManager } from './OrganizationManagers'
 import { AccountManager } from './AccountManagers'
@@ -79,9 +82,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const [applicationSearch, setApplicationSearch] = useState('')
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('all')
   const [applicationJobFilter, setApplicationJobFilter] = useState('all')
-  const [pendingJobDelete, setPendingJobDelete] = useState(null)
-  const [jobDeleteError, setJobDeleteError] = useState('')
-  const [isDeletingJob, setIsDeletingJob] = useState(false)
   const [selectedApplication, setSelectedApplication] = useState(null)
   const [downloadingApplicationId, setDownloadingApplicationId] = useState(null)
   const [logoutError, setLogoutError] = useState('')
@@ -94,7 +94,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const canViewJobs = hasPermission('jobs.view')
   const canCreateJobs = hasPermission('jobs.create')
   const canUpdateJobs = hasPermission('jobs.update')
-  const canDeleteJobs = hasPermission('jobs.delete')
   const canChangeJobStatus = hasPermission('jobs.change_status')
   const canViewApplications = hasPermission('applications.view')
   const canChangeApplicationStatus = hasPermission('applications.change_status')
@@ -111,6 +110,15 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     department_head: 'Kepala Departemen (Kadep)',
   }[adminRole] || 'Administrator'
   const [avatarUrl, refreshAvatar] = useAccountAvatar(sessionToken)
+  const adminSessionQuery = useQuery({
+    queryKey: queryKeys.adminSession,
+    queryFn: () => apiRequest('/admin/session', { token: sessionToken }),
+    enabled: Boolean(sessionToken),
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    retry: false,
+  })
   const dashboardQuery = useQuery({
     queryKey: queryKeys.adminDashboard,
     queryFn: () => apiRequest('/admin/dashboard', { token: sessionToken }),
@@ -163,6 +171,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const isJobTypesLoading = jobTypesQuery.isPending
   const jobTypesError = jobTypesQuery.error?.message ?? ''
   const queryError = [
+    adminSessionQuery,
     dashboardQuery,
     ...(canViewJobs ? [jobsQuery] : []),
     ...(canViewApplications ? [applicationsQuery, adminNotificationsQuery] : []),
@@ -188,14 +197,16 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       token: sessionToken,
       body: JSON.stringify({ status }),
     }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.admin }),
-  })
-  const deleteJobMutation = useMutation({
-    mutationFn: (id) => apiRequest(`/admin/jobs/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      token: sessionToken,
-    }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.admin }),
+    onSuccess: async (_, { id, status }) => {
+      queryClient.setQueryData(queryKeys.adminJobs, (current) => current && ({
+        ...current,
+        data: current.data.map((job) => job.id === id ? { ...job, status } : job),
+      }))
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.admin }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.publicJobs }),
+      ])
+    },
   })
 
   function refresh() {
@@ -219,22 +230,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       setNotice(status === 'open' ? 'Lowongan dibuka.' : 'Lowongan ditutup.')
     } catch (requestError) {
       setError(requestError.message)
-    }
-  }
-
-  async function deleteJob() {
-    if (!pendingJobDelete) return
-    setJobDeleteError('')
-    setIsDeletingJob(true)
-    try {
-      await deleteJobMutation.mutateAsync(pendingJobDelete.id)
-      setPendingJobDelete(null)
-      setNotice('Lowongan berhasil dihapus.')
-      setError('')
-    } catch (requestError) {
-      setJobDeleteError(requestError.message)
-    } finally {
-      setIsDeletingJob(false)
     }
   }
 
@@ -341,6 +336,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     const matchesJob = applicationJobFilter === 'all' || String(application.job_id) === applicationJobFilter
     return matchesSearch && matchesStatus && matchesJob
   })
+  const { items: pageJobs, page: jobsPage, setPage: setJobsPage } = useAdminPagination(filteredJobs)
+  const { items: pageApplications, page: applicationsPage, setPage: setApplicationsPage } = useAdminPagination(filteredApplications)
 
   const availableViews = useMemo(() => {
     const access = {
@@ -387,6 +384,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     divisions: 'Kelola struktur organisasi tingkat divisi.',
     departments: 'Kelola struktur organisasi tingkat departemen.',
     bureaus: 'Kelola biro dan bengkel pada struktur organisasi.',
+    audit: 'Tinjau perubahan akun, izin akses, dan data master.',
   }[activeView]
   const activeViewLabel = views.find((view) => view.id === activeView)?.label || 'Dashboard Rekrutmen'
 
@@ -410,9 +408,10 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               {isNotificationsOpen && (
                 <section aria-label="Notifikasi lamaran baru" className="admin-notification-panel" role="dialog">
                   <div className="admin-notification-heading">
-                    <div><strong>Lamaran baru</strong><span>{unreadNotificationCount} belum dibaca</span></div>
+                    <div><strong>Lamaran baru</strong><span>Pelamar baru untuk lowongan dalam lingkup Anda · {unreadNotificationCount} belum dibaca</span></div>
                     <button aria-label="Tutup notifikasi" className="admin-notification-close" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                   </div>
+                  <PushNotificationControl sessionToken={sessionToken} />
                   {adminNotificationsQuery.isPending ? (
                     <p className="admin-notification-empty">Memuat notifikasi...</p>
                   ) : adminNotificationsQuery.error ? (
@@ -514,6 +513,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               {canCreateJobs && <button className="apply-button" disabled={isLoading || isJobTypesLoading || !jobTypes.length} onClick={() => setIsCreatingJob(true)} type="button"><Plus size={17} /> Tambah lowongan</button>}
             </div>
             <AdminTableToolbar
+              onPageChange={setJobsPage}
               filters={[
                 {
                   label: 'Status',
@@ -521,8 +521,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                   onChange: setJobStatusFilter,
                   options: [
                     { value: 'draft', label: 'Draft' },
-                    { value: 'open', label: 'Dibuka' },
-                    { value: 'closed', label: 'Ditutup' },
+                    { value: 'open', label: 'Open' },
+                    { value: 'closed', label: 'Closed' },
                   ],
                 },
                 {
@@ -539,10 +539,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                 },
               ]}
               onSearchChange={setJobSearch}
-              resultCount={filteredJobs.length}
               search={jobSearch}
               searchPlaceholder="Cari kode, posisi, divisi, unit..."
-              totalCount={jobs.length}
               onDownloadPdf={() => downloadTablePdf(
                 'lowongan',
                 'Daftar Lowongan',
@@ -565,8 +563,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               <table className="admin-table">
                 <thead><tr><th>KODE</th><th>POSISI</th><th>DIVISI / UNIT</th><th>KUOTA</th><th>STATUS</th><th>AKSI</th></tr></thead>
                 <tbody>
-                  {filteredJobs.map((job) => {
-                    const hasApplications = job.has_applications ?? applications.some((application) => application.job_id === job.id)
+                  {pageJobs.map((job) => {
                     return (
                       <tr key={job.id}>
                         <td className="position-code">{job.id}</td>
@@ -602,16 +599,11 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                           </div>
                         </td>
                         <td className="admin-row-actions">
-                          {canUpdateJobs && <button className="admin-small-button" onClick={() => setEditorJob(job)} type="button">Edit</button>}
-                          {canDeleteJobs && <button
-                            className="admin-small-button danger"
-                            disabled={isLoading || hasApplications}
-                            onClick={() => { setJobDeleteError(''); setPendingJobDelete(job) }}
-                            title={hasApplications ? 'Lowongan yang sudah memiliki lamaran hanya dapat ditutup' : undefined}
-                            type="button"
-                          >
-                            Hapus
-                          </button>}
+                          {canUpdateJobs && job.status !== 'open'
+                            ? <button className="admin-small-button" onClick={() => setEditorJob(job)} type="button">Edit</button>
+                            : canChangeJobStatus && job.status === 'open'
+                              ? <span className="admin-table-subtext">Tutup untuk edit</span>
+                              : '—'}
                         </td>
                       </tr>
                     )
@@ -620,6 +612,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                 </tbody>
               </table>
             </div>
+            <AdminTablePagination onPageChange={setJobsPage} page={jobsPage} total={filteredJobs.length} />
             <p className="admin-table-note">Lowongan yang sudah memiliki lamaran hanya dapat ditutup agar riwayat lamaran tetap terjaga.</p>
           </section>
         )}
@@ -637,6 +630,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
             <div className="admin-table-heading"><div><h2>Lamaran masuk</h2><p>{applications.length} lamaran</p></div></div>
             {!isLoading && (
               <AdminTableToolbar
+                onPageChange={setApplicationsPage}
                 filters={[
                   {
                     label: 'Status lamaran',
@@ -652,10 +646,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                   },
                 ]}
                 onSearchChange={setApplicationSearch}
-                resultCount={filteredApplications.length}
                 search={applicationSearch}
                 searchPlaceholder="Cari pelamar, email, NIP, posisi..."
-                totalCount={applications.length}
                 onDownloadPdf={() => downloadTablePdf(
                   'lamaran',
                   'Daftar Lamaran',
@@ -684,7 +676,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                 <table className="admin-table application-table">
                   <thead><tr><th>REG ID / WAKTU</th><th>NIP &amp; NAMA</th><th>UNIT ASAL</th><th>POSISI DILAMAR</th><th>PENDIDIKAN</th><th>FILE DOKUMEN</th><th>STATUS TAHAPAN</th><th>AKSI</th></tr></thead>
                   <tbody>
-                    {filteredApplications.map((application) => {
+                    {pageApplications.map((application) => {
                       const createdAt = new Date(application.created_at)
                       const registrationId = `REG-${createdAt.getFullYear()}-${String(application.id).padStart(4, '0')}`
                       return (
@@ -717,6 +709,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                 </table>
               </div>
             ) : <div className="admin-loading">{applications.length ? 'Tidak ada lamaran yang cocok.' : 'Belum ada lamaran masuk.'}</div>}
+            {!isLoading && <AdminTablePagination onPageChange={setApplicationsPage} page={applicationsPage} total={filteredApplications.length} />}
           </section>
         )}
         {activeView === 'accounts' && <AccountManager key={sessionToken} organization={organization} session={session} />}
@@ -746,18 +739,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
         )}
       </div>
       <SuccessPopup message={notice} onClose={setNotice} />
-      {isCreatingJob && <JobEditor adminRole={adminRole} jobTypes={jobTypes} key="new" onClose={() => setIsCreatingJob(false)} onSave={saveJob} organization={organization} />}
-      {editorJob && <JobEditor adminRole={adminRole} hasApplications={editorJob.has_applications ?? applications.some((application) => application.job_id === editorJob.id)} job={editorJob} jobTypes={jobTypes} key={editorJob.id} onClose={() => setEditorJob(null)} onSave={saveJob} organization={organization} />}
-      {pendingJobDelete && (
-        <ConfirmDialog
-          error={jobDeleteError}
-          isBusy={isDeletingJob}
-          message={`Lowongan "${pendingJobDelete.title}" akan dihapus permanen. Aksi ini hanya tersedia jika belum ada lamaran.`}
-          onCancel={() => { setPendingJobDelete(null); setJobDeleteError('') }}
-          onConfirm={() => void deleteJob()}
-          title="Hapus lowongan?"
-        />
-      )}
+      {isCreatingJob && <JobEditor admin={session.admin} adminRole={adminRole} jobTypes={jobTypes} key="new" onClose={() => setIsCreatingJob(false)} onSave={saveJob} organization={organization} />}
+      {editorJob && <JobEditor admin={session.admin} adminRole={adminRole} hasApplications={editorJob.has_applications ?? applications.some((application) => application.job_id === editorJob.id)} job={editorJob} jobTypes={jobTypes} key={editorJob.id} onClose={() => setEditorJob(null)} onSave={saveJob} organization={organization} />}
       {selectedApplication && (
         <ApplicationReview
           application={selectedApplication}

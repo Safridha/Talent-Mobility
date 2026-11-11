@@ -1,15 +1,32 @@
 use super::*;
 
+#[derive(Deserialize)]
+pub(super) struct PublicJobsQuery {
+    status: Option<String>,
+}
+
 pub(super) async fn list_jobs(
     State(state): State<AppState>,
+    Query(query): Query<PublicJobsQuery>,
 ) -> Result<Json<JobsResponse>, ApiError> {
+    let status = public_job_status_filter(query.status.as_deref())?;
     let data = sqlx::query_as::<_, Job>(
-        "SELECT job_postings.id, title, division, department, unit, CASE WHEN target_level = 'bureau' THEN bureaus.unit_type ELSE target_level END AS unit_type, target_level, job_postings.division_id, job_postings.department_id, job_postings.bureau_id, location, quota, posted, job_types.name AS job_type, summary, skills, responsibilities, status, NULL::BOOLEAN AS has_applications FROM job_postings JOIN job_types ON job_types.id = job_postings.job_type_id LEFT JOIN bureaus ON bureaus.id = job_postings.bureau_id WHERE status = 'open' ORDER BY job_postings.id",
+        "SELECT job_postings.id, title, division, department, unit, CASE WHEN target_level = 'bureau' THEN bureaus.unit_type ELSE target_level END AS unit_type, target_level, job_postings.division_id, job_postings.department_id, job_postings.bureau_id, location, quota, posted, job_types.name AS job_type, summary, skills, responsibilities, status, NULL::BOOLEAN AS has_applications FROM job_postings JOIN job_types ON job_types.id = job_postings.job_type_id LEFT JOIN bureaus ON bureaus.id = job_postings.bureau_id WHERE status IN ('open', 'closed') AND ($1 = 'all' OR status = $1) ORDER BY job_postings.id",
     )
+    .bind(status)
     .fetch_all(&state.pool)
     .await
     .map_err(internal_error)?;
     Ok(Json(JobsResponse { data }))
+}
+
+fn public_job_status_filter(status: Option<&str>) -> Result<&'static str, ApiError> {
+    match status.unwrap_or("open") {
+        "open" => Ok("open"),
+        "closed" => Ok("closed"),
+        "all" => Ok("all"),
+        _ => Err(ApiError::BadRequest("Filter status lowongan tidak valid.")),
+    }
 }
 
 pub(super) async fn admin_list_jobs(
@@ -87,8 +104,8 @@ pub(super) async fn admin_update_job(
     ensure_can_manage_job_target(&admin, &fields, &organization)?;
     let job_type_id = resolve_job_type_id(&state.pool, &fields.job_type).await?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let existing = sqlx::query_as::<_, (String, i64, Option<i64>, Option<i64>)>(
-        "SELECT target_level, division_id, department_id, bureau_id FROM job_postings WHERE id = $1 AND ($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND division_id = $3) OR ($2 = 'department_head' AND target_level <> 'division' AND department_id = $4)) FOR UPDATE",
+    let existing = sqlx::query_as::<_, (String, i64, Option<i64>, Option<i64>, String)>(
+        "SELECT target_level, division_id, department_id, bureau_id, status FROM job_postings WHERE id = $1 AND ($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND division_id = $3) OR ($2 = 'department_head' AND target_level <> 'division' AND department_id = $4)) FOR UPDATE",
     )
     .bind(&id)
     .bind(&admin.admin_role)
@@ -98,6 +115,11 @@ pub(super) async fn admin_update_job(
     .await
     .map_err(internal_error)?
     .ok_or(ApiError::NotFound("Lowongan tidak ditemukan."))?;
+    if existing.4 == "open" {
+        return Err(ApiError::Conflict(
+            "Lowongan aktif harus ditutup sebelum dapat diedit.",
+        ));
+    }
     let has_applications: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM applications WHERE job_id = $1)")
             .bind(&id)
@@ -1242,6 +1264,14 @@ pub(super) fn validate_admin_job(id: &str, fields: &AdminJobFields) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_job_status_defaults_to_open_and_allows_only_public_filters() {
+        assert_eq!(public_job_status_filter(None).unwrap(), "open");
+        assert_eq!(public_job_status_filter(Some("closed")).unwrap(), "closed");
+        assert_eq!(public_job_status_filter(Some("all")).unwrap(), "all");
+        assert!(public_job_status_filter(Some("draft")).is_err());
+    }
 
     fn admin_context(
         role: &str,

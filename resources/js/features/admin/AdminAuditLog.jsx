@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../../api'
 import { AdminTableToolbar } from './AdminPrimitives'
+import { AdminTablePagination } from './AdminPagination'
+import { useAdminPagination } from './useAdminPagination'
 
 const actionLabels = {
   create: 'Dibuat',
@@ -73,34 +75,34 @@ export function AdminAuditLog({ sessionToken }) {
         .includes(query)
     ))
   }, [events, search])
+  const { items: pageEvents, page, setPage } = useAdminPagination(filteredEvents)
 
   return (
-    <section aria-label="Riwayat audit admin" className="admin-section">
-      <header className="admin-section-heading">
+    <section aria-label="Riwayat audit admin" className="admin-table-panel admin-audit-panel">
+      <header className="admin-table-heading">
         <div>
-          <span className="admin-eyebrow">ADMINISTRASI</span>
+          <span className="section-kicker">ADMINISTRASI</span>
           <h2>Riwayat Audit</h2>
-          <p>Catatan perubahan akun, izin, dan data master. Kata sandi dan token tidak dicatat.</p>
+          <p>Jejak perubahan akun, izin, dan data master. Kata sandi dan token tidak disimpan.</p>
         </div>
       </header>
-      {error && <p className="login-error" role="alert">{error}</p>}
+      {error && <p className="admin-alert error" role="alert">{error}</p>}
       <AdminTableToolbar
+        onPageChange={setPage}
         onSearchChange={setSearch}
-        resultCount={filteredEvents.length}
         search={search}
         searchPlaceholder="Cari pelaku atau perubahan"
-        totalCount={events.length}
       />
       {isLoading ? (
         <div className="admin-loading">Memuat riwayat audit...</div>
       ) : filteredEvents.length ? (
-        <div className="admin-table-wrap">
+        <div className="admin-table-scroll">
           <table className="admin-table">
             <thead>
               <tr><th>Waktu</th><th>Pelaku</th><th>Aksi</th><th>Data</th><th>Rincian</th></tr>
             </thead>
             <tbody>
-              {filteredEvents.map((event) => (
+              {pageEvents.map((event) => (
                 <tr key={event.id}>
                   <td>{new Date(event.created_at).toLocaleString('id-ID')}</td>
                   <td>{event.actor_name || 'Akun tidak tersedia'}<span className="admin-table-subtext">{event.actor_email || `ID ${event.actor_admin_id ?? '—'}`}</span></td>
@@ -115,10 +117,15 @@ export function AdminAuditLog({ sessionToken }) {
       ) : (
         <div className="admin-loading">{events.length ? 'Tidak ada catatan yang cocok.' : 'Belum ada catatan audit.'}</div>
       )}
+      {!isLoading && (
+        <AdminTablePagination onPageChange={setPage} page={page} total={filteredEvents.length} />
+      )}
       {nextBeforeId && (
-        <button className="admin-small-button" disabled={isLoadingMore} onClick={() => void loadMore()} type="button">
-          {isLoadingMore ? 'Memuat...' : 'Muat catatan lebih lama'}
-        </button>
+        <div className="admin-audit-load-more">
+          <button className="admin-small-button" disabled={isLoadingMore} onClick={() => void loadMore()} type="button">
+            {isLoadingMore ? 'Memuat...' : 'Muat catatan lebih lama'}
+          </button>
+        </div>
       )}
     </section>
   )

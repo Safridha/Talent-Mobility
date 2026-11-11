@@ -1,8 +1,16 @@
 import { useState } from 'react'
-import { Download, FileText, Save, X } from 'lucide-react'
+import { Building2, CalendarDays, Download, FileText, GraduationCap, Mail, MapPin, Paperclip, Phone, Save, UserRound, X } from 'lucide-react'
 import { apiDownload } from '../../api'
 import ModalBackdrop from '../../components/ModalBackdrop'
-import { getAvailableApplicationStatuses } from '../applications/status'
+import SearchableSelect from '../../components/SearchableSelect'
+import { applicationStatusOptions, getAvailableApplicationStatuses } from '../applications/status'
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 export function ApplicationReview({
   application,
@@ -17,6 +25,18 @@ export function ApplicationReview({
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [downloadingDocumentId, setDownloadingDocumentId] = useState(null)
+  const documents = application.documents ?? []
+  const statusLabel = applicationStatusOptions.find((option) => option.value === application.status)?.label || application.status
+  const submittedAt = new Date(application.created_at)
+  const submittedAtLabel = Number.isNaN(submittedAt.getTime())
+    ? application.created_at
+    : submittedAt.toLocaleString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
 
   async function downloadDocument(file) {
     setError('')
@@ -58,85 +78,137 @@ export function ApplicationReview({
   return (
     <ModalBackdrop onDismiss={onClose}>
       <section aria-labelledby="application-review-title" aria-modal="true" className="detail-modal application-review-modal" onClick={(event) => event.stopPropagation()} role="dialog">
-        <div className="modal-heading">
-          <span className="division-tag"><FileText size={14} /> Detail lamaran</span>
-          <button aria-label="Tutup detail lamaran" className="icon-button" onClick={onClose} type="button"><X size={20} /></button>
-        </div>
-        <h2 id="application-review-title">{application.job_title}</h2>
-        <dl className="application-detail-list">
-          <div><dt>Nama sesuai ID</dt><dd>{application.applicant_name}</dd></div>
-          <div><dt>Email</dt><dd><a href={`mailto:${application.applicant_email}`}>{application.applicant_email}</a></dd></div>
-          {application.employee_number ? (
-            <>
-              <div><dt>NIP</dt><dd>{application.employee_number}</dd></div>
-              <div><dt>Divisi asal</dt><dd>{application.origin_division}</dd></div>
-              <div><dt>Departemen / unit asal</dt><dd>{application.origin_unit}</dd></div>
-              <div><dt>Pendidikan</dt><dd>{application.education_level}</dd></div>
-              <div><dt>Jurusan</dt><dd>{application.study_field}</dd></div>
-            </>
-          ) : (
-            <>
-              <div><dt>Nomor HP</dt><dd>{application.phone_number || 'Belum diisi'}</dd></div>
-              <div><dt>Posisi saat ini</dt><dd>{application.current_position || 'Belum diisi'}</dd></div>
-              <div><dt>Unit / divisi</dt><dd>{application.current_unit || 'Belum diisi'}</dd></div>
-            </>
-          )}
-          <div><dt>Kode posisi</dt><dd>{application.job_id}</dd></div>
-          <div><dt>Dikirim</dt><dd>{application.created_at}</dd></div>
-        </dl>
-        <section className="application-review-motivation">
-          <h3>Motivasi &amp; rencana kontribusi</h3>
-          <p>{application.motivation || 'Belum diisi.'}</p>
-        </section>
-        <section className="application-review-documents">
-          <h3>Dokumen lamaran</h3>
-          {application.documents.length ? application.documents.map((file) => (
-            <div className="application-document-row" key={file.id}>
-              <span>{({
-                cv: 'CV',
-                cover_letter: 'Surat pengantar',
-                certificate: 'Sertifikat pendukung',
-                supporting_document: 'Berkas pendukung',
-              })[file.document_type] || 'Dokumen'} <small>{file.file_name}</small></span>
-              {canDownloadDocuments && <button
-                className="admin-small-button"
-                disabled={downloadingDocumentId === file.id}
-                onClick={() => void downloadDocument(file)}
-                type="button"
-              >
-                <Download size={15} /> {downloadingDocumentId === file.id ? 'Mengunduh...' : 'Unduh'}
-              </button>}
-            </div>
-          )) : <p className="application-document-empty">Belum ada dokumen.</p>}
-        </section>
-        {canChangeStatus ? (
-          <>
-            <label className="application-status-select">Status proses
-              <select onChange={(event) => setStatus(event.target.value)} value={status}>
-                {getAvailableApplicationStatuses(application.status).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
-            {status !== application.status && (
-          <label className="application-status-select">Alasan perubahan status{status === 'rejected' ? ' (wajib)' : ' (opsional)'}
-            <textarea
-              maxLength={1000}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Jelaskan alasan atau informasi untuk pelamar"
-              required={status === 'rejected'}
-              rows={3}
-              value={reason}
-            />
-          </label>
+        <header className="application-review-header">
+          <div className="modal-heading">
+            <span className="division-tag"><FileText size={14} /> Detail lamaran</span>
+            <button aria-label="Tutup detail lamaran" className="icon-button" onClick={onClose} type="button"><X size={20} /></button>
+          </div>
+          <h2 id="application-review-title">{application.job_title}</h2>
+          <p>Ringkasan informasi pelamar dan proses seleksi untuk posisi ini.</p>
+          <div className="application-review-summary">
+            <span className={`status-pill status-${application.status}`}>{statusLabel}</span>
+            <span><CalendarDays aria-hidden="true" size={15} /> {submittedAtLabel}</span>
+            <span><Paperclip aria-hidden="true" size={15} /> {documents.length} dokumen</span>
+          </div>
+        </header>
+
+        <div className="application-review-content">
+          <div className="application-review-section-grid">
+            <section className="application-review-section">
+              <h3><UserRound aria-hidden="true" size={17} /> Informasi pelamar</h3>
+              <dl className="application-detail-grid">
+                <div><dt>Nama sesuai ID</dt><dd>{application.applicant_name}</dd></div>
+                <div><dt>Email</dt><dd><a href={`mailto:${application.applicant_email}`}><Mail aria-hidden="true" size={14} /> {application.applicant_email}</a></dd></div>
+                {application.employee_number ? (
+                  <div><dt>NIP</dt><dd>{application.employee_number}</dd></div>
+                ) : (
+                  <div><dt>Nomor HP</dt><dd>{application.phone_number ? <a href={`tel:${application.phone_number}`}><Phone aria-hidden="true" size={14} /> {application.phone_number}</a> : 'Belum diisi'}</dd></div>
+                )}
+              </dl>
+            </section>
+
+            <section className="application-review-section">
+              <h3><Building2 aria-hidden="true" size={17} /> {application.employee_number ? 'Organisasi asal' : 'Pekerjaan saat ini'}</h3>
+              <dl className="application-detail-grid">
+                {application.employee_number ? (
+                  <>
+                    <div><dt>Divisi</dt><dd>{application.origin_division || 'Belum diisi'}</dd></div>
+                    <div className="application-detail-wide"><dt>Departemen / unit</dt><dd><MapPin aria-hidden="true" size={14} /> {application.origin_unit || 'Belum diisi'}</dd></div>
+                  </>
+                ) : (
+                  <>
+                    <div><dt>Posisi</dt><dd>{application.current_position || 'Belum diisi'}</dd></div>
+                    <div><dt>Unit / divisi</dt><dd>{application.current_unit || 'Belum diisi'}</dd></div>
+                  </>
+                )}
+              </dl>
+            </section>
+
+            {application.employee_number && (
+              <section className="application-review-section">
+                <h3><GraduationCap aria-hidden="true" size={18} /> Pendidikan</h3>
+                <dl className="application-detail-grid">
+                  <div><dt>Pendidikan terakhir</dt><dd>{application.education_level || 'Belum diisi'}</dd></div>
+                  <div><dt>Jurusan</dt><dd>{application.study_field || 'Belum diisi'}</dd></div>
+                </dl>
+              </section>
             )}
-          </>
-        ) : <p className="application-document-empty">Akun ini hanya dapat melihat lamaran.</p>}
-        {error && <p className="login-error" role="alert">{error}</p>}
-        <div className="detail-actions">
+
+            <section className="application-review-section">
+              <h3><FileText aria-hidden="true" size={17} /> Posisi yang dilamar</h3>
+              <dl className="application-detail-grid">
+                <div><dt>Kode posisi</dt><dd>{application.job_id}</dd></div>
+                <div><dt>ID lamaran</dt><dd>{application.id}</dd></div>
+              </dl>
+            </section>
+          </div>
+
+          <section className="application-review-section application-review-motivation">
+            <h3>Motivasi &amp; rencana kontribusi</h3>
+            <p>{application.motivation || 'Pelamar belum mengisi motivasi atau rencana kontribusi.'}</p>
+          </section>
+
+          <section className="application-review-section application-review-documents">
+            <div className="application-review-section-heading">
+              <h3><Paperclip aria-hidden="true" size={17} /> Dokumen pendukung</h3>
+              <span>{documents.length} berkas</span>
+            </div>
+            {documents.length ? documents.map((file) => (
+              <div className="application-document-row" key={file.id}>
+                <span>{({
+                  cv: 'CV',
+                  cover_letter: 'Surat pengantar',
+                  certificate: 'Sertifikat pendukung',
+                  supporting_document: 'Berkas pendukung',
+                })[file.document_type] || 'Dokumen'} <small>{file.file_name}{formatFileSize(file.file_size) && ` · ${formatFileSize(file.file_size)}`}</small></span>
+                {canDownloadDocuments && <button
+                  className="admin-small-button"
+                  disabled={downloadingDocumentId === file.id}
+                  onClick={() => void downloadDocument(file)}
+                  type="button"
+                >
+                  <Download size={15} /> {downloadingDocumentId === file.id ? 'Mengunduh...' : 'Unduh'}
+                </button>}
+              </div>
+            )) : <p className="application-document-empty">Belum ada dokumen pendukung.</p>}
+          </section>
+
+          {canChangeStatus ? (
+            <section className="application-review-section application-review-status">
+              <h3>Perbarui tahap seleksi</h3>
+              <p className="application-review-help">Status yang dipilih akan menjadi informasi terbaru bagi pelamar.</p>
+              <label className="application-status-select">Status proses
+                <SearchableSelect
+                  onChange={setStatus}
+                  options={getAvailableApplicationStatuses(application.status)}
+                  value={status}
+                />
+              </label>
+              {status !== application.status && (
+                <label className="application-status-select">Catatan untuk pelamar{status === 'rejected' ? ' (wajib)' : ' (opsional)'}
+                  <textarea
+                    maxLength={1000}
+                    onChange={(event) => setReason(event.target.value)}
+                    placeholder="Jelaskan alasan atau informasi untuk pelamar"
+                    required={status === 'rejected'}
+                    rows={3}
+                    value={reason}
+                  />
+                </label>
+              )}
+            </section>
+          ) : (
+            <p className="application-review-readonly">Akun ini memiliki akses lihat saja; perubahan tahap seleksi tidak tersedia.</p>
+          )}
+          {error && <p className="login-error" role="alert">{error}</p>}
+        </div>
+
+        <footer className="detail-actions application-review-actions">
           <button className="detail-button" onClick={onClose} type="button">Tutup</button>
           {canChangeStatus && <button className="apply-button" disabled={isSaving || status === application.status} onClick={handleSave} type="button">
             <Save size={16} /> {isSaving ? 'Menyimpan...' : 'Simpan status'}
           </button>}
-        </div>
+        </footer>
       </section>
     </ModalBackdrop>
   )

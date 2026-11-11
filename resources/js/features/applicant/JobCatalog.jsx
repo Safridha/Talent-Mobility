@@ -3,14 +3,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../query/queryKeys'
 import ApplicationForm from './ApplicationForm'
 import { JobCard, JobDetail } from './JobCards'
-import { ArrowLeft, Bell, Building2, FileText, LogIn, Megaphone, RotateCcw, Search, Shield, SlidersHorizontal, Users, UserPlus, Wrench, X } from 'lucide-react'
+import { ArrowLeft, Bell, Building2, ChevronLeft, ChevronRight, FileText, LogIn, Megaphone, RotateCcw, Search, Shield, SlidersHorizontal, Users, UserPlus, Wrench, X } from 'lucide-react'
 import { apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import SuccessPopup from '../../components/SuccessPopup'
 import ComingSoonPopup from '../../components/ComingSoonPopup'
+import SearchableSelect from '../../components/SearchableSelect'
+import PushNotificationControl from '../../components/PushNotificationControl'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
 import { AccountSettingsPage } from '../account/AccountSettings'
 import { useAccountAvatar } from '../account/useAccountAvatar.ts'
+import ApplicantApplicationProgress from './ApplicantApplicationProgress'
 import AuthDialog from '../auth/AuthDialog'
 import { applicationStatusOptions, getApplicationStatusDescription } from '../applications/status'
 import { useHashRoute } from '../../useHashRoute'
@@ -19,28 +22,42 @@ const PUBLIC_JOBS_PER_PAGE = 12
 const EMPTY_JOBS = []
 const APPLICANT_ROUTES = ['lowongan', 'lamaran', 'akun/profil', 'akun/keamanan']
 
-export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdated }) {
+export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdated, sessionNotice }) {
   const queryClient = useQueryClient()
   const [route, navigate] = useHashRoute('lowongan', APPLICANT_ROUTES)
   const [isComingSoonOpen, setIsComingSoonOpen] = useState(true)
+  const [jobStatus, setJobStatus] = useState('open')
   const accountSection = route === 'akun/profil' ? 'profile' : route === 'akun/keamanan' ? 'security' : null
   const [accountReturnTab, setAccountReturnTab] = useState(route === 'lamaran' ? 'applications' : 'jobs')
   const activeTab = accountSection
     ? accountReturnTab
     : route === 'lamaran' ? 'applications' : 'jobs'
   const jobsQuery = useQuery({
-    queryKey: queryKeys.publicJobs,
-    queryFn: async () => (await apiRequest('/jobs')).data,
+    queryKey: [...queryKeys.publicJobs, jobStatus],
+    queryFn: async () => (await apiRequest(`/jobs?status=${jobStatus}`)).data,
   })
   const organizationQuery = useQuery({
     queryKey: queryKeys.publicOrganization,
     queryFn: async () => apiRequest('/organization'),
   })
   const jobs = jobsQuery.data ?? EMPTY_JOBS
+  const statusFilteredJobs = useMemo(
+    () => jobs.filter((job) => (
+      jobStatus === 'all'
+        ? job.status === 'open' || job.status === 'closed'
+        : job.status === jobStatus
+    )),
+    [jobStatus, jobs],
+  )
   const organization = organizationQuery.data ?? { divisions: [], departments: [], bureaus: [] }
-  const targetUnitCount = new Set(jobs.map((job) => (
+  const targetUnitCount = new Set(statusFilteredJobs.map((job) => (
     `${job.target_level}:${job.division_id}:${job.department_id ?? ''}:${job.bureau_id ?? ''}`
   ))).size
+  const jobStatusLabels = {
+    open: { title: 'Posisi Aktif', results: 'aktif' },
+    closed: { title: 'Posisi Ditutup', results: 'nonaktif / ditutup' },
+    all: { title: 'Semua Posisi', results: 'aktif dan ditutup' },
+  }[jobStatus]
   const isLoading = jobsQuery.isPending || organizationQuery.isPending
   const jobsError = jobsQuery.error?.message || organizationQuery.error?.message || ''
   const [logoutError, setLogoutError] = useState('')
@@ -51,6 +68,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const [unitTarget, setUnitTarget] = useState('')
   const [jobPage, setJobPage] = useState(1)
   const [selectedJob, setSelectedJob] = useState(null)
+  const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [authMode, setAuthMode] = useState(null)
   const [applicationFormOpen, setApplicationFormOpen] = useState(false)
   const [pendingJob, setPendingJob] = useState(null)
@@ -73,6 +91,10 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     refetchInterval: 15_000,
   })
   const currentUserApplications = applicationsQuery.data?.data ?? []
+  const selectedApplication = currentUserApplications.find((application) => application.id === selectedApplicationId)
+  const selectedApplicationJob = selectedApplication
+    ? jobs.find((job) => job.id === selectedApplication.job_id)
+    : null
   const appliedJobIds = new Set(
     currentUserApplications
       .filter((application) => application.status !== 'rejected')
@@ -172,7 +194,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     return [...secretariats, ...bureaus]
   }, [departmentId, divisionId, organization.bureaus, organization.departments, organization.divisions])
   const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => (
+    return statusFilteredJobs.filter((job) => (
       (!divisionId || String(job.division_id) === divisionId)
       && (!departmentId || String(job.department_id) === departmentId)
       && (!unitTarget
@@ -183,7 +205,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
           && job.target_level === 'bureau'
           && String(job.bureau_id) === unitTarget.slice('bureau:'.length)))
     ))
-  }, [departmentId, divisionId, jobs, unitTarget])
+  }, [departmentId, divisionId, statusFilteredJobs, unitTarget])
   const jobPageCount = Math.ceil(filteredJobs.length / PUBLIC_JOBS_PER_PAGE)
   const currentJobPage = Math.min(jobPage, Math.max(1, jobPageCount))
   const visibleJobs = filteredJobs.slice(
@@ -192,6 +214,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   )
 
   function resetFilters() {
+    setJobStatus('open')
     setDivisionId('')
     setDepartmentId('')
     setUnitTarget('')
@@ -213,6 +236,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   }
 
   function handleApply(job) {
+    if (job.status !== 'open') return
     setSelectedJob(null)
     setApplicationNotice('')
     if (!session) {
@@ -286,7 +310,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                   <button
                     aria-expanded={isNotificationsOpen}
                     aria-haspopup="dialog"
-                    aria-label={`Notifikasi, ${currentUnreadNotificationCount} belum dibaca`}
+                    aria-label={`Pembaruan status lamaran, ${currentUnreadNotificationCount} belum dibaca`}
                     className="applicant-notification-button"
                     onClick={() => setIsNotificationsOpen((current) => !current)}
                     title="Notifikasi"
@@ -302,9 +326,10 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                   {isNotificationsOpen && (
                     <section aria-label="Notifikasi status lamaran" className="applicant-notification-panel" role="dialog">
                       <header>
-                        <strong>Notifikasi</strong>
+                        <div><strong>Status lamaran</strong><span>Perubahan proses dari tim rekrutmen</span></div>
                         <button aria-label="Tutup notifikasi" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                       </header>
+                      <PushNotificationControl sessionToken={sessionToken} />
                       {notificationsError ? (
                         <p className="applicant-notification-error" role="alert">{notificationsError}</p>
                       ) : notificationsQuery.isPending ? (
@@ -334,7 +359,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                           })}
                         </ul>
                       ) : (
-                        <p className="applicant-notification-empty">Belum ada notifikasi status lamaran.</p>
+                        <p className="applicant-notification-empty">Belum ada pembaruan status lamaran.</p>
                       )}
                     </section>
                   )}
@@ -360,7 +385,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
       </header>
 
       <div className="page-content">
-        {logoutError && <p className="login-error" role="alert">{logoutError}</p>}
+        {(logoutError || sessionNotice) && <p className="login-error" role="alert">{logoutError || sessionNotice}</p>}
         {accountSection ? (
           <AccountSettingsPage
             avatarUrl={avatarUrl}
@@ -380,43 +405,66 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 <p>Fasilitasi perpindahan internal transparan antardivisi, biro, dan bengkel produksi. Perluas keahlian teknis dan manajerial Anda untuk kemajuan bersama perusahaan.</p>
               </div>
               <div className="hero-stats" aria-label="Ringkasan lowongan">
-                <div><strong>{jobs.length}</strong><span>Posisi Aktif</span></div>
+                <div><strong>{statusFilteredJobs.length}</strong><span>{jobStatusLabels.title}</span></div>
                 <div><strong>{targetUnitCount}</strong><span>Unit Tujuan</span></div>
               </div>
             </section>
 
-            <section className="filter-panel" aria-label="Filter struktur organisasi lowongan">
+            <section className="filter-panel" aria-label="Filter lowongan">
               <div className="filter-heading">
-                <h2><SlidersHorizontal size={21} /> Filter berdasarkan struktur organisasi</h2>
+                <h2><SlidersHorizontal size={21} /> Filter lowongan</h2>
                 <button className="reset-button" onClick={resetFilters}><RotateCcw size={15} /> Reset Filter</button>
               </div>
               <div className="filter-grid">
+                <label>Status lowongan
+                  <SearchableSelect
+                    onChange={(value) => { setJobStatus(value); setJobPage(1); setSelectedJob(null) }}
+                    options={[
+                      { value: 'open', label: 'Aktif / Open' },
+                      { value: 'closed', label: 'Nonaktif / Closed' },
+                      { value: 'all', label: 'Semua lowongan' },
+                    ]}
+                    value={jobStatus}
+                  />
+                </label>
                 <label>Divisi Tujuan
-                  <select onChange={(event) => { setDivisionId(event.target.value); setDepartmentId(''); setUnitTarget(''); setJobPage(1) }} value={divisionId}>
-                    <option value="">Semua Divisi</option>
-                    {divisions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
+                  <SearchableSelect
+                    onChange={(value) => { setDivisionId(value); setDepartmentId(''); setUnitTarget(''); setJobPage(1) }}
+                    options={[
+                      { value: '', label: 'Semua Divisi' },
+                      ...divisions.map((item) => ({ value: String(item.id), label: item.name })),
+                    ]}
+                    value={divisionId}
+                  />
                 </label>
                 <label>Departemen Tujuan
-                  <select onChange={(event) => { setDepartmentId(event.target.value); setUnitTarget(''); setJobPage(1) }} value={departmentId}>
-                    <option value="">Semua Departemen</option>
-                    {departments.map((item) => {
+                  <SearchableSelect
+                    onChange={(value) => { setDepartmentId(value); setUnitTarget(''); setJobPage(1) }}
+                    options={[
+                      { value: '', label: 'Semua Departemen' },
+                      ...departments.map((item) => {
                       const division = divisions.find((candidate) => candidate.id === item.division_id)
-                      return <option key={item.id} value={item.id}>{division ? `${division.name} / ` : ''}{item.name}</option>
-                    })}
-                  </select>
+                        return { value: String(item.id), label: `${division ? `${division.name} / ` : ''}${item.name}` }
+                      }),
+                    ]}
+                    value={departmentId}
+                  />
                 </label>
                 <label>Sekretariat / Biro / Bengkel
-                  <select onChange={(event) => { setUnitTarget(event.target.value); setJobPage(1) }} value={unitTarget}>
-                    <option value="">Semua Sekretariat, Biro &amp; Bengkel</option>
-                    {units.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-                  </select>
+                  <SearchableSelect
+                    onChange={(value) => { setUnitTarget(value); setJobPage(1) }}
+                    options={[
+                      { value: '', label: 'Semua Sekretariat, Biro & Bengkel' },
+                      ...units.map((item) => ({ value: item.key, label: item.label })),
+                    ]}
+                    value={unitTarget}
+                  />
                 </label>
               </div>
             </section>
 
             <div className="results-bar">
-              <span>Menampilkan <strong>{filteredJobs.length}</strong> lowongan pekerjaan aktif</span>
+              <span>Menampilkan <strong>{filteredJobs.length}</strong> lowongan {jobStatusLabels.results}</span>
             </div>
             {applicationsError && <p className="login-error" role="alert">{applicationsError}</p>}
             <SuccessPopup message={applicationNotice} onClose={setApplicationNotice} />
@@ -425,7 +473,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             ) : jobsError ? (
               <section className="empty-state"><h2>Lowongan belum dapat dimuat</h2><p role="alert">{jobsError}</p></section>
             ) : filteredJobs.length ? (
-              <section className="job-grid public-job-grid" aria-label="Daftar lowongan aktif">
+              <section className="job-grid public-job-grid" aria-label="Daftar lowongan">
                 {visibleJobs.map((job) => (
                   <JobCard
                     hasApplied={appliedJobIds.has(job.id)}
@@ -438,7 +486,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 ))}
               </section>
             ) : (
-              <section className="empty-state"><Search size={24} /><h2>Lowongan tidak ditemukan</h2><p>Coba pilih divisi, departemen, atau biro / bengkel lain.</p><button className="reset-button" onClick={resetFilters}>Reset Filter</button></section>
+              <section className="empty-state"><Search size={24} /><h2>{jobStatus === 'closed' && statusFilteredJobs.length === 0 ? 'Belum ada lowongan nonaktif' : 'Lowongan tidak ditemukan'}</h2><p>{jobStatus === 'closed' && statusFilteredJobs.length === 0 ? 'Saat ini belum ada lowongan yang berstatus nonaktif / ditutup.' : 'Coba pilih divisi, departemen, atau biro / bengkel lain.'}</p><button className="reset-button" onClick={resetFilters}>Reset Filter</button></section>
             )}
             {jobPageCount > 1 && (
               <nav aria-label="Halaman daftar lowongan" className="job-pagination">
@@ -449,7 +497,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                   onClick={() => setJobPage(currentJobPage - 1)}
                   type="button"
                 >
-                  Sebelumnya
+                  <ChevronLeft aria-hidden="true" size={18} />
                 </button>
                 {Array.from({ length: jobPageCount }, (_, index) => index + 1).map((page) => (
                   <button
@@ -470,7 +518,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                   onClick={() => setJobPage(currentJobPage + 1)}
                   type="button"
                 >
-                  Berikutnya
+                  <ChevronRight aria-hidden="true" size={18} />
                 </button>
               </nav>
             )}
@@ -512,7 +560,13 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                     ? 'Tanggal tidak tersedia'
                     : submittedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
                   return (
-                    <article className="application-card" key={application.id}>
+                    <button
+                      aria-label={`Lihat perkembangan lamaran untuk ${job?.title || 'posisi ini'}`}
+                      className="application-card application-card-button"
+                      key={application.id}
+                      onClick={() => setSelectedApplicationId(application.id)}
+                      type="button"
+                    >
                       <div className="application-card-top">
                         <span className={`status-pill status-${application.status}`}>{status?.label || application.status}</span>
                         <time dateTime={Number.isNaN(submittedAt.getTime()) ? undefined : application.created_at}>{submittedAtLabel}</time>
@@ -527,7 +581,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                       ) : <p className="application-card-unavailable">Detail posisi sudah tidak tersedia.</p>}
                       <p className="application-card-summary">{getApplicationStatusDescription(application.status) || 'Status lamaran sedang diperbarui.'}</p>
                       <footer><span>ID lamaran</span><code>{application.id || 'ID belum tersedia'}</code></footer>
-                    </article>
+                    </button>
                   )
                 })}
               </section>
@@ -570,6 +624,13 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
       )}
       {route === 'lowongan' && isComingSoonOpen && (
         <ComingSoonPopup onClose={() => setIsComingSoonOpen(false)} />
+      )}
+      {selectedApplication && (
+        <ApplicantApplicationProgress
+          application={selectedApplication}
+          job={selectedApplicationJob}
+          onClose={() => setSelectedApplicationId(null)}
+        />
       )}
     </main>
   )

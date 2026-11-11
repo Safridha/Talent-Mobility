@@ -6,7 +6,7 @@ pub(super) async fn list_applications(
 ) -> Result<Json<ApplicationsResponse>, ApiError> {
     let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
     let data = sqlx::query_as::<_, ApplicationSummary>(
-        "SELECT public_id AS id, job_id, status, created_at::text AS created_at FROM applications WHERE applicant_id = $1 ORDER BY created_at DESC",
+        "SELECT applications.public_id AS id, applications.job_id, applications.status, applications.created_at::text AS created_at, COALESCE((SELECT json_agg(json_build_object('status', status_history.status, 'created_at', status_history.changed_at::text) ORDER BY status_history.changed_at, status_history.sequence) FROM (SELECT 'submitted'::text AS status, applications.created_at AS changed_at, 0::bigint AS sequence UNION ALL SELECT notifications.new_status, notifications.created_at, notifications.id FROM application_status_notifications AS notifications WHERE notifications.application_id = applications.id) AS status_history), '[]'::json) AS status_history FROM applications WHERE applications.applicant_id = $1 ORDER BY applications.created_at DESC",
     )
     .bind(applicant_id)
     .fetch_all(&state.pool)
@@ -346,6 +346,11 @@ pub(super) async fn create_application(
     .map_err(internal_error)?;
 
     transaction.commit().await.map_err(internal_error)?;
+    dispatch_admin_application_push(
+        state.pool.clone(),
+        state.push_service.clone(),
+        application_id,
+    );
     Ok(Json(json!({
         "message": "Lamaran berhasil dikirim.",
         "application_id": public_id,
