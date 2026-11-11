@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Camera, KeyRound, UserRound } from 'lucide-react'
 import { apiRequest } from '../../api'
 import { AccountAvatar } from '../../components/account/AccountSettingsMenu'
+import PasswordInput from '../../components/PasswordInput'
+import PasswordRequirements from '../../components/PasswordRequirements'
+import { meetsPasswordRequirements } from '../../components/passwordValidation'
 import SuccessPopup from '../../components/SuccessPopup'
 
 export function AccountSettingsPage({
@@ -113,6 +116,10 @@ export function AccountSettingsPage({
       setError('Konfirmasi kata sandi baru tidak sama.')
       return
     }
+    if (!meetsPasswordRequirements(newPassword)) {
+      setError('Kata sandi belum memenuhi semua persyaratan.')
+      return
+    }
     setIsSavingPassword(true)
     try {
       const response = await apiRequest('/account/password', {
@@ -199,14 +206,15 @@ export function AccountSettingsPage({
             <form className="account-settings-form" onSubmit={(event) => void savePassword(event)}>
               <h3><KeyRound size={17} /> Ganti kata sandi</h3>
               <label>Kata sandi saat ini
-                <input autoComplete="current-password" maxLength={128} onChange={(event) => setCurrentPassword(event.target.value)} required type="password" value={currentPassword} />
+                <PasswordInput autoComplete="current-password" maxLength={128} onChange={(event) => setCurrentPassword(event.target.value)} required value={currentPassword} />
               </label>
               <label>Kata sandi baru
-                <input autoComplete="new-password" maxLength={128} minLength={8} onChange={(event) => setNewPassword(event.target.value)} placeholder="Min. 8 karakter: huruf besar/kecil, angka, simbol" required type="password" value={newPassword} />
+                <PasswordInput autoComplete="new-password" maxLength={128} minLength={8} onChange={(event) => setNewPassword(event.target.value)} placeholder="Min. 8 karakter, huruf besar/kecil, dan angka" required value={newPassword} />
               </label>
               <label>Konfirmasi kata sandi baru
-                <input autoComplete="new-password" maxLength={128} onChange={(event) => setConfirmPassword(event.target.value)} required type="password" value={confirmPassword} />
+                <PasswordInput autoComplete="new-password" maxLength={128} onChange={(event) => setConfirmPassword(event.target.value)} required value={confirmPassword} />
               </label>
+              <PasswordRequirements confirmation={confirmPassword} password={newPassword} />
               <button className="apply-button" disabled={isSavingPassword} type="submit">
                 {isSavingPassword ? 'Menyimpan...' : 'Ganti kata sandi'}
               </button>

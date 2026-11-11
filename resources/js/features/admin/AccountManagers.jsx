@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Eye, EyeOff, Plus, Shield, Users } from 'lucide-react'
 import { apiRequest } from '../../api'
+import PasswordRequirements from '../../components/PasswordRequirements'
+import { meetsPasswordRequirements } from '../../components/passwordValidation'
 import SearchableSelect from '../../components/SearchableSelect'
 import { AdminTableToolbar, ConfirmDialog, AdminFormDialog } from './AdminPrimitives'
 import { AdminTablePagination } from './AdminPagination'
@@ -141,6 +143,10 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
     setNotice('')
     if (form.password && form.password !== form.passwordConfirmation) {
       setError('Konfirmasi kata sandi tidak sama.')
+      return
+    }
+    if (form.password && !meetsPasswordRequirements(form.password)) {
+      setError('Kata sandi belum memenuhi semua persyaratan.')
       return
     }
     if (isAdminAccount && form.admin_role !== 'super_admin' && form.permissions.length === 0) {
@@ -291,7 +297,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
             maxLength={128}
             minLength={editingId && !form.password ? undefined : minimumPasswordLength}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
-            placeholder={editingId ? 'Kosongkan jika tidak diubah' : 'Min. 8 karakter: huruf besar/kecil, angka, simbol'}
+            placeholder={editingId ? 'Kosongkan jika tidak diubah' : 'Min. 8 karakter, huruf besar/kecil, dan angka'}
             required={!editingId}
             type={showPassword ? 'text' : 'password'}
             value={form.password}
@@ -330,6 +336,9 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
           </button>
         </div>
       </label>
+      {(!editingId || form.password) && (
+        <PasswordRequirements confirmation={form.passwordConfirmation} password={form.password} />
+      )}
       {isAdminAccount && (
         <>
           {editingId && form.admin_role === 'super_admin' ? (
@@ -430,7 +439,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
       <p className="organization-help account-form-help">
         {editingId
           ? 'Menyimpan perubahan akan mengakhiri semua sesi aktif akun.'
-          : `Gunakan minimal ${minimumPasswordLength} karakter, dengan huruf besar, huruf kecil, angka, dan simbol. Sampaikan melalui jalur privat. Akun baru langsung Aktif setelah disimpan.`}
+          : `Gunakan minimal ${minimumPasswordLength} karakter, dengan huruf besar, huruf kecil, dan angka. Sampaikan melalui jalur privat. Akun baru langsung Aktif setelah disimpan.`}
       </p>
       {error && <p className="admin-alert error" role="alert">{error}</p>}
       <div className="organization-form-actions">

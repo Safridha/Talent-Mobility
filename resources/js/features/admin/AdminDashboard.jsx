@@ -480,29 +480,33 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
         {activeView === 'dashboard' && (
           isLoading ? <section className="admin-loading">Memuat dashboard...</section> : metrics && (
             <section className="admin-dashboard-view">
-              <div className="admin-metric-grid">
-                {canViewJobs && <>
-                  <article className="admin-metric-card"><span>Total posisi</span><strong>{metrics.positions_total}</strong></article>
-                  <article className="admin-metric-card"><span>Lowongan draft</span><strong>{metrics.positions_draft}</strong></article>
-                  <article className="admin-metric-card"><span>Lowongan aktif</span><strong>{metrics.positions_open}</strong></article>
-                  <article className="admin-metric-card"><span>Lowongan ditutup</span><strong>{metrics.positions_closed}</strong></article>
-                </>}
-                {canViewApplications && <>
-                  <article className="admin-metric-card"><span>Total lamaran</span><strong>{metrics.applications_total}</strong></article>
-                  <article className="admin-metric-card"><span>Lamaran masuk</span><strong>{metrics.applications_submitted}</strong></article>
-                </>}
+              <div className="admin-dashboard-summary">
+                {canViewJobs && <section aria-labelledby="job-summary-title" className="admin-summary-card">
+                  <div className="admin-summary-heading">
+                    <h2 id="job-summary-title">Lowongan</h2>
+                    <p><strong>{metrics.positions_total}</strong> total</p>
+                  </div>
+                  <div className="admin-summary-statuses">
+                    <div><span>Draft</span><strong>{metrics.positions_draft}</strong></div>
+                    <div><span>Aktif</span><strong>{metrics.positions_open}</strong></div>
+                    <div><span>Ditutup</span><strong>{metrics.positions_closed}</strong></div>
+                  </div>
+                </section>}
+                {canViewApplications && <section aria-labelledby="application-summary-title" className="admin-summary-card">
+                  <div className="admin-summary-heading">
+                    <h2 id="application-summary-title">Lamaran</h2>
+                    <p><strong>{metrics.applications_total}</strong> total</p>
+                  </div>
+                  <div className="admin-summary-statuses">
+                    {applicationStatusOptions.map((status) => (
+                      <div key={status.value}>
+                        <span>{status.label}</span>
+                        <strong>{metrics[`applications_${status.value}`]}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </section>}
               </div>
-              {canViewApplications && <section className="admin-status-panel">
-                <h2>Proses seleksi</h2>
-                <div className="admin-status-grid">
-                  {applicationStatusOptions.map((status) => (
-                    <div className={`admin-status-item status-item-${status.value}`} key={status.value}>
-                      <span>{status.label}</span>
-                      <strong>{metrics[`applications_${status.value}`]}</strong>
-                    </div>
-                  ))}
-                </div>
-              </section>}
             </section>
           )
         )}

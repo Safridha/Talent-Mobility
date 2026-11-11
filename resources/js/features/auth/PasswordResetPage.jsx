@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { apiRequest } from '../../api'
 import Brand from '../../components/Brand'
+import PasswordInput from '../../components/PasswordInput'
+import PasswordRequirements from '../../components/PasswordRequirements'
+import { meetsPasswordRequirements } from '../../components/passwordValidation'
 import SuccessPopup from '../../components/SuccessPopup'
 
 export default function PasswordResetPage({ token }) {
@@ -16,6 +19,10 @@ export default function PasswordResetPage({ token }) {
     setError('')
     if (newPassword !== confirmPassword) {
       setError('Konfirmasi kata sandi tidak sama.')
+      return
+    }
+    if (!meetsPasswordRequirements(newPassword)) {
+      setError('Kata sandi belum memenuhi semua persyaratan.')
       return
     }
     setIsSubmitting(true)
@@ -48,13 +55,14 @@ export default function PasswordResetPage({ token }) {
             </>
           ) : (
             <form className="account-settings-form" onSubmit={(event) => void handleSubmit(event)}>
-              <p>Tautan reset berlaku selama satu jam. Gunakan minimal 8 karakter dengan huruf besar, huruf kecil, angka, dan simbol.</p>
+              <p>Tautan reset berlaku selama satu jam. Kata sandi harus memiliki minimal 8 karakter, huruf besar, huruf kecil, dan angka.</p>
               <label>Kata sandi baru
-                <input autoComplete="new-password" maxLength={128} minLength={8} onChange={(event) => setNewPassword(event.target.value)} placeholder="Contoh simbol: . atau !" required type="password" value={newPassword} />
+                <PasswordInput autoComplete="new-password" maxLength={128} minLength={8} onChange={(event) => setNewPassword(event.target.value)} placeholder="Min. 8 karakter, huruf besar/kecil, dan angka" required value={newPassword} />
               </label>
               <label>Konfirmasi kata sandi baru
-                <input autoComplete="new-password" maxLength={128} onChange={(event) => setConfirmPassword(event.target.value)} required type="password" value={confirmPassword} />
+                <PasswordInput autoComplete="new-password" maxLength={128} onChange={(event) => setConfirmPassword(event.target.value)} required value={confirmPassword} />
               </label>
+              <PasswordRequirements confirmation={confirmPassword} password={newPassword} />
               {error && <p className="login-error" role="alert">{error}</p>}
               <button className="apply-button" disabled={isSubmitting} type="submit">
                 {isSubmitting ? 'Menyimpan...' : 'Atur kata sandi'}

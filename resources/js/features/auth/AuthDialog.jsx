@@ -1,7 +1,10 @@
 import { useState } from 'react'
-import { ArrowRight, Eye, EyeOff, X } from 'lucide-react'
+import { ArrowRight, X } from 'lucide-react'
 import { apiRequest } from '../../api'
 import ModalBackdrop from '../../components/ModalBackdrop'
+import PasswordInput from '../../components/PasswordInput'
+import PasswordRequirements from '../../components/PasswordRequirements'
+import { meetsPasswordRequirements } from '../../components/passwordValidation'
 import SuccessPopup from '../../components/SuccessPopup'
 
 export default function AuthDialog({ initialMode, onClose, onSuccess }) {
@@ -10,15 +13,13 @@ export default function AuthDialog({ initialMode, onClose, onSuccess }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   function changeMode(nextMode) {
     setMode(nextMode)
+    setPassword('')
     setConfirmPassword('')
-    setShowConfirmPassword(false)
     setError('')
     setNotice('')
   }
@@ -27,6 +28,10 @@ export default function AuthDialog({ initialMode, onClose, onSuccess }) {
     event.preventDefault()
     setError('')
     setNotice('')
+    if (mode === 'register' && !meetsPasswordRequirements(password)) {
+      setError('Kata sandi belum memenuhi semua persyaratan.')
+      return
+    }
     if (mode === 'register' && password !== confirmPassword) {
       setError('Konfirmasi kata sandi tidak sama.')
       return
@@ -62,7 +67,7 @@ export default function AuthDialog({ initialMode, onClose, onSuccess }) {
       <section
         aria-labelledby="auth-title"
         aria-modal="true"
-        className="detail-modal auth-dialog"
+        className={`detail-modal auth-dialog${mode === 'register' ? ' auth-dialog-register' : ''}`}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
@@ -90,21 +95,32 @@ export default function AuthDialog({ initialMode, onClose, onSuccess }) {
             {mode !== 'forgot' && (
               <>
                 <label htmlFor="auth-password">Kata sandi</label>
-                <div className="password-field">
-                  <input autoComplete={mode === 'register' ? 'new-password' : 'current-password'} id="auth-password" maxLength={128} minLength={mode === 'register' ? 8 : undefined} onChange={(event) => setPassword(event.target.value)} placeholder={mode === 'register' ? 'Min. 8 karakter: huruf besar/kecil, angka, simbol' : 'Masukkan kata sandi'} required type={showPassword ? 'text' : 'password'} value={password} />
-                  <button aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'} onClick={() => setShowPassword((shown) => !shown)} type="button">
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
+                <PasswordInput
+                  autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                  id="auth-password"
+                  key={`auth-password-${mode}`}
+                  maxLength={128}
+                  minLength={mode === 'register' ? 8 : undefined}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder={mode === 'register' ? 'Min. 8 karakter, huruf besar/kecil, dan angka' : 'Masukkan kata sandi'}
+                  required
+                  value={password}
+                />
                 {mode === 'register' && (
                   <>
                     <label htmlFor="auth-confirm-password">Konfirmasi kata sandi</label>
-                    <div className="password-field">
-                      <input autoComplete="new-password" id="auth-confirm-password" maxLength={128} minLength={8} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Ulangi kata sandi" required type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} />
-                      <button aria-label={showConfirmPassword ? 'Sembunyikan konfirmasi kata sandi' : 'Tampilkan konfirmasi kata sandi'} onClick={() => setShowConfirmPassword((shown) => !shown)} type="button">
-                        {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </div>
+                    <PasswordInput
+                      autoComplete="new-password"
+                      id="auth-confirm-password"
+                      key={`auth-confirm-password-${mode}`}
+                      maxLength={128}
+                      minLength={8}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      placeholder="Ulangi kata sandi"
+                      required
+                      value={confirmPassword}
+                    />
+                    <PasswordRequirements confirmation={confirmPassword} password={password} />
                   </>
                 )}
               </>

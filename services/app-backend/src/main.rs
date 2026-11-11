@@ -1062,12 +1062,9 @@ fn validate_password_strength(password: &str) -> Result<(), ApiError> {
             .bytes()
             .any(|character| character.is_ascii_uppercase())
         || !password.bytes().any(|character| character.is_ascii_digit())
-        || !password
-            .chars()
-            .any(|character| "._!@#$%^&*()-+=?".contains(character))
     {
         return Err(ApiError::BadRequest(
-            "Kata sandi harus memuat huruf besar, huruf kecil, angka, dan simbol (contoh: . atau !).",
+            "Kata sandi harus memuat huruf besar, huruf kecil, dan angka.",
         ));
     }
     Ok(())
@@ -2499,14 +2496,16 @@ mod tests {
     }
 
     #[test]
-    fn account_password_length_matches_role() {
+    fn account_password_rules_match_all_account_roles() {
         assert!(validate_account_password("applicant", "Abcdef1!").is_ok());
+        assert!(validate_account_password("applicant", "Abcdefg1").is_ok());
         assert!(validate_account_password("applicant", "Abcd1!").is_err());
         assert!(validate_account_password("admin", "Abcdef1!").is_ok());
+        assert!(validate_account_password("admin", "Abcdefg1").is_ok());
         assert!(validate_account_password("admin", "abcdef1!").is_err());
         assert!(validate_account_password("admin", "ABCDEF1!").is_err());
         assert!(validate_account_password("admin", "Abcdefg!").is_err());
-        assert!(validate_account_password("admin", "Abcdefg1").is_err());
+        assert!(validate_account_password("admin", "Abcdef").is_err());
     }
 
     #[test]

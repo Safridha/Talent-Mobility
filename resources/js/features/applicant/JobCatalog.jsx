@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../query/queryKeys'
 import ApplicationForm from './ApplicationForm'
 import { JobCard, JobDetail } from './JobCards'
-import { ArrowLeft, Bell, Building2, ChevronLeft, ChevronRight, FileText, LogIn, Megaphone, RotateCcw, Search, Shield, SlidersHorizontal, Users, UserPlus, Wrench, X } from 'lucide-react'
+import { ArrowLeft, Bell, Building2, ChevronLeft, ChevronRight, FileText, LogIn, Megaphone, RotateCcw, Search, SlidersHorizontal, Users, UserPlus, Wrench, X } from 'lucide-react'
 import { apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import SuccessPopup from '../../components/SuccessPopup'
@@ -166,41 +166,34 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   }
 
   const divisions = organization.divisions
+  const selectedDivision = divisions.find((division) => String(division.id) === divisionId)
   const departments = useMemo(
     () => organization.departments.filter((department) => !divisionId || String(department.division_id) === divisionId),
     [divisionId, organization.departments],
   )
   const units = useMemo(() => {
-    const secretariats = organization.divisions
-      .filter((division) => !departmentId && division.secretariat_name && (!divisionId || String(division.id) === divisionId))
-      .map((division) => ({
-        key: `secretariat:${division.id}`,
-        label: `Sekretariat Divisi — ${division.name}`,
-      }))
     const bureaus = organization.bureaus
       .filter((bureau) => {
-        const department = organization.departments.find((item) => item.id === bureau.department_id)
-        return (!divisionId || String(department?.division_id) === divisionId)
-          && (!departmentId || String(bureau.department_id) === departmentId)
+        const department = organization.departments.find((item) => String(item.id) === String(bureau.department_id))
+        return Boolean(departmentId) && !departmentId.startsWith('secretariat:')
+          && String(department?.division_id) === divisionId
+          && String(bureau.department_id) === departmentId
       })
-      .map((bureau) => {
-        const department = organization.departments.find((item) => item.id === bureau.department_id)
-        const division = organization.divisions.find((item) => item.id === department?.division_id)
-        return {
-          key: `bureau:${bureau.id}`,
-          label: `${division?.name ?? 'Divisi'} / ${department?.name ?? 'Departemen'} / ${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
-        }
-      })
-    return [...secretariats, ...bureaus]
-  }, [departmentId, divisionId, organization.bureaus, organization.departments, organization.divisions])
+      .map((bureau) => ({
+        key: `bureau:${bureau.id}`,
+        label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+      }))
+    return bureaus
+  }, [departmentId, divisionId, organization.bureaus, organization.departments])
   const filteredJobs = useMemo(() => {
     return statusFilteredJobs.filter((job) => (
       (!divisionId || String(job.division_id) === divisionId)
-      && (!departmentId || String(job.department_id) === departmentId)
+      && (!departmentId
+        || (departmentId.startsWith('secretariat:')
+          ? job.target_level === 'secretariat'
+            && String(job.division_id) === departmentId.slice('secretariat:'.length)
+          : String(job.department_id) === departmentId))
       && (!unitTarget
-        || (unitTarget.startsWith('secretariat:')
-          && job.target_level === 'secretariat'
-          && String(job.division_id) === unitTarget.slice('secretariat:'.length))
         || (unitTarget.startsWith('bureau:')
           && job.target_level === 'bureau'
           && String(job.bureau_id) === unitTarget.slice('bureau:'.length)))
@@ -437,24 +430,33 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                     value={divisionId}
                   />
                 </label>
-                <label>Departemen Tujuan
+                <label>Departemen / Sekretariat Tujuan
                   <SearchableSelect
+                    disabled={!divisionId}
                     onChange={(value) => { setDepartmentId(value); setUnitTarget(''); setJobPage(1) }}
                     options={[
-                      { value: '', label: 'Semua Departemen' },
-                      ...departments.map((item) => {
-                      const division = divisions.find((candidate) => candidate.id === item.division_id)
-                        return { value: String(item.id), label: `${division ? `${division.name} / ` : ''}${item.name}` }
-                      }),
+                      { value: '', label: divisionId ? 'Semua Departemen / Sekretariat' : 'Pilih divisi dahulu' },
+                      ...departments.map((item) => ({ value: String(item.id), label: item.name })),
+                      ...(selectedDivision?.secretariat_name
+                        ? [{ value: `secretariat:${divisionId}`, label: `Sekretariat Divisi — ${selectedDivision.secretariat_name}` }]
+                        : []),
                     ]}
                     value={departmentId}
                   />
                 </label>
-                <label>Sekretariat / Biro / Bengkel
+                <label>Biro / Bengkel Tujuan
                   <SearchableSelect
+                    disabled={!departmentId || departmentId.startsWith('secretariat:')}
                     onChange={(value) => { setUnitTarget(value); setJobPage(1) }}
                     options={[
-                      { value: '', label: 'Semua Sekretariat, Biro & Bengkel' },
+                      {
+                        value: '',
+                        label: departmentId
+                          ? departmentId.startsWith('secretariat:')
+                            ? 'Tidak berlaku untuk sekretariat'
+                            : 'Semua Biro & Bengkel'
+                          : 'Pilih departemen dahulu',
+                      },
                       ...units.map((item) => ({ value: item.key, label: item.label })),
                     ]}
                     value={unitTarget}
@@ -596,10 +598,6 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
         ) : null}
       </div>
 
-      <footer className="site-footer">
-        <span><Shield size={16} fill="currentColor" /> Portal Resmi Human Capital Internal Mobility &amp; Rekrutmen Terpadu</span>
-        <span>Versi 2.4.0 <i /> Relational Dataset Mapped</span>
-      </footer>
       {selectedJob && (
         <JobDetail
           hasApplied={appliedJobIds.has(selectedJob.id)}
