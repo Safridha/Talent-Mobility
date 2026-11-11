@@ -32,7 +32,7 @@ export function AccountSettingsPage({
 
   useEffect(() => {
     let active = true
-    apiRequest('/account/profile', { token: session.token })
+    apiRequest('/account/profile')
       .then((profile) => {
         if (!active) return
         setName(profile.name)
@@ -45,7 +45,7 @@ export function AccountSettingsPage({
         if (active) setIsLoading(false)
       })
     return () => { active = false }
-  }, [session.token])
+  }, [session.role])
 
   async function saveProfile(event) {
     event.preventDefault()
@@ -55,7 +55,6 @@ export function AccountSettingsPage({
     try {
       const profile = await apiRequest('/account/profile', {
         method: 'PATCH',
-        token: session.token,
         body: JSON.stringify({ name: name.trim() }),
       })
       setName(profile.name)
@@ -79,7 +78,6 @@ export function AccountSettingsPage({
       formData.append('photo', selectedPhoto)
       await apiRequest('/account/avatar', {
         method: 'POST',
-        token: session.token,
         body: formData,
       })
       setSelectedPhoto(null)
@@ -98,7 +96,7 @@ export function AccountSettingsPage({
     setNotice('')
     setIsSavingPhoto(true)
     try {
-      await apiRequest('/account/avatar', { method: 'DELETE', token: session.token })
+      await apiRequest('/account/avatar', { method: 'DELETE' })
       onAvatarChanged()
       setNotice('Foto profil berhasil dihapus.')
     } catch (requestError) {
@@ -124,7 +122,6 @@ export function AccountSettingsPage({
     try {
       const response = await apiRequest('/account/password', {
         method: 'POST',
-        token: session.token,
         body: JSON.stringify({
           current_password: currentPassword,
           new_password: newPassword,

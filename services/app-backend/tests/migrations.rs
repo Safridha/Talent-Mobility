@@ -16,13 +16,116 @@ async fn all_migrations_apply_to_a_fresh_postgres_database(pool: PgPool) {
     let final_schema_is_present: bool = sqlx::query_scalar(
         "SELECT to_regclass('public.admin_permissions') IS NOT NULL
             AND to_regclass('public.applications') IS NOT NULL
-            AND to_regclass('public.job_postings') IS NOT NULL",
+            AND to_regclass('public.job_postings') IS NOT NULL
+            AND to_regclass('public.applicant_application_limit') IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                    AND table_name = 'applicants'
+                    AND column_name = 'must_change_password'
+            )
+            AND EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                    AND table_name = 'applicants'
+                    AND column_name = 'locked_until'
+            )
+            AND EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                    AND table_name = 'admins'
+                    AND column_name = 'failed_login_attempts'
+            )",
     )
     .fetch_one(&pool)
     .await
     .expect("final schema tables should be queryable");
 
     assert!(final_schema_is_present);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn legacy_accounts_start_with_no_login_failures_or_lock(pool: PgPool) {
+    let applicant_state: (i32, bool) = sqlx::query_as(
+        "INSERT INTO applicants (name, email, password_hash) VALUES ('Applicant', 'lockout-applicant@example.test', 'hash') RETURNING failed_login_attempts, locked_until IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("legacy applicant accounts should use unlocked defaults");
+    assert_eq!(applicant_state, (0, true));
+
+    let admin_state: (i32, bool) = sqlx::query_as(
+        "INSERT INTO admins (name, email, password_hash) VALUES ('Admin', 'lockout-admin@example.test', 'hash') RETURNING failed_login_attempts, locked_until IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("legacy admin accounts should use unlocked defaults");
+    assert_eq!(admin_state, (0, true));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn existing_applicants_do_not_require_a_password_change_by_default(pool: PgPool) {
+    let must_change_password: bool = sqlx::query_scalar(
+        "INSERT INTO applicants (name, email, password_hash) VALUES ('Applicant', 'existing@example.test', 'hash') RETURNING must_change_password",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("an existing-style applicant should use the migration default");
+
+    assert!(!must_change_password);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn applicant_application_limit_is_singleton_and_positive(pool: PgPool) {
+    sqlx::query("INSERT INTO applicant_application_limit (max_applications) VALUES (3)")
+        .execute(&pool)
+        .await
+        .expect("a positive applicant limit should be insertable");
+
+    let duplicate =
+        sqlx::query("INSERT INTO applicant_application_limit (max_applications) VALUES (4)")
+            .execute(&pool)
+            .await;
+    assert!(
+        duplicate.is_err(),
+        "only one shared limit should be allowed"
+    );
+
+    let invalid = sqlx::query("UPDATE applicant_application_limit SET max_applications = 0")
+        .execute(&pool)
+        .await;
+    assert!(invalid.is_err(), "the limit must remain positive");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn direct_applications_allow_units_without_descriptions(pool: PgPool) {
+    let applicant_id: i64 =
+        sqlx::query_scalar("INSERT INTO applicants (name, email, password_hash) VALUES ('Applicant', 'direct@example.test', 'hash') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .expect("an applicant should be insertable");
+    let department_id: i64 = sqlx::query_scalar("SELECT id FROM departments ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .expect("seeded departments should be available");
+    let application_id: i64 = sqlx::query_scalar(
+        "INSERT INTO applications (applicant_id, target_department_id) VALUES ($1, $2) RETURNING id",
+    )
+    .bind(applicant_id)
+    .bind(department_id)
+    .fetch_one(&pool)
+    .await
+    .expect("direct applications should allow a missing description snapshot");
+
+    let blank_description =
+        sqlx::query("UPDATE applications SET position_description = '' WHERE id = $1")
+            .bind(application_id)
+            .execute(&pool)
+            .await;
+    assert!(
+        blank_description.is_err(),
+        "description snapshots should be absent or contain non-whitespace text"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

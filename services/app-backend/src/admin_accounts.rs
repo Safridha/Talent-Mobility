@@ -8,7 +8,7 @@ pub(super) async fn admin_list_accounts(
         .await?
         .require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let data = sqlx::query_as::<_, AdminApplicantAccount>(
-        "SELECT applicants.id, applicants.name, applicants.email, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id GROUP BY applicants.id ORDER BY applicants.created_at DESC, applicants.id DESC",
+        "SELECT applicants.id, applicants.name, applicants.email, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active, applicants.must_change_password FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id GROUP BY applicants.id ORDER BY applicants.created_at DESC, applicants.id DESC",
     )
     .fetch_all(&state.pool)
     .await
@@ -30,7 +30,7 @@ pub(super) async fn admin_create_account(
     let password_hash = hash_password(&account.password)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let id = match sqlx::query_scalar::<_, i64>(
-        "INSERT INTO applicants (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id",
+        "INSERT INTO applicants (name, email, password_hash, must_change_password) VALUES ($1, $2, $3, TRUE) RETURNING id",
     )
     .bind(name)
     .bind(&email)
@@ -84,7 +84,7 @@ pub(super) async fn admin_update_account(
     .ok_or(ApiError::NotFound("Akun tidak ditemukan."))?;
     let result = if let Some(password) = account.password.as_deref() {
         let password_hash = hash_password(password)?;
-        sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3 WHERE id = $4")
+        sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3, must_change_password = TRUE, failed_login_attempts = 0, locked_until = NULL WHERE id = $4")
             .bind(name)
             .bind(&email)
             .bind(password_hash)
@@ -389,7 +389,7 @@ pub(super) async fn admin_update_admin_account(
     }
     let result = if let Some(password) = account.password.as_deref() {
         let password_hash = hash_password(password)?;
-        sqlx::query("UPDATE admins SET name = $1, email = $2, password_hash = $3, admin_role = $4, division_id = $5, department_id = $6, bureau_id = $7 WHERE id = $8")
+        sqlx::query("UPDATE admins SET name = $1, email = $2, password_hash = $3, failed_login_attempts = 0, locked_until = NULL, admin_role = $4, division_id = $5, department_id = $6, bureau_id = $7 WHERE id = $8")
             .bind(name)
             .bind(&email)
             .bind(password_hash)

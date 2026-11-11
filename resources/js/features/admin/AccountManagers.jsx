@@ -18,16 +18,6 @@ const adminRoles = [
 
 const adminPermissionGroups = [
   {
-    title: 'Lowongan',
-    permissions: [
-      ['jobs.view', 'Lihat lowongan'],
-      ['jobs.create', 'Buat lowongan'],
-      ['jobs.update', 'Edit lowongan'],
-      ['jobs.delete', 'Hapus lowongan'],
-      ['jobs.change_status', 'Buka / tutup lowongan'],
-    ],
-  },
-  {
     title: 'Lamaran',
     permissions: [
       ['applications.view', 'Lihat data pelamar'],
@@ -38,29 +28,27 @@ const adminPermissionGroups = [
   {
     title: 'Pengaturan',
     permissions: [
-      ['job_types.manage', 'Kelola jenis pekerjaan'],
       ['applicant_accounts.manage', 'Kelola akun pelamar'],
-    ],
-  },
-  {
-    title: 'Karyawan',
-    permissions: [
-      ['employees.view', 'Lihat direktori karyawan'],
-      ['employees.manage', 'Tambah, edit, dan nonaktifkan karyawan'],
     ],
   },
 ]
 
+const APPLICATION_PERMISSIONS = [
+  'applications.view',
+  'applications.change_status',
+  'applications.download_documents',
+]
+const ADMIN_PERMISSIONS = [...APPLICATION_PERMISSIONS, 'applicant_accounts.manage']
+const ACTIVE_ADMIN_PERMISSION_KEYS = new Set(ADMIN_PERMISSIONS)
 const defaultAdminPermissions = {
-  admin: adminPermissionGroups.flatMap((group) => group.permissions.map(([permission]) => permission)),
-  division_head: adminPermissionGroups.slice(0, 2).flatMap((group) => group.permissions.map(([permission]) => permission)),
-  department_head: adminPermissionGroups.slice(0, 2).flatMap((group) => group.permissions.map(([permission]) => permission)),
+  admin: ADMIN_PERMISSIONS,
+  division_head: APPLICATION_PERMISSIONS,
+  department_head: APPLICATION_PERMISSIONS,
   super_admin: [],
 }
-const optionalScopedPermissions = new Set(['employees.view', 'employees.manage'])
 
 function permissionsForRole(role) {
-  return (defaultAdminPermissions[role] || []).filter((permission) => !optionalScopedPermissions.has(permission))
+  return defaultAdminPermissions[role] || []
 }
 
 function emptyAccountForm() {
@@ -77,7 +65,7 @@ function emptyAccountForm() {
   }
 }
 
-export function AccountListManager({ accountType, sessionToken, currentAdminId, organization }) {
+export function AccountListManager({ accountType, currentAdminId, organization }) {
   const isAdminAccount = accountType === 'admin'
   const accountsPath = isAdminAccount ? '/admin/admin-accounts' : '/admin/accounts'
   const accountKind = isAdminAccount ? 'admin' : 'pelamar'
@@ -104,7 +92,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
 
   useEffect(() => {
     let active = true
-    apiRequest(accountsPath, { token: sessionToken })
+    apiRequest(accountsPath)
       .then((response) => {
         if (active) {
           if (!Array.isArray(response.data)) {
@@ -121,7 +109,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
         if (active) setIsLoading(false)
       })
     return () => { active = false }
-  }, [accountKind, accountsPath, sessionToken, refreshKey])
+  }, [accountKind, accountsPath, refreshKey])
 
   function refreshAccounts() {
     setLoadError('')
@@ -166,12 +154,15 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
     try {
       await apiRequest(editingId ? `${accountsPath}/${editingId}` : accountsPath, {
         method: editingId ? 'PUT' : 'POST',
-        token: sessionToken,
         body: JSON.stringify(body),
       })
       setNotice(editingId
-        ? `Perubahan akun ${accountKind} berhasil disimpan. Sesi aktifnya telah diakhiri.`
-        : `Akun ${accountKind} berhasil ditambahkan.`)
+        ? !isAdminAccount && form.password
+          ? 'Kata sandi pelamar direset. Pelamar wajib menggantinya saat masuk berikutnya.'
+          : `Perubahan akun ${accountKind} berhasil disimpan. Sesi aktifnya telah diakhiri.`
+        : !isAdminAccount
+          ? 'Akun pelamar dibuat. Sampaikan kata sandi awal secara aman; pelamar wajib menggantinya saat masuk pertama.'
+          : `Akun ${accountKind} berhasil ditambahkan.`)
       resetForm()
       refreshAccounts()
     } catch (requestError) {
@@ -186,15 +177,17 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
     setEditingId(account.id)
     setShowPassword(false)
     setShowPasswordConfirmation(false)
+    const role = account.admin_role || 'division_head'
+    const allowedPermissions = permissionsForRole(role)
     setForm({
       ...emptyAccountForm(),
       name: account.name,
       email: account.email,
-      admin_role: account.admin_role || 'division_head',
+      admin_role: role,
       division_id: account.division_id ? String(account.division_id) : '',
       department_id: account.department_id ? String(account.department_id) : '',
       bureau_id: account.bureau_id ? String(account.bureau_id) : '',
-      permissions: account.permissions || permissionsForRole(account.admin_role || 'division_head'),
+      permissions: account.permissions || allowedPermissions,
     })
     setError('')
     setNotice('')
@@ -212,18 +205,12 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
       const permissions = new Set(current.permissions)
       if (checked) {
         permissions.add(permission)
-        if (permission.startsWith('jobs.') && permission !== 'jobs.view') permissions.add('jobs.view')
         if (permission.startsWith('applications.') && permission !== 'applications.view') permissions.add('applications.view')
-        if (permission === 'employees.manage') permissions.add('employees.view')
       } else {
         permissions.delete(permission)
-        if (permission === 'jobs.view') {
-          for (const key of ['jobs.create', 'jobs.update', 'jobs.delete', 'jobs.change_status']) permissions.delete(key)
-        }
         if (permission === 'applications.view') {
           for (const key of ['applications.change_status', 'applications.download_documents']) permissions.delete(key)
         }
-        if (permission === 'employees.view') permissions.delete('employees.manage')
       }
       return { ...current, permissions: [...permissions] }
     })
@@ -243,7 +230,6 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
         `${accountsPath}/${account.id}/status`,
         {
           method: 'PATCH',
-          token: sessionToken,
           body: JSON.stringify({ is_active: true }),
         },
       )
@@ -261,7 +247,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
     setError('')
     setIsDeleting(true)
     try {
-      await apiRequest(`${accountsPath}/${pendingDelete.id}`, { method: 'DELETE', token: sessionToken })
+      await apiRequest(`${accountsPath}/${pendingDelete.id}`, { method: 'DELETE' })
       setPendingDelete(null)
       setNotice(`Akun ${accountKind} berhasil dinonaktifkan. Riwayat dan dokumen tetap tersimpan.`)
       refreshAccounts()
@@ -282,7 +268,9 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
   const accountForm = (
     <form className="organization-form account-manager-form" onSubmit={submitAccount}>
       <p className="organization-help account-form-help">
-        <em>*</em> Wajib diisi. Saat edit, kata sandi boleh dikosongkan jika tidak ingin menggantinya.
+        {!isAdminAccount && !editingId
+          ? 'Tentukan kata sandi awal dan sampaikan secara aman kepada pelamar. Pelamar wajib menggantinya saat masuk pertama.'
+          : <><em>*</em> Wajib diisi. Saat edit, kata sandi boleh dikosongkan jika tidak ingin menggantinya.</>}
       </p>
       <label><span>Nama lengkap <em>*</em></span>
         <input autoComplete="name" maxLength={200} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} />
@@ -401,7 +389,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
                 {adminPermissionGroups.map((group) => {
                   const availablePermissions = group.permissions.filter(([permission]) => (
                     form.admin_role === 'admin'
-                    || !['job_types.manage', 'applicant_accounts.manage'].includes(permission)
+                    || permission !== 'applicant_accounts.manage'
                   ))
                   return availablePermissions.length ? (
                     <section className="account-permission-group" key={group.title}>
@@ -479,7 +467,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
           isAdminAccount ? 'Daftar Akun Admin' : 'Daftar Akun Pelamar',
           isAdminAccount
             ? ['Nama', 'Email', 'Peran', 'Lingkup organisasi', 'Izin aktif', 'Terdaftar', 'Status']
-            : ['Nama', 'Email', 'Jumlah lamaran', 'Terdaftar', 'Status'],
+            : ['Nama', 'Email', 'Jumlah lamaran', 'Kata sandi', 'Terdaftar', 'Status'],
           filteredAccounts.map((account) => isAdminAccount
             ? [
                 account.name,
@@ -494,6 +482,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
                 account.name,
                 account.email,
                 account.applications_count,
+                account.must_change_password ? 'Wajib diganti' : 'Sudah diganti',
                 new Date(account.created_at).toLocaleDateString('id-ID'),
                 account.is_active ? 'Aktif' : 'Nonaktif',
               ]),
@@ -510,7 +499,7 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
           </div>
         ) : filteredAccounts.length ? (
           <table className="admin-table account-table">
-            <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <th>LAMARAN</th>}<th>TERDAFTAR</th><th>STATUS</th><th>AKSI</th></tr></thead>
+            <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <><th>LAMARAN</th><th>KATA SANDI</th></>}<th>TERDAFTAR</th><th>STATUS</th><th>AKSI</th></tr></thead>
             <tbody>
               {pageAccounts.map((account) => {
                 const isCurrentAdmin = isAdminAccount && account.id === currentAdminId
@@ -521,9 +510,10 @@ export function AccountListManager({ accountType, sessionToken, currentAdminId, 
                   {isAdminAccount && <td>
                     {adminRoles.find((role) => role.value === account.admin_role)?.label || account.admin_role}
                     <span className="admin-table-subtext">{account.scope_label}</span>
-                    <span className="admin-table-subtext">{account.admin_role === 'super_admin' ? 'Hak akses penuh' : `${(account.permissions || []).length} izin aktif`}</span>
+                    <span className="admin-table-subtext">{account.admin_role === 'super_admin' ? 'Hak akses penuh' : `${(account.permissions || []).filter((permission) => ACTIVE_ADMIN_PERMISSION_KEYS.has(permission)).length} izin aktif`}</span>
                   </td>}
                   {!isAdminAccount && <td>{account.applications_count}</td>}
+                  {!isAdminAccount && <td>{account.must_change_password ? 'Wajib diganti saat masuk' : 'Sudah diganti'}</td>}
                   <td>{new Date(account.created_at).toLocaleDateString('id-ID')}</td>
                   <td>
                     <div className="account-status-control">
@@ -617,7 +607,6 @@ export function AccountManager({ session, organization }) {
         currentAdminId={session.admin.id}
         key={accountType}
         organization={organization}
-        sessionToken={session.token}
       />
     </section>
   )

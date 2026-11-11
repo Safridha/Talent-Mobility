@@ -8,7 +8,7 @@ import { useAdminPagination } from './useAdminPagination'
 import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 
-export function OrganizationManager({ level, organization, isLoading, sessionToken, onRefresh }) {
+export function OrganizationManager({ level, organization, isLoading, onRefresh }) {
   const definitions = {
     divisions: { label: 'Divisi', collection: 'divisions', path: '/admin/divisions' },
     departments: {
@@ -121,7 +121,6 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
     try {
       await apiRequest(editingId ? `${definition.path}/${editingId}` : definition.path, {
         method: editingId ? 'PUT' : 'POST',
-        token: sessionToken,
         body: JSON.stringify(body),
       })
       setNotice(editingId ? `${definition.label} berhasil disimpan.` : `${definition.label} berhasil ditambahkan.`)
@@ -139,7 +138,7 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
     setError('')
     setIsDeleting(true)
     try {
-      await apiRequest(`${definition.path}/${pendingDelete.id}`, { method: 'DELETE', token: sessionToken })
+      await apiRequest(`${definition.path}/${pendingDelete.id}`, { method: 'DELETE' })
       if (editingId === pendingDelete.id) resetForm()
       setPendingDelete(null)
       setNotice(`${definition.label} berhasil dihapus.`)
@@ -376,193 +375,63 @@ export function OrganizationManager({ level, organization, isLoading, sessionTok
     </section>
   )
 }
-
-export function JobTypeManager({ jobTypes, isLoading, loadError, sessionToken, onRefresh }) {
-  const [name, setName] = useState('')
-  const [search, setSearch] = useState('')
-  const [usageFilter, setUsageFilter] = useState('all')
-  const [editingId, setEditingId] = useState(null)
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-
-  function resetForm() {
-    setName('')
-    setEditingId(null)
-    setIsCreateModalOpen(false)
-  }
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setError('')
-    setNotice('')
-    setIsSaving(true)
-    try {
-      await apiRequest(editingId ? `/admin/job-types/${editingId}` : '/admin/job-types', {
-        method: editingId ? 'PUT' : 'POST',
-        token: sessionToken,
-        body: JSON.stringify({ name: name.trim() }),
-      })
-      setNotice(editingId ? 'Jenis pekerjaan berhasil disimpan.' : 'Jenis pekerjaan berhasil ditambahkan.')
-      resetForm()
-      onRefresh()
-    } catch (requestError) {
-      setError(requestError.message)
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  async function deleteItem() {
-    if (!pendingDelete) return
-    setError('')
-    setIsDeleting(true)
-    try {
-      await apiRequest(`/admin/job-types/${pendingDelete.id}`, { method: 'DELETE', token: sessionToken })
-      if (editingId === pendingDelete.id) resetForm()
-      setPendingDelete(null)
-      setNotice('Jenis pekerjaan berhasil dihapus.')
-      onRefresh()
-    } catch (requestError) {
-      setError(requestError.message)
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
-  function editItem(jobType) {
-    setIsCreateModalOpen(false)
-    setEditingId(jobType.id)
-    setName(jobType.name)
-    setError('')
-    setNotice('')
-  }
-
-  function openCreateForm() {
-    resetForm()
-    setError('')
-    setNotice('')
-    setIsCreateModalOpen(true)
-  }
-
-  const filteredJobTypes = jobTypes.filter((jobType) => {
-    const matchesSearch = jobType.name.toLocaleLowerCase('id').includes(search.trim().toLocaleLowerCase('id'))
-    const matchesUsage = usageFilter === 'all'
-      || (jobType.job_count > 0 ? 'used' : 'unused') === usageFilter
-    return matchesSearch && matchesUsage
-  })
-  const { items: pageJobTypes, page, setPage } = useAdminPagination(filteredJobTypes)
-
-  const editorForm = (
-    <form className={isCreateModalOpen ? 'organization-form job-type-form admin-popup-form' : 'organization-form job-type-form'} onSubmit={handleSubmit}>
-      <p className="organization-help admin-form-wide"><em>*</em> Wajib diisi. Tidak ada kolom opsional di formulir ini.</p>
-      <label>
-        <span>Jenis pekerjaan <em>*</em></span>
-        <input maxLength={80} onChange={(event) => setName(event.target.value)} required value={name} />
-      </label>
-      {error && !pendingDelete && <p className="admin-alert error" role="alert">{error}</p>}
-      <div className="organization-form-actions">
-        {editingId && <button className="detail-button" onClick={resetForm} type="button">Batal edit</button>}
-        {isCreateModalOpen && <button className="detail-button" onClick={resetForm} type="button">Batal</button>}
-        <button className="apply-button" disabled={isSaving || isLoading} type="submit">
-          {isSaving ? 'Menyimpan...' : editingId ? 'Simpan perubahan' : 'Tambah jenis pekerjaan'}
-        </button>
-      </div>
-    </form>
-  )
+export function UnitWorkManager({ organization, isLoading, onRefresh }) {
+  const [level, setLevel] = useState('divisions')
+  const levels = [
+    { id: 'divisions', label: 'Divisi', count: organization.divisions.length, guide: 'Divisi adalah unit induk dan tidak memiliki filter induk.' },
+    { id: 'departments', label: 'Departemen', count: organization.departments.length, guide: 'Pilih filter Divisi untuk melihat departemen di bawahnya.' },
+    { id: 'bureaus', label: 'Biro / Bengkel', count: organization.bureaus.length, guide: 'Pilih Divisi, lalu Departemen untuk melihat biro atau bengkel di bawahnya.' },
+  ]
+  const activeLevel = levels.find((item) => item.id === level)
 
   return (
-    <section className="admin-organization-view">
-      <div className="admin-table-heading">
+    <section className="admin-unit-work">
+      <header className="admin-unit-work-header">
         <div>
-          <h2>Kelola jenis pekerjaan</h2>
-          <p>{jobTypes.length} jenis pekerjaan terdaftar</p>
+          <h2>Kelola Unit Kerja</h2>
+          <p>Kelola data organisasi dengan urutan Divisi, Departemen, lalu Biro / Bengkel.</p>
         </div>
-        <button className="apply-button" disabled={isLoading || Boolean(loadError)} onClick={openCreateForm} type="button"><Plus size={16} /> Tambah jenis pekerjaan</button>
+        <ul aria-label="Jumlah unit kerja" className="admin-unit-work-counts">
+          {levels.map((item) => (
+            <li key={item.id}>
+              <strong>{item.count}</strong>
+              <span>{item.label}</span>
+            </li>
+          ))}
+        </ul>
+      </header>
+      <div aria-label="Tingkat unit kerja" className="admin-unit-level-tabs" role="tablist">
+        {levels.map((item) => (
+          <button
+            aria-selected={level === item.id}
+            className={level === item.id ? 'active' : ''}
+            aria-controls="unit-work-panel"
+            id={`unit-work-tab-${item.id}`}
+            key={item.id}
+            onClick={() => setLevel(item.id)}
+            role="tab"
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
-      <p className="organization-help job-type-description">Pilihan ini tersedia pada formulir lowongan. Jenis yang sudah digunakan tidak bisa dihapus.</p>
-      {editingId && (
-        <AdminFormDialog className="admin-compact-editor-modal" onClose={resetForm} title="Edit jenis pekerjaan">
-          {editorForm}
-        </AdminFormDialog>
-      )}
-      <AdminTableToolbar
-        onPageChange={setPage}
-        filters={[{
-          label: 'Penggunaan',
-          value: usageFilter,
-          onChange: setUsageFilter,
-          options: [{ value: 'used', label: 'Sudah digunakan' }, { value: 'unused', label: 'Belum digunakan' }],
-        }]}
-        onSearchChange={setSearch}
-        search={search}
-        searchPlaceholder="Cari jenis pekerjaan..."
-        onDownloadPdf={() => downloadTablePdf(
-          'jenis-pekerjaan',
-          'Daftar Jenis Pekerjaan',
-          ['Jenis pekerjaan', 'Jumlah lowongan terkait'],
-          filteredJobTypes.map((jobType) => [jobType.name, jobType.job_count]),
-        )}
-        downloadDisabled={isLoading || Boolean(loadError) || !filteredJobTypes.length}
-      />
-      <div className="admin-table-scroll">
-        {isLoading ? (
-          <div className="admin-loading">Memuat jenis pekerjaan...</div>
-        ) : loadError ? (
-          <div className="admin-loading account-load-error" role="alert">
-            <p>{loadError}</p>
-            <button className="admin-small-button" onClick={onRefresh} type="button">Coba lagi</button>
-          </div>
-        ) : filteredJobTypes.length ? (
-          <table className="admin-table organization-table">
-            <thead><tr><th>JENIS PEKERJAAN</th><th>LOWONGAN TERKAIT</th><th>AKSI</th></tr></thead>
-            <tbody>
-              {pageJobTypes.map((jobType) => (
-                <tr key={jobType.id}>
-                  <td className="position-name">{jobType.name}</td>
-                  <td>{jobType.job_count}</td>
-                  <td className="admin-row-actions">
-                    <button className="admin-small-button" onClick={() => editItem(jobType)} type="button">Edit</button>
-                    <button
-                      className="admin-small-button danger"
-                      disabled={jobType.job_count > 0}
-                      onClick={() => { setError(''); setPendingDelete(jobType) }}
-                      title={jobType.job_count > 0 ? 'Masih digunakan oleh lowongan' : undefined}
-                      type="button"
-                    >
-                      Hapus
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="admin-loading">{jobTypes.length ? 'Tidak ada jenis pekerjaan yang cocok.' : 'Belum ada jenis pekerjaan.'}</div>
-        )}
-      </div>
-      {!isLoading && !loadError && (
-        <AdminTablePagination onPageChange={setPage} page={page} total={filteredJobTypes.length} />
-      )}
-      <SuccessPopup message={notice} onClose={setNotice} />
-      {isCreateModalOpen && (
-        <AdminFormDialog className="admin-compact-editor-modal" onClose={resetForm} title="Tambah jenis pekerjaan">
-          {editorForm}
-        </AdminFormDialog>
-      )}
-      {pendingDelete && (
-        <ConfirmDialog
-          error={error}
-          isBusy={isDeleting}
-          message={`Jenis pekerjaan "${pendingDelete.name}" akan dihapus permanen.`}
-          onCancel={() => { setPendingDelete(null); setError('') }}
-          onConfirm={() => void deleteItem()}
-          title="Hapus jenis pekerjaan?"
+      <p className="admin-unit-work-guide">
+        <strong>{activeLevel?.label}:</strong> {activeLevel?.guide} Tambah data dengan tombol Tambah, lalu gunakan Edit atau Hapus pada kolom Aksi. Unit yang memiliki bawahan atau masih digunakan tidak dapat dihapus.
+      </p>
+      <div
+        aria-labelledby={`unit-work-tab-${level}`}
+        id="unit-work-panel"
+        role="tabpanel"
+      >
+        <OrganizationManager
+          isLoading={isLoading}
+          key={level}
+          level={level}
+          onRefresh={onRefresh}
+          organization={organization}
         />
-      )}
+      </div>
     </section>
   )
 }

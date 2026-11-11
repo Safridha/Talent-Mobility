@@ -1,6 +1,6 @@
 # app-backend
 
-Axum recruitment API with PostgreSQL, applicant accounts, bearer-token authentication, and the React build served from the same origin.
+Axum recruitment API with PostgreSQL, applicant accounts, HttpOnly cookie sessions, and the React build served from the same origin.
 
 ## Requirements
 
@@ -28,7 +28,7 @@ Start the frontend and backend together from the project root:
 npm run dev
 ```
 
-Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema, four official divisions with their departments/bureaus, and initial job types on startup. The Super Admin bootstrap account is created from `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` when that email is not already registered. Press `Ctrl+C` to stop both processes.
+Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema and seeds the official organization hierarchy on startup. The Super Admin bootstrap account is created from `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` when that email is not already registered. Press `Ctrl+C` to stop both processes.
 
 To enable forgotten-password emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `APP_PUBLIC_URL` in the server environment. Do not commit SMTP credentials.
 
@@ -50,43 +50,38 @@ Use a local or disposable PostgreSQL instance, never production. The regular `ca
 
 ## API
 
-- `GET /api/jobs` returns open jobs by default; `?status=closed` lists closed jobs and `?status=all` lists open and closed jobs. Drafts are never public.
-- `GET /api/monitoring/positions` returns the position-to-division/department/unit mapping and requires an admin bearer token.
+- `GET /api/monitoring/positions` returns the position-to-division/department/unit mapping and requires an admin session cookie.
 - `POST /api/admin/login` remains available as a legacy admin-only login endpoint.
-- `POST /api/admin/logout` revokes the admin bearer token.
-- `GET /api/admin/dashboard` returns position and application counts by status.
-- `GET /api/admin/job-types` lists managed job types; `POST` creates one, `PUT /api/admin/job-types/{id}` renames one, and `DELETE` removes an unused type.
+- `POST /api/admin/logout` revokes the admin session and clears its cookie.
+- `GET /api/admin/dashboard` returns direct-application counts by status within the administrator's organization scope.
 - `GET /api/admin/organization` returns the Divisi → Departemen → Biro hierarchy.
 - `POST /api/admin/divisions`, `/api/admin/departments`, and `/api/admin/bureaus` create organization records; matching `PUT` and `DELETE` routes manage them.
-- `GET /api/admin/jobs` lists all positions; `POST /api/admin/jobs` creates one.
-- `DELETE /api/admin/jobs/{id}` permanently deletes only a position with no applications; positions with application history can only be closed.
-- `POST /api/admin/jobs` and `PUT /api/admin/jobs/{id}` use `bureau_id`; hierarchy labels are resolved from its parent records.
-- Job posting `job_type` values must match a type from `/api/admin/job-types`; types used by existing jobs cannot be deleted.
-- `PATCH /api/admin/jobs/{id}/status` opens or closes a position.
+- Legacy job-posting, job-type, and employee-directory management endpoints are no longer registered.
 - `GET /api/admin/applications` lists applicant details; `GET /api/admin/applications/{id}` returns one application.
-- `GET /api/admin/applications/{id}/documents/{document_id}` downloads a private application PDF and requires an admin bearer token.
+- `GET /api/admin/applications/{id}/documents/{document_id}` downloads a private application PDF and requires an admin session cookie.
 - `PATCH /api/admin/applications/{id}/status` accepts `status` and an optional `reason` (up to 1000 characters), updates the review status, and creates a notification for the applicant when the status changes. A reason is required when the new status is `rejected`; any supplied reason is included in the notification.
-- `GET /api/admin/accounts` lists applicant accounts and application counts; `POST /api/admin/accounts` creates an account.
-- `PUT /api/admin/accounts/{id}` updates an account and optionally resets its password; `DELETE /api/admin/accounts/{id}` deactivates it without deleting application history.
+- `GET /api/admin/accounts` lists applicant accounts, application counts, and whether the initial password still needs changing; `POST /api/admin/accounts` creates an account and marks its admin-set initial password for mandatory first-login replacement.
+- `PUT /api/admin/accounts/{id}` updates an account and optionally resets its password (which must be changed at next login); `DELETE /api/admin/accounts/{id}` deactivates it without deleting application history.
 - `PATCH /api/admin/accounts/{id}/status` reactivates or deactivates an account. Deactivation revokes active applicant sessions.
 - `GET /api/admin/admin-accounts` lists administrator accounts; `POST /api/admin/admin-accounts` creates one.
 - `PUT /api/admin/admin-accounts/{id}` updates another administrator and optionally resets its password; `DELETE /api/admin/admin-accounts/{id}` deactivates it.
 - `PATCH /api/admin/admin-accounts/{id}/status` reactivates or deactivates an administrator. The current administrator and the final active administrator cannot be deactivated; status changes revoke active sessions.
-- `POST /api/register` accepts `name`, `email`, and `password`, then returns an applicant session.
-- `POST /api/login` accepts `email` and `password`, then returns an applicant or admin session with its `role`.
+- `POST /api/login` accepts `email` and `password`, then returns an applicant or admin session with its `role`. A newly created or admin-reset applicant account must change its password before using the application.
+- Applicant and admin accounts are temporarily suspended for 15 minutes after five failed login attempts; a successful login or password reset clears the failure count.
+- `GET /api/session` restores the current session from its HttpOnly cookie.
 - `GET /api/applications` lists the signed-in applicant's applications.
 - `GET /api/notifications` lists the signed-in applicant's application-status notifications and unread count; `PATCH /api/notifications/{id}/read` marks an owned notification as read.
-- `POST /api/applications` accepts `multipart/form-data` with `job_id`, `employee_number`, `applicant_full_name`, `origin_division`, `origin_unit`, `education_level`, `study_field`, `motivation`, and one to five repeated `supporting_document` PDF fields. Each file is limited to 5 MB and requires an applicant bearer token.
-- `POST /api/logout` revokes the current applicant token.
+- `POST /api/applications` accepts `multipart/form-data` with `target_department_id`, optional `target_bureau_id`, `employee_number`, `applicant_full_name`, `origin_division`, `origin_unit`, `education_level`, `study_field`, `motivation`, a required `cv` PDF, and up to four additional `supporting_document` PDFs. Each file is limited to 5 MB and requires an applicant session cookie.
+- `POST /api/logout` revokes the current applicant session and clears its cookie.
 - `GET /api/account/profile` returns the signed-in applicant/admin profile; `PATCH` updates the display name.
 - `GET`, `POST`, and `DELETE /api/account/avatar` view, upload, or remove the signed-in account's JPG, PNG, or WebP profile photo (maximum 2 MB).
 - `POST /api/account/password` changes the signed-in user's password after verifying the current password.
 - `POST /api/password/forgot` sends a one-hour, single-use reset link when SMTP is configured; `POST /api/password/reset` consumes the link and invalidates active sessions.
 
-Admin accounts combine a fixed role/scope with per-account grants. Super Admin always has full access; only Super Admin can manage administrator accounts or the organization structure. Other administrators can be granted `jobs.view/create/update/delete/change_status`, `applications.view/change_status/download_documents`, and—only for the unscoped Admin role—`job_types.manage` and `applicant_accounts.manage`. Write and document permissions require their corresponding read permission. Division and department scope is still enforced by backend queries and mutations, regardless of grants. Existing Admin accounts receive the former operational permissions during migration; division and department heads receive the former scoped permissions.
+Admin accounts combine a fixed role/scope with per-account grants. Super Admin always has full access; only Super Admin can manage administrator accounts or the organization structure. Other administrators can be granted `applications.view/change_status/download_documents`; only the unscoped Admin role can also receive `applicant_accounts.manage`. Write and document permissions require application-view permission. Division and department scope is still enforced by backend queries and mutations, regardless of grants. Applicant accounts are created by an authorized admin with an initial password; the applicant must change it before accessing application data. Public applicant registration is disabled. Resetting an applicant password through account management also requires a change at the next login. Stored job-posting, job-type, and employee-directory tables and records are retained for historical references; the application no longer exposes management endpoints for them.
 
-Passwords are stored as Argon2 hashes. Applicant and admin tokens expire after 30 days and are stored as SHA-256 hashes.
-All `/api/admin/*` data endpoints and `/api/monitoring/positions` require an admin bearer token.
+Passwords are stored as Argon2 hashes. Applicant and admin sessions expire after 30 days; session identifiers are stored as SHA-256 hashes and delivered only in an `HttpOnly`, `SameSite=Strict` cookie. The cookie is marked `Secure` when `APP_PUBLIC_URL` uses HTTPS, and all state-changing requests must have a matching `Origin` and `Host`.
+All `/api/admin/*` data endpoints and `/api/monitoring/positions` require an admin session cookie.
 Application IDs exposed in API routes are ULIDs; numeric database IDs remain internal. Existing applications receive a ULID on startup. Application details and PDF documents are persisted in PostgreSQL; document bytes are never exposed by public endpoints.
 
 All API responses include `Cache-Control: no-store`. If Cloudflare is used, configure `/api/*` to bypass cache and do not enable Cache Everything for API routes.

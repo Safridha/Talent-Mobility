@@ -78,9 +78,13 @@ export default function ApplicantApplicationProgress({ application, job, onClose
               {job?.division && <div><dt><Building2 aria-hidden="true" size={14} /> Divisi</dt><dd>{job.division}</dd></div>}
               {job?.department && <div><dt>Departemen</dt><dd>{job.department}</dd></div>}
               {job?.unit && <div><dt>Unit</dt><dd>{job.unit}</dd></div>}
-              <div><dt>ID posisi</dt><dd>{application.job_id}</dd></div>
+              <div><dt>Jenis lamaran</dt><dd>{application.job_id ? 'Lowongan' : 'Lamar langsung'}</dd></div>
+              {application.job_id && <div><dt>ID posisi</dt><dd>{application.job_id}</dd></div>}
               <div><dt>ID lamaran</dt><dd>{application.id}</dd></div>
             </dl>
+            {!application.job_id && application.position_description && (
+              <p className="application-progress-position-description">{application.position_description}</p>
+            )}
           </section>
 
           <aside aria-label="Tahapan seleksi" className="application-progress-sidebar">

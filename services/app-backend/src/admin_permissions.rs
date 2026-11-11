@@ -43,27 +43,16 @@ const OPERATIONAL_PERMISSION_KEYS: [&str; 12] = [
     EMPLOYEES_MANAGE,
 ];
 
-const DEFAULT_SCOPED_PERMISSION_KEYS: [&str; 8] = [
-    JOBS_VIEW,
-    JOBS_CREATE,
-    JOBS_UPDATE,
-    JOBS_DELETE,
-    JOBS_CHANGE_STATUS,
+const DEFAULT_SCOPED_PERMISSION_KEYS: [&str; 3] = [
     APPLICATIONS_VIEW,
     APPLICATIONS_CHANGE_STATUS,
     APPLICATIONS_DOWNLOAD_DOCUMENTS,
 ];
 
-const DEFAULT_OPERATIONAL_PERMISSION_KEYS: [&str; 10] = [
-    JOBS_VIEW,
-    JOBS_CREATE,
-    JOBS_UPDATE,
-    JOBS_DELETE,
-    JOBS_CHANGE_STATUS,
+const DEFAULT_OPERATIONAL_PERMISSION_KEYS: [&str; 4] = [
     APPLICATIONS_VIEW,
     APPLICATIONS_CHANGE_STATUS,
     APPLICATIONS_DOWNLOAD_DOCUMENTS,
-    JOB_TYPES_MANAGE,
     APPLICANT_ACCOUNTS_MANAGE,
 ];
 
@@ -146,24 +135,25 @@ mod tests {
 
     #[test]
     fn scoped_admin_permissions_cannot_grant_global_settings() {
-        let permissions = vec![JOBS_VIEW.to_owned(), APPLICATIONS_VIEW.to_owned()];
+        let permissions = vec![APPLICATIONS_VIEW.to_owned()];
         assert!(validate_admin_permissions("division_head", &permissions).is_ok());
 
         let mut permissions = permissions;
-        permissions.push(JOB_TYPES_MANAGE.to_owned());
+        permissions.push(APPLICANT_ACCOUNTS_MANAGE.to_owned());
         assert!(validate_admin_permissions("division_head", &permissions).is_err());
     }
 
     #[test]
-    fn write_permissions_require_read_access_and_are_unique() {
+    fn default_grants_are_current_and_write_permissions_require_read_access() {
         assert!(validate_admin_permissions("admin", &[JOBS_CREATE.to_owned()]).is_err());
         assert!(
             validate_admin_permissions("admin", &[APPLICATIONS_CHANGE_STATUS.to_owned()]).is_err()
         );
-        assert!(
-            validate_admin_permissions("admin", &[JOBS_VIEW.to_owned(), JOBS_VIEW.to_owned()])
-                .is_err()
-        );
+        assert!(validate_admin_permissions(
+            "admin",
+            &[APPLICATIONS_VIEW.to_owned(), APPLICATIONS_VIEW.to_owned()]
+        )
+        .is_err());
         assert!(validate_admin_permissions("admin", &[]).is_err());
         assert!(validate_admin_permissions("admin", &[EMPLOYEES_MANAGE.to_owned()]).is_err());
     }
@@ -199,6 +189,8 @@ mod tests {
     fn role_defaults_preserve_existing_access() {
         assert!(default_permissions("division_head").contains(&APPLICATIONS_CHANGE_STATUS.into()));
         assert!(default_permissions("admin").contains(&APPLICANT_ACCOUNTS_MANAGE.into()));
+        assert!(!default_permissions("admin").contains(&JOBS_VIEW.into()));
+        assert!(!default_permissions("admin").contains(&JOB_TYPES_MANAGE.into()));
         assert!(!default_permissions("admin").contains(&EMPLOYEES_VIEW.into()));
         assert!(default_permissions("super_admin").is_empty());
     }

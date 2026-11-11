@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, BriefcaseBusiness, Building2, Database, Download, FileText, Plus, Shield, SlidersHorizontal, Users, Wrench, X } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Bell, Building2, Database, Download, FileText, Menu, Shield, Users, X } from 'lucide-react'
 import { apiDownload, apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -13,41 +13,38 @@ import { useAdminPagination } from './useAdminPagination'
 import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 import PushNotificationControl from '../../components/PushNotificationControl'
-import { JobEditor } from './JobEditor'
-import { OrganizationManager, JobTypeManager } from './OrganizationManagers'
+import { UnitWorkManager } from './OrganizationManagers'
+import ApplicationLimitManager from './ApplicationLimitManager'
 import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
-import { EmployeeDirectoryManager } from './EmployeeDirectoryManager'
 import { AdminAuditLog } from './AdminAuditLog'
 import { queryKeys } from '../../query/queryKeys'
 import { useHashRoute } from '../../useHashRoute'
 
 const ADMIN_VIEW_ROUTES = {
   dashboard: 'dashboard',
-  jobs: 'lowongan',
   applications: 'lamaran',
-  'job-types': 'jenis-pekerjaan',
   accounts: 'manajemen-akun',
-  employees: 'karyawan',
-  divisions: 'divisi',
-  departments: 'departemen',
-  bureaus: 'biro',
+  units: 'unit-kerja',
+  'application-limit': 'batas-lamaran',
   audit: 'audit-log',
 }
 const ADMIN_VIEW_PRESENTATION = {
   dashboard: { label: 'Dashboard', icon: Database },
-  jobs: { label: 'Lowongan', icon: BriefcaseBusiness },
   applications: { label: 'Lamaran Masuk', icon: FileText },
-  'job-types': { label: 'Jenis Pekerjaan', icon: SlidersHorizontal },
   accounts: { label: 'Manajemen Akun', icon: Users },
-  employees: { label: 'Karyawan', icon: Users },
-  divisions: { label: 'Divisi', icon: Building2 },
-  departments: { label: 'Departemen', icon: Building2 },
-  bureaus: { label: 'Biro', icon: Wrench },
+  units: { label: 'Unit Kerja', icon: Building2 },
+  'application-limit': { label: 'Batas Lamaran', icon: Users },
   audit: { label: 'Riwayat Audit', icon: Shield },
+}
+const LEGACY_ADMIN_ROUTE_ALIASES = {
+  'admin/divisi': 'units',
+  'admin/departemen': 'units',
+  'admin/biro': 'units',
 }
 const ADMIN_ROUTES = [
   ...Object.values(ADMIN_VIEW_ROUTES).map((view) => `admin/${view}`),
+  ...Object.keys(LEGACY_ADMIN_ROUTE_ALIASES),
   'admin/account/profile', 'admin/account/security',
 ]
 
@@ -66,54 +63,44 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const queryClient = useQueryClient()
   const [route, navigate] = useHashRoute('admin/dashboard', ADMIN_ROUTES)
   const routeView = Object.entries(ADMIN_VIEW_ROUTES)
-    .find(([, view]) => route === `admin/${view}`)?.[0] || 'dashboard'
+    .find(([, view]) => route === `admin/${view}`)?.[0]
+    || LEGACY_ADMIN_ROUTE_ALIASES[route]
+    || 'dashboard'
   const accountSection = route === 'admin/account/profile' ? 'profile' : route === 'admin/account/security' ? 'security' : null
   const [accountReturnView, setAccountReturnView] = useState(routeView)
   const activeView = accountSection ? accountReturnView : routeView
   const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [editorJob, setEditorJob] = useState(null)
-  const [isCreatingJob, setIsCreatingJob] = useState(false)
-  const [jobSearch, setJobSearch] = useState('')
-  const [jobStatusFilter, setJobStatusFilter] = useState('all')
-  const [jobTypeFilter, setJobTypeFilter] = useState('all')
-  const [jobDivisionFilter, setJobDivisionFilter] = useState('all')
   const [applicationSearch, setApplicationSearch] = useState('')
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('all')
-  const [applicationJobFilter, setApplicationJobFilter] = useState('all')
+  const [applicationTargetFilter, setApplicationTargetFilter] = useState('all')
   const [selectedApplication, setSelectedApplication] = useState(null)
   const [downloadingApplicationId, setDownloadingApplicationId] = useState(null)
   const [logoutError, setLogoutError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const sessionToken = session.token
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const isAuthenticated = Boolean(session)
   const adminRole = session.admin.admin_role || 'super_admin'
   const isSuperAdmin = adminRole === 'super_admin'
   const grantedPermissions = new Set(session.admin.permissions || [])
   const hasPermission = (permission) => isSuperAdmin || grantedPermissions.has(permission)
-  const canViewJobs = hasPermission('jobs.view')
-  const canCreateJobs = hasPermission('jobs.create')
-  const canUpdateJobs = hasPermission('jobs.update')
-  const canChangeJobStatus = hasPermission('jobs.change_status')
   const canViewApplications = hasPermission('applications.view')
   const canChangeApplicationStatus = hasPermission('applications.change_status')
   const canDownloadApplicationDocuments = hasPermission('applications.download_documents')
-  const canManageJobTypes = hasPermission('job_types.manage')
   const canManageApplicantAccounts = hasPermission('applicant_accounts.manage')
-  const canViewEmployees = hasPermission('employees.view')
-  const canManageEmployees = hasPermission('employees.manage')
-  const canViewOrganizationOptions = isSuperAdmin || canCreateJobs || canUpdateJobs || canViewEmployees
+  const canViewOrganizationOptions = isSuperAdmin || canManageApplicantAccounts
   const adminRoleLabel = {
     super_admin: 'Super Admin',
     admin: 'Admin Operasional',
     division_head: 'Kepala Divisi (Kadiv)',
     department_head: 'Kepala Departemen (Kadep)',
   }[adminRole] || 'Administrator'
-  const [avatarUrl, refreshAvatar] = useAccountAvatar(sessionToken)
+  const [avatarUrl, refreshAvatar] = useAccountAvatar(isAuthenticated)
   const adminSessionQuery = useQuery({
     queryKey: queryKeys.adminSession,
-    queryFn: () => apiRequest('/admin/session', { token: sessionToken }),
-    enabled: Boolean(sessionToken),
+    queryFn: () => apiRequest('/admin/session'),
+    enabled: isAuthenticated,
     refetchInterval: 30000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
@@ -121,122 +108,50 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   })
   const dashboardQuery = useQuery({
     queryKey: queryKeys.adminDashboard,
-    queryFn: () => apiRequest('/admin/dashboard', { token: sessionToken }),
-    enabled: canViewJobs || canViewApplications,
-  })
-  const jobsQuery = useQuery({
-    queryKey: queryKeys.adminJobs,
-    queryFn: () => apiRequest('/admin/jobs', { token: sessionToken }),
-    enabled: canViewJobs,
+    queryFn: () => apiRequest('/admin/dashboard'),
+    enabled: canViewApplications,
   })
   const applicationsQuery = useQuery({
     queryKey: queryKeys.adminApplications,
-    queryFn: () => apiRequest('/admin/applications', { token: sessionToken }),
+    queryFn: () => apiRequest('/admin/applications'),
     enabled: canViewApplications,
   })
   const organizationQuery = useQuery({
     queryKey: queryKeys.adminOrganization,
-    queryFn: () => apiRequest('/admin/organization', { token: sessionToken }),
+    queryFn: () => apiRequest('/admin/organization'),
     enabled: canViewOrganizationOptions,
-  })
-  const jobTypesQuery = useQuery({
-    queryKey: queryKeys.adminJobTypes,
-    queryFn: async () => {
-      const response = await apiRequest('/admin/job-types', { token: sessionToken })
-      if (!Array.isArray(response.data)) {
-        throw new Error('Daftar jenis pekerjaan dari server tidak valid.')
-      }
-      return response.data
-    },
-    enabled: canViewJobs || canManageJobTypes,
   })
   const adminNotificationsQuery = useQuery({
     queryKey: queryKeys.adminNotifications,
-    queryFn: () => apiRequest('/admin/notifications', { token: sessionToken }),
+    queryFn: () => apiRequest('/admin/notifications'),
     refetchInterval: 30000,
     enabled: canViewApplications,
   })
   const metrics = dashboardQuery.data
-  const jobs = jobsQuery.data?.data ?? []
   const applications = applicationsQuery.data?.data ?? []
   const organization = organizationQuery.data ?? { divisions: [], departments: [], bureaus: [] }
-  const jobTypes = jobTypesQuery.data ?? []
   const adminNotifications = adminNotificationsQuery.data?.data ?? []
   const unreadNotificationCount = adminNotificationsQuery.data?.unread_count ?? 0
   const isLoading = activeView === 'dashboard'
     ? dashboardQuery.isPending
-    : activeView === 'jobs'
-      ? jobsQuery.isPending || (canViewOrganizationOptions && organizationQuery.isPending)
-      : activeView === 'applications' && applicationsQuery.isPending
-  const isJobTypesLoading = jobTypesQuery.isPending
-  const jobTypesError = jobTypesQuery.error?.message ?? ''
+    : activeView === 'applications' && applicationsQuery.isPending
   const queryError = [
     adminSessionQuery,
     dashboardQuery,
-    ...(canViewJobs ? [jobsQuery] : []),
     ...(canViewApplications ? [applicationsQuery, adminNotificationsQuery] : []),
     ...(canViewOrganizationOptions ? [organizationQuery] : []),
-    ...(canViewJobs || canManageJobTypes ? [jobTypesQuery] : []),
   ]
     .find((query) => query.error)?.error?.message ?? ''
-
-  const saveJobMutation = useMutation({
-    mutationFn: ({ id, fields, isEditing }) => apiRequest(
-      isEditing ? `/admin/jobs/${encodeURIComponent(id)}` : '/admin/jobs',
-      {
-        method: isEditing ? 'PUT' : 'POST',
-        token: sessionToken,
-        body: JSON.stringify(isEditing ? fields : { id, ...fields }),
-      },
-    ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.admin }),
-  })
-  const jobStatusMutation = useMutation({
-    mutationFn: ({ id, status }) => apiRequest(`/admin/jobs/${encodeURIComponent(id)}/status`, {
-      method: 'PATCH',
-      token: sessionToken,
-      body: JSON.stringify({ status }),
-    }),
-    onSuccess: async (_, { id, status }) => {
-      queryClient.setQueryData(queryKeys.adminJobs, (current) => current && ({
-        ...current,
-        data: current.data.map((job) => job.id === id ? { ...job, status } : job),
-      }))
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.admin }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.publicJobs }),
-      ])
-    },
-  })
 
   function refresh() {
     setError('')
     return queryClient.invalidateQueries({ queryKey: queryKeys.admin })
   }
 
-  async function saveJob(form) {
-    const { id, ...fields } = form
-    await saveJobMutation.mutateAsync({ id, fields, isEditing: Boolean(editorJob) })
-    setNotice(editorJob ? 'Lowongan berhasil disimpan.' : 'Lowongan berhasil ditambahkan sebagai draft.')
-    setError('')
-  }
-
-  async function toggleJob(job) {
-    setError('')
-    setNotice('')
-    try {
-      const status = job.status === 'open' ? 'closed' : 'open'
-      await jobStatusMutation.mutateAsync({ id: job.id, status })
-      setNotice(status === 'open' ? 'Lowongan dibuka.' : 'Lowongan ditutup.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
-  }
-
   async function openApplication(applicationId) {
     setError('')
     try {
-      const application = await apiRequest(`/admin/applications/${applicationId}`, { token: sessionToken })
+      const application = await apiRequest(`/admin/applications/${applicationId}`)
       setSelectedApplication(application)
     } catch (requestError) {
       setError(requestError.message)
@@ -247,13 +162,13 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     setError('')
     setDownloadingApplicationId(application.id)
     try {
-      const details = await apiRequest(`/admin/applications/${application.id}`, { token: sessionToken })
+      const details = await apiRequest(`/admin/applications/${application.id}`)
       const file = details.documents.find((document) => document.document_type === 'cv')
         || details.documents[0]
       if (!file) throw new Error('Lamaran ini belum memiliki CV atau berkas pendukung.')
       const blob = await apiDownload(
         `/admin/applications/${application.id}/documents/${file.id}`,
-        { token: sessionToken },
+        {},
       )
       const safeName = file.file_name.replace(/[\\/:*?"<>|]/g, '_')
       saveDownload(blob, `lamaran-${application.id}-${safeName}`)
@@ -270,7 +185,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       if (!notification.read_at) {
         await apiRequest(`/admin/notifications/${notification.id}/read`, {
           method: 'PATCH',
-          token: sessionToken,
         })
         await queryClient.invalidateQueries({ queryKey: queryKeys.adminNotifications })
       }
@@ -287,7 +201,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     try {
       await apiRequest(`/admin/applications/${selectedApplication.id}/status`, {
         method: 'PATCH',
-        token: sessionToken,
         body: JSON.stringify({ status, reason }),
       })
       setNotice('Status lamaran berhasil diperbarui.')
@@ -307,65 +220,49 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     }
   }
 
-  const jobTypeOptions = [...new Set(jobs.map((job) => job.type || job.job_type).filter(Boolean))]
-    .sort((left, right) => left.localeCompare(right, 'id'))
-  const jobDivisionOptions = [...new Set(jobs.map((job) => job.division).filter(Boolean))]
-    .sort((left, right) => left.localeCompare(right, 'id'))
-  const filteredJobs = jobs.filter((job) => {
-    const query = jobSearch.trim().toLocaleLowerCase('id')
-    const type = job.type || job.job_type || ''
-    const matchesSearch = `${job.id} ${job.title} ${job.division} ${job.unit} ${job.location} ${type}`
-      .toLocaleLowerCase('id')
-      .includes(query)
-    const matchesStatus = jobStatusFilter === 'all'
-      || job.status === jobStatusFilter
-    const matchesType = jobTypeFilter === 'all' || type === jobTypeFilter
-    const matchesDivision = jobDivisionFilter === 'all' || job.division === jobDivisionFilter
-    return matchesSearch && matchesStatus && matchesType && matchesDivision
-  })
-  const applicationJobOptions = [...new Map(applications.map((application) => [
-    application.job_id,
-    { value: String(application.job_id), label: `${application.job_title} (${application.job_id})` },
+  const applicationTargetOptions = [...new Map(applications.map((application) => [
+    application.target_key || (application.job_id ? `job:${application.job_id}` : `direct:${application.id}`),
+    {
+      value: application.target_key || (application.job_id ? `job:${application.job_id}` : `direct:${application.id}`),
+      label: application.target_label || application.job_title,
+    },
   ])).values()].sort((left, right) => left.label.localeCompare(right.label, 'id'))
   const filteredApplications = applications.filter((application) => {
     const query = applicationSearch.trim().toLocaleLowerCase('id')
-    const matchesSearch = `${application.applicant_name} ${application.applicant_email} ${application.employee_number || ''} ${application.job_title} ${application.job_id} ${application.created_at}`
+    const matchesSearch = `${application.applicant_name} ${application.applicant_email} ${application.employee_number || ''} ${application.job_title} ${application.target_label || ''} ${application.job_id || ''} ${application.created_at}`
       .toLocaleLowerCase('id')
       .includes(query)
     const matchesStatus = applicationStatusFilter === 'all' || application.status === applicationStatusFilter
-    const matchesJob = applicationJobFilter === 'all' || String(application.job_id) === applicationJobFilter
-    return matchesSearch && matchesStatus && matchesJob
+    const targetKey = application.target_key || (application.job_id ? `job:${application.job_id}` : `direct:${application.id}`)
+    const matchesTarget = applicationTargetFilter === 'all' || targetKey === applicationTargetFilter
+    return matchesSearch && matchesStatus && matchesTarget
   })
-  const { items: pageJobs, page: jobsPage, setPage: setJobsPage } = useAdminPagination(filteredJobs)
   const { items: pageApplications, page: applicationsPage, setPage: setApplicationsPage } = useAdminPagination(filteredApplications)
 
   const availableViews = useMemo(() => {
     const access = {
-      dashboard: canViewJobs || canViewApplications,
-      jobs: canViewJobs,
+      dashboard: canViewApplications,
       applications: canViewApplications,
-      'job-types': canManageJobTypes,
       accounts: canManageApplicantAccounts || isSuperAdmin,
-      employees: canViewEmployees,
-      divisions: isSuperAdmin,
-      departments: isSuperAdmin,
-      bureaus: isSuperAdmin,
+      units: isSuperAdmin,
+      'application-limit': isSuperAdmin,
       audit: isSuperAdmin,
     }
     return Object.keys(ADMIN_VIEW_ROUTES).filter((view) => access[view])
-  }, [canManageApplicantAccounts, canManageJobTypes, canViewApplications, canViewEmployees, canViewJobs, isSuperAdmin])
+  }, [canManageApplicantAccounts, canViewApplications, isSuperAdmin])
   const views = availableViews.map((id) => {
     const { label, icon: Icon } = ADMIN_VIEW_PRESENTATION[id]
     return { id, label, icon: <Icon size={17} /> }
   })
   useEffect(() => {
-    if (!availableViews.includes(activeView) && !accountSection) {
+    if (availableViews.length && !availableViews.includes(activeView) && !accountSection) {
       navigate(`admin/${ADMIN_VIEW_ROUTES[availableViews[0]] || 'dashboard'}`)
     }
   }, [activeView, accountSection, availableViews, navigate])
 
   function navigateView(view) {
     setAccountReturnView(view)
+    setIsMobileMenuOpen(false)
     navigate(`admin/${ADMIN_VIEW_ROUTES[view]}`)
   }
 
@@ -375,18 +272,14 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   }
 
   const activeViewDescription = {
-    dashboard: 'Program PAL Indonesia melalui reskilling, upskilling, dan mobilitas talenta lintas fungsi untuk memberdayakan karyawan menjadi kekuatan nyata dalam proses produksi.',
-    jobs: 'Kelola lowongan, kebutuhan posisi, dan status publikasi.',
-    'job-types': 'Atur jenis pekerjaan yang digunakan pada lowongan.',
-    applications: 'Tinjau data pelamar dan perbarui tahapan seleksi.',
+    dashboard: 'Pantau lamaran langsung dan tindak lanjuti proses seleksi pada unit kerja Anda.',
+    applications: 'Tinjau lamaran langsung, unduh dokumen, dan perbarui tahapan seleksi.',
     accounts: 'Kelola akun pelamar dan akses portal.',
-    employees: 'Kelola direktori karyawan sesuai lingkup organisasi.',
-    divisions: 'Kelola struktur organisasi tingkat divisi.',
-    departments: 'Kelola struktur organisasi tingkat departemen.',
-    bureaus: 'Kelola biro dan bengkel pada struktur organisasi.',
+    units: 'Kelola hierarki Divisi, Departemen, dan Biro/Bengkel beserta deskripsinya.',
+    'application-limit': 'Atur jumlah maksimal lamaran yang dapat dikirim setiap pelamar.',
     audit: 'Tinjau perubahan akun, izin akses, dan data master.',
   }[activeView]
-  const activeViewLabel = views.find((view) => view.id === activeView)?.label || 'Dashboard Rekrutmen'
+  const activeViewLabel = views.find((view) => view.id === activeView)?.label || 'Dashboard Lamar Langsung'
 
   return (
     <main className="admin-shell">
@@ -408,10 +301,10 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               {isNotificationsOpen && (
                 <section aria-label="Notifikasi lamaran baru" className="admin-notification-panel" role="dialog">
                   <div className="admin-notification-heading">
-                    <div><strong>Lamaran baru</strong><span>Pelamar baru untuk lowongan dalam lingkup Anda · {unreadNotificationCount} belum dibaca</span></div>
+                    <div><strong>Lamaran baru</strong><span>Lamaran langsung untuk unit dalam lingkup Anda · {unreadNotificationCount} belum dibaca</span></div>
                     <button aria-label="Tutup notifikasi" className="admin-notification-close" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                   </div>
-                  <PushNotificationControl sessionToken={sessionToken} />
+                  <PushNotificationControl />
                   {adminNotificationsQuery.isPending ? (
                     <p className="admin-notification-empty">Memuat notifikasi...</p>
                   ) : adminNotificationsQuery.error ? (
@@ -426,7 +319,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                           type="button"
                         >
                           <span className="admin-notification-item-title">{notification.applicant_name}</span>
-                          <span>{notification.job_title} · {notification.job_id}</span>
+                          <span>{notification.job_id ? `${notification.target_label || notification.job_title} · Riwayat lowongan lama` : notification.target_label || notification.job_title}</span>
                           <small>{new Date(notification.created_at).toLocaleString('id-ID')}</small>
                         </button>
                       ))}
@@ -445,7 +338,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
           </div>
         </div>
       </header>
-      <div className="admin-content">
+      <div className={accountSection ? 'admin-content admin-account-content' : 'admin-content'}>
         {logoutError && <p className="admin-alert error" role="alert">{logoutError}</p>}
         {accountSection ? (
           <AccountSettingsPage
@@ -455,179 +348,78 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
             onProfileUpdated={onProfileUpdated}
             onSectionChange={navigateAccountSection}
             section={accountSection}
-            session={{ role: session.role, token: session.token, user: session.admin }}
+            session={{ role: session.role, user: session.admin }}
           />
         ) : (
           <>
             <div className="admin-page-heading">
               <div>
                 <span className="admin-heading-kicker">PANEL ADMINISTRATOR · {adminRoleLabel.toLocaleUpperCase('id')}</span>
-                <h1>{activeView === 'dashboard' ? 'Dashboard Rekrutmen' : activeViewLabel}</h1>
+                <h1>{activeView === 'dashboard' ? 'Dashboard Lamar Langsung' : activeViewLabel}</h1>
                 <p>{activeViewDescription}</p>
               </div>
               <span aria-hidden="true" className="admin-heading-mark"><Shield size={30} /></span>
             </div>
             <div className="admin-workspace">
-          <nav aria-label="Navigasi dashboard admin" className="admin-tabs">
-            {views.map((view) => (
-              <button aria-current={activeView === view.id ? 'page' : undefined} className={activeView === view.id ? 'admin-tab active' : 'admin-tab'} key={view.id} onClick={() => navigateView(view.id)} type="button">
-                {view.icon} {view.label}
-              </button>
-            ))}
-          </nav>
-          <div className="admin-main-content">
+              <nav aria-label="Navigasi dashboard admin" className={`admin-tabs${isMobileMenuOpen ? ' is-open' : ''}`}>
+                <button
+                  aria-controls="admin-navigation-menu-items"
+                  aria-expanded={isMobileMenuOpen}
+                  aria-label={isMobileMenuOpen ? 'Tutup navigasi admin' : 'Buka navigasi admin'}
+                  className="admin-mobile-nav-toggle"
+                  onClick={() => setIsMobileMenuOpen((open) => !open)}
+                  type="button"
+                >
+                  {isMobileMenuOpen ? <X aria-hidden="true" size={19} /> : <Menu aria-hidden="true" size={19} />}
+                  <span>Menu admin</span>
+                </button>
+                <div className="admin-tab-list" id="admin-navigation-menu-items">
+                  {views.map((view) => (
+                    <button aria-current={activeView === view.id ? 'page' : undefined} className={activeView === view.id ? 'admin-tab active' : 'admin-tab'} key={view.id} onClick={() => navigateView(view.id)} type="button">
+                      {view.icon} {view.label}
+                    </button>
+                  ))}
+                </div>
+              </nav>
+              <div className="admin-main-content">
+        {!availableViews.length ? (
+          <section aria-live="polite" className="admin-loading">
+            Akun ini belum memiliki izin untuk fitur admin yang aktif. Hubungi Super Admin untuk memperbarui akses.
+          </section>
+        ) : <>
         {(error || queryError) && <p className="admin-alert error" role="alert">{error || queryError}</p>}
         {activeView === 'dashboard' && (
           isLoading ? <section className="admin-loading">Memuat dashboard...</section> : metrics && (
             <section className="admin-dashboard-view">
               <div className="admin-dashboard-summary">
-                {canViewJobs && <section aria-labelledby="job-summary-title" className="admin-summary-card">
-                  <div className="admin-summary-heading">
-                    <h2 id="job-summary-title">Lowongan</h2>
-                    <p><strong>{metrics.positions_total}</strong> total</p>
-                  </div>
-                  <div className="admin-summary-statuses">
-                    <div><span>Draft</span><strong>{metrics.positions_draft}</strong></div>
-                    <div><span>Aktif</span><strong>{metrics.positions_open}</strong></div>
-                    <div><span>Ditutup</span><strong>{metrics.positions_closed}</strong></div>
-                  </div>
-                </section>}
-                {canViewApplications && <section aria-labelledby="application-summary-title" className="admin-summary-card">
-                  <div className="admin-summary-heading">
-                    <h2 id="application-summary-title">Lamaran</h2>
-                    <p><strong>{metrics.applications_total}</strong> total</p>
-                  </div>
-                  <div className="admin-summary-statuses">
+                {canViewApplications && (
+                  <>
+                    <section aria-label="Total lamaran langsung" className="admin-summary-card admin-summary-total">
+                      <span>Total lamaran langsung</span>
+                      <strong>{metrics.applications_total}</strong>
+                      <small>Semua tahap seleksi</small>
+                    </section>
                     {applicationStatusOptions.map((status) => (
-                      <div key={status.value}>
+                      <button
+                        aria-label={`Lihat ${metrics[`applications_${status.value}`]} lamaran dengan status ${status.label}`}
+                        className={`admin-summary-card admin-summary-status status-${status.value}`}
+                        key={status.value}
+                        onClick={() => {
+                          setApplicationStatusFilter(status.value)
+                          navigateView('applications')
+                        }}
+                        type="button"
+                      >
                         <span>{status.label}</span>
                         <strong>{metrics[`applications_${status.value}`]}</strong>
-                      </div>
+                        <small>Lihat lamaran</small>
+                      </button>
                     ))}
-                  </div>
-                </section>}
+                  </>
+                )}
               </div>
             </section>
           )
-        )}
-        {activeView === 'jobs' && (
-          <section className="admin-table-panel">
-            <div className="admin-table-heading">
-              <div><h2>Kelola lowongan</h2><p>{jobs.length} posisi terdaftar</p></div>
-              {canCreateJobs && <button className="apply-button" disabled={isLoading || isJobTypesLoading || !jobTypes.length} onClick={() => setIsCreatingJob(true)} type="button"><Plus size={17} /> Tambah lowongan</button>}
-            </div>
-            <AdminTableToolbar
-              onPageChange={setJobsPage}
-              filters={[
-                {
-                  label: 'Status',
-                  value: jobStatusFilter,
-                  onChange: setJobStatusFilter,
-                  options: [
-                    { value: 'draft', label: 'Draft' },
-                    { value: 'open', label: 'Open' },
-                    { value: 'closed', label: 'Closed' },
-                  ],
-                },
-                {
-                  label: 'Jenis pekerjaan',
-                  value: jobTypeFilter,
-                  onChange: setJobTypeFilter,
-                  options: jobTypeOptions.map((type) => ({ value: type, label: type })),
-                },
-                {
-                  label: 'Divisi',
-                  value: jobDivisionFilter,
-                  onChange: setJobDivisionFilter,
-                  options: jobDivisionOptions.map((division) => ({ value: division, label: division })),
-                },
-              ]}
-              onSearchChange={setJobSearch}
-              search={jobSearch}
-              searchPlaceholder="Cari kode, posisi, divisi, unit..."
-              onDownloadPdf={() => downloadTablePdf(
-                'lowongan',
-                'Daftar Lowongan',
-                ['Kode', 'Posisi', 'Divisi', 'Departemen', 'Unit', 'Lokasi', 'Kuota', 'Jenis pekerjaan', 'Status'],
-                filteredJobs.map((job) => [
-                  job.id,
-                  job.title,
-                  job.division,
-                  job.department,
-                  job.unit,
-                  job.location,
-                  job.quota,
-                  job.type || job.job_type,
-                  job.status,
-                ]),
-              )}
-              downloadDisabled={!filteredJobs.length}
-            />
-            <div className="admin-table-scroll">
-              <table className="admin-table">
-                <thead><tr><th>KODE</th><th>POSISI</th><th>DIVISI / UNIT</th><th>KUOTA</th><th>STATUS</th><th>AKSI</th></tr></thead>
-                <tbody>
-                  {pageJobs.map((job) => {
-                    return (
-                      <tr key={job.id}>
-                        <td className="position-code">{job.id}</td>
-                        <td className="position-name">{job.title}</td>
-                        <td>
-                          {job.division}
-                          <span className="admin-table-subtext">
-                            {job.target_level === 'bureau'
-                              ? `${job.department} / ${job.unit}`
-                              : job.target_level === 'department'
-                                ? job.department
-                                : job.target_level === 'secretariat'
-                                  ? job.unit
-                                  : 'Seluruh divisi'}
-                          </span>
-                        </td>
-                        <td>{job.quota}</td>
-                        <td>
-                          <div className="admin-job-status-control">
-                            <span className={`status-pill ${job.status}`}>{job.status.toUpperCase()}</span>
-                            {canChangeJobStatus && <button
-                              aria-checked={job.status === 'open'}
-                              aria-label={`${job.status === 'open' ? 'Tutup' : 'Buka'} lowongan ${job.id}`}
-                              className={`admin-job-toggle${job.status === 'open' ? ' active' : ''}`}
-                              disabled={jobStatusMutation.isPending}
-                              onClick={() => void toggleJob(job)}
-                              role="switch"
-                              title={job.status === 'open' ? 'Tutup lowongan' : 'Buka lowongan'}
-                              type="button"
-                            >
-                              <span aria-hidden="true" />
-                            </button>}
-                          </div>
-                        </td>
-                        <td className="admin-row-actions">
-                          {canUpdateJobs && job.status !== 'open'
-                            ? <button className="admin-small-button" onClick={() => setEditorJob(job)} type="button">Edit</button>
-                            : canChangeJobStatus && job.status === 'open'
-                              ? <span className="admin-table-subtext">Tutup untuk edit</span>
-                              : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {!filteredJobs.length && <tr><td className="admin-table-empty" colSpan={6}>{jobs.length ? 'Tidak ada lowongan yang cocok.' : 'Belum ada lowongan.'}</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            <AdminTablePagination onPageChange={setJobsPage} page={jobsPage} total={filteredJobs.length} />
-            <p className="admin-table-note">Lowongan yang sudah memiliki lamaran hanya dapat ditutup agar riwayat lamaran tetap terjaga.</p>
-          </section>
-        )}
-        {activeView === 'job-types' && (
-          <JobTypeManager
-            isLoading={isJobTypesLoading}
-            jobTypes={jobTypes}
-            loadError={jobTypesError}
-            onRefresh={refresh}
-            sessionToken={sessionToken}
-          />
         )}
         {activeView === 'applications' && (
           <section className="admin-table-panel">
@@ -643,10 +435,10 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                     options: applicationStatusOptions.map((status) => ({ value: status.value, label: status.label })),
                   },
                   {
-                    label: 'Lowongan',
-                    value: applicationJobFilter,
-                    onChange: setApplicationJobFilter,
-                    options: applicationJobOptions,
+                    label: 'Unit tujuan',
+                    value: applicationTargetFilter,
+                    onChange: setApplicationTargetFilter,
+                    options: applicationTargetOptions,
                   },
                 ]}
                 onSearchChange={setApplicationSearch}
@@ -655,7 +447,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                 onDownloadPdf={() => downloadTablePdf(
                   'lamaran',
                   'Daftar Lamaran',
-                  ['ID lamaran', 'Nama pelamar', 'Email', 'NIP', 'Divisi asal', 'Unit asal', 'Posisi', 'Kode posisi', 'Pendidikan', 'Bidang studi', 'Jumlah berkas', 'Status', 'Tanggal lamaran'],
+                  ['ID lamaran', 'Nama pelamar', 'Email', 'NIP', 'Divisi asal', 'Unit asal', 'Unit tujuan', 'Pendidikan', 'Bidang studi', 'Jumlah berkas', 'Status', 'Tanggal lamaran'],
                   filteredApplications.map((application) => [
                     application.id,
                     application.applicant_name,
@@ -663,8 +455,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                     application.employee_number,
                     application.origin_division || application.current_unit,
                     application.origin_unit || application.current_position,
-                    application.job_title,
-                    application.job_id,
+                    application.target_label || application.job_title,
                     application.education_level,
                     application.study_field,
                     application.documents_count,
@@ -678,7 +469,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
             {isLoading ? <div className="admin-loading">Memuat lamaran...</div> : filteredApplications.length ? (
               <div className="admin-table-scroll">
                 <table className="admin-table application-table">
-                  <thead><tr><th>REG ID / WAKTU</th><th>NIP &amp; NAMA</th><th>UNIT ASAL</th><th>POSISI DILAMAR</th><th>PENDIDIKAN</th><th>FILE DOKUMEN</th><th>STATUS TAHAPAN</th><th>AKSI</th></tr></thead>
+                  <thead><tr><th>REG ID / WAKTU</th><th>NIP &amp; NAMA</th><th>UNIT ASAL</th><th>UNIT DITUJU</th><th>PENDIDIKAN</th><th>FILE DOKUMEN</th><th>STATUS TAHAPAN</th><th>AKSI</th></tr></thead>
                   <tbody>
                     {pageApplications.map((application) => {
                       const createdAt = new Date(application.created_at)
@@ -688,7 +479,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                           <td className="position-code">{registrationId}<span className="admin-table-subtext">{createdAt.toLocaleString('id-ID')}</span></td>
                           <td className="position-name">{application.applicant_name}<span className="admin-table-subtext">NIP: {application.employee_number || '—'} · {application.applicant_email}</span></td>
                           <td>{application.origin_division || application.current_unit || '—'}<span className="admin-table-subtext">{application.origin_unit || application.current_position || ''}</span></td>
-                          <td className="position-name">{application.job_title}<span className="admin-table-subtext">{application.job_id}</span></td>
+                          <td className="position-name">{application.target_label || application.job_title}<span className="admin-table-subtext">{application.job_id ? 'Riwayat lowongan lama' : 'Lamar langsung'}</span></td>
                           <td>{application.education_level || '—'}<span className="admin-table-subtext">{application.study_field || ''}</span></td>
                           <td>
                             {application.documents_count && canDownloadApplicationDocuments ? (
@@ -716,35 +507,25 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
             {!isLoading && <AdminTablePagination onPageChange={setApplicationsPage} page={applicationsPage} total={filteredApplications.length} />}
           </section>
         )}
-        {activeView === 'accounts' && <AccountManager key={sessionToken} organization={organization} session={session} />}
-        {activeView === 'audit' && isSuperAdmin && <AdminAuditLog key={sessionToken} sessionToken={sessionToken} />}
-        {activeView === 'employees' && (
-          <EmployeeDirectoryManager
-            adminRole={adminRole}
-            canManage={canManageEmployees}
-            organization={organization}
-            organizationLoading={organizationQuery.isPending}
-            sessionToken={sessionToken}
-          />
-        )}
-        {['divisions', 'departments', 'bureaus'].includes(activeView) && (
-          <OrganizationManager
-            isLoading={isLoading}
-            key={activeView}
-            level={activeView}
+        {activeView === 'accounts' && <AccountManager organization={organization} session={session} />}
+        {activeView === 'audit' && isSuperAdmin && <AdminAuditLog />}
+        {activeView === 'units' && (
+          <UnitWorkManager
+            isLoading={organizationQuery.isPending}
             onRefresh={refresh}
             organization={organization}
-            sessionToken={sessionToken}
           />
         )}
-            </div>
+        {activeView === 'application-limit' && isSuperAdmin && (
+          <ApplicationLimitManager />
+        )}
+        </>}
+              </div>
             </div>
           </>
         )}
       </div>
       <SuccessPopup message={notice} onClose={setNotice} />
-      {isCreatingJob && <JobEditor admin={session.admin} adminRole={adminRole} jobTypes={jobTypes} key="new" onClose={() => setIsCreatingJob(false)} onSave={saveJob} organization={organization} />}
-      {editorJob && <JobEditor admin={session.admin} adminRole={adminRole} hasApplications={editorJob.has_applications ?? applications.some((application) => application.job_id === editorJob.id)} job={editorJob} jobTypes={jobTypes} key={editorJob.id} onClose={() => setEditorJob(null)} onSave={saveJob} organization={organization} />}
       {selectedApplication && (
         <ApplicationReview
           application={selectedApplication}
@@ -753,7 +534,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
           isSaving={isSavingStatus}
           onClose={() => setSelectedApplication(null)}
           onSave={saveApplicationStatus}
-          sessionToken={sessionToken}
         />
       )}
     </main>

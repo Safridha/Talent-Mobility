@@ -19,7 +19,16 @@ export default defineConfig(({ command }) => ({
       ignored: ['**/target/**'],
     },
     proxy: {
-      '/api': 'http://127.0.0.1:8001',
+      '/api': {
+        target: 'http://127.0.0.1:8001',
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            if (request.headers.host) {
+              proxyRequest.setHeader('Host', request.headers.host)
+            }
+          })
+        },
+      },
     },
   },
 }))

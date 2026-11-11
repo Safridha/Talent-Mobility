@@ -13,7 +13,7 @@ async function getPushRegistration() {
   return navigator.serviceWorker.ready
 }
 
-export default function PushNotificationControl({ sessionToken }) {
+export default function PushNotificationControl() {
   const [config, setConfig] = useState(null)
   const [subscription, setSubscription] = useState(null)
   const [permission, setPermission] = useState('default')
@@ -47,7 +47,6 @@ export default function PushNotificationControl({ sessionToken }) {
         if (existingSubscription) {
           await apiRequest('/push/subscriptions', {
             method: 'PUT',
-            token: sessionToken,
             body: JSON.stringify(existingSubscription.toJSON()),
           })
         }
@@ -60,7 +59,7 @@ export default function PushNotificationControl({ sessionToken }) {
 
     void loadPushState()
     return () => { active = false }
-  }, [sessionToken])
+  }, [])
 
   async function enablePush() {
     setError('')
@@ -82,7 +81,6 @@ export default function PushNotificationControl({ sessionToken }) {
       try {
         await apiRequest('/push/subscriptions', {
           method: 'PUT',
-          token: sessionToken,
           body: JSON.stringify(createdSubscription.toJSON()),
         })
       } catch (requestError) {
@@ -106,7 +104,6 @@ export default function PushNotificationControl({ sessionToken }) {
     try {
       await apiRequest('/push/subscriptions', {
         method: 'DELETE',
-        token: sessionToken,
         body: JSON.stringify({ endpoint: subscription.endpoint }),
       })
       await subscription.unsubscribe()

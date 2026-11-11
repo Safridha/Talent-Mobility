@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { apiDownload } from '../../api'
 
-export function useAccountAvatar(sessionToken: string | null | undefined): [string, () => void] {
+export function useAccountAvatar(isAuthenticated: boolean | null | undefined): [string, () => void] {
   const [avatarUrl, setAvatarUrl] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    if (!sessionToken) return undefined
+    if (!isAuthenticated) return undefined
     let active = true
     let objectUrl = ''
-    apiDownload('/account/avatar', { token: sessionToken })
+    apiDownload('/account/avatar')
       .then((blob) => {
         if (!active) return
         objectUrl = URL.createObjectURL(blob)
@@ -22,7 +22,7 @@ export function useAccountAvatar(sessionToken: string | null | undefined): [stri
       active = false
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [sessionToken, refreshKey])
+  }, [isAuthenticated, refreshKey])
 
   return [avatarUrl, () => setRefreshKey((current) => current + 1)]
 }

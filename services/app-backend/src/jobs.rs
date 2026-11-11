@@ -1,34 +1,6 @@
 use super::*;
 
-#[derive(Deserialize)]
-pub(super) struct PublicJobsQuery {
-    status: Option<String>,
-}
-
-pub(super) async fn list_jobs(
-    State(state): State<AppState>,
-    Query(query): Query<PublicJobsQuery>,
-) -> Result<Json<JobsResponse>, ApiError> {
-    let status = public_job_status_filter(query.status.as_deref())?;
-    let data = sqlx::query_as::<_, Job>(
-        "SELECT job_postings.id, title, division, department, unit, CASE WHEN target_level = 'bureau' THEN bureaus.unit_type ELSE target_level END AS unit_type, target_level, job_postings.division_id, job_postings.department_id, job_postings.bureau_id, location, quota, posted, job_types.name AS job_type, summary, skills, responsibilities, status, NULL::BOOLEAN AS has_applications FROM job_postings JOIN job_types ON job_types.id = job_postings.job_type_id LEFT JOIN bureaus ON bureaus.id = job_postings.bureau_id WHERE status IN ('open', 'closed') AND ($1 = 'all' OR status = $1) ORDER BY job_postings.id",
-    )
-    .bind(status)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(JobsResponse { data }))
-}
-
-fn public_job_status_filter(status: Option<&str>) -> Result<&'static str, ApiError> {
-    match status.unwrap_or("open") {
-        "open" => Ok("open"),
-        "closed" => Ok("closed"),
-        "all" => Ok("all"),
-        _ => Err(ApiError::BadRequest("Filter status lowongan tidak valid.")),
-    }
-}
-
+#[cfg(test)]
 pub(super) async fn admin_list_jobs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -47,6 +19,7 @@ pub(super) async fn admin_list_jobs(
     Ok(Json(JobsResponse { data }))
 }
 
+#[cfg(test)]
 pub(super) async fn admin_create_job(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -91,6 +64,7 @@ pub(super) async fn admin_create_job(
     }
 }
 
+#[cfg(test)]
 pub(super) async fn admin_update_job(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -165,6 +139,7 @@ pub(super) async fn admin_update_job(
     Ok(Json(json!({ "message": "Lowongan berhasil diperbarui." })))
 }
 
+#[cfg(test)]
 pub(super) async fn admin_delete_job(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -205,6 +180,7 @@ pub(super) async fn admin_delete_job(
     Ok(Json(json!({ "message": "Lowongan berhasil dihapus." })))
 }
 
+#[cfg(test)]
 pub(super) async fn admin_set_job_status(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -235,6 +211,7 @@ pub(super) async fn admin_set_job_status(
     ))
 }
 
+#[cfg(test)]
 pub(super) fn is_valid_job_status_update(status: &str) -> bool {
     matches!(status, "open" | "closed")
 }
@@ -244,39 +221,20 @@ pub(super) async fn admin_dashboard(
     headers: HeaderMap,
 ) -> Result<Json<AdminDashboardMetrics>, ApiError> {
     let admin = authorized_admin_context(&state.pool, &headers).await?;
-    admin.require_any_permission(&[JOBS_VIEW, APPLICATIONS_VIEW])?;
+    admin.require_permission(APPLICATIONS_VIEW)?;
     let metrics = sqlx::query_as::<_, AdminDashboardMetrics>(
-        "WITH visible_jobs AS (SELECT id, status FROM job_postings WHERE ($1 IN ('super_admin', 'admin') OR ($1 = 'division_head' AND division_id = $2) OR ($1 = 'department_head' AND target_level <> 'division' AND department_id = $3))), visible_applications AS (SELECT applications.status FROM applications JOIN visible_jobs ON visible_jobs.id = applications.job_id) SELECT CASE WHEN $4 THEN (SELECT COUNT(*) FROM visible_jobs) ELSE 0 END AS positions_total, CASE WHEN $4 THEN (SELECT COUNT(*) FROM visible_jobs WHERE status = 'draft') ELSE 0 END AS positions_draft, CASE WHEN $4 THEN (SELECT COUNT(*) FROM visible_jobs WHERE status = 'open') ELSE 0 END AS positions_open, CASE WHEN $4 THEN (SELECT COUNT(*) FROM visible_jobs WHERE status = 'closed') ELSE 0 END AS positions_closed, CASE WHEN $5 THEN (SELECT COUNT(*) FROM visible_applications) ELSE 0 END AS applications_total, CASE WHEN $5 THEN (SELECT COUNT(*) FROM visible_applications WHERE status = 'submitted') ELSE 0 END AS applications_submitted, CASE WHEN $5 THEN (SELECT COUNT(*) FROM visible_applications WHERE status = 'screening') ELSE 0 END AS applications_screening, CASE WHEN $5 THEN (SELECT COUNT(*) FROM visible_applications WHERE status = 'interview') ELSE 0 END AS applications_interview, CASE WHEN $5 THEN (SELECT COUNT(*) FROM visible_applications WHERE status = 'accepted') ELSE 0 END AS applications_accepted, CASE WHEN $5 THEN (SELECT COUNT(*) FROM visible_applications WHERE status = 'rejected') ELSE 0 END AS applications_rejected",
+        "WITH visible_applications AS (SELECT applications.status FROM applications JOIN departments AS target_department ON target_department.id = applications.target_department_id WHERE applications.job_id IS NULL AND ($1 IN ('super_admin', 'admin') OR ($1 = 'division_head' AND target_department.division_id = $2) OR ($1 = 'department_head' AND target_department.id = $3))) SELECT COUNT(*) AS applications_total, COUNT(*) FILTER (WHERE status = 'submitted') AS applications_submitted, COUNT(*) FILTER (WHERE status = 'screening') AS applications_screening, COUNT(*) FILTER (WHERE status = 'interview') AS applications_interview, COUNT(*) FILTER (WHERE status = 'accepted') AS applications_accepted, COUNT(*) FILTER (WHERE status = 'rejected') AS applications_rejected FROM visible_applications",
     )
     .bind(&admin.admin_role)
     .bind(admin.division_id)
     .bind(admin.department_id)
-    .bind(admin.has_permission(JOBS_VIEW))
-    .bind(admin.has_permission(APPLICATIONS_VIEW))
     .fetch_one(&state.pool)
     .await
     .map_err(internal_error)?;
     Ok(Json(metrics))
 }
 
-pub(super) async fn admin_list_job_types(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let admin = authorized_admin_context(&state.pool, &headers).await?;
-    admin.require_any_permission(&[JOBS_VIEW, JOB_TYPES_MANAGE])?;
-    let data = sqlx::query_as::<_, JobTypeRecord>(
-        "SELECT job_types.id, job_types.name, COUNT(job_postings.id) AS job_count FROM job_types LEFT JOIN job_postings ON job_postings.job_type_id = job_types.id AND ($1 IN ('super_admin', 'admin') OR ($1 = 'division_head' AND job_postings.division_id = $2) OR ($1 = 'department_head' AND job_postings.target_level <> 'division' AND job_postings.department_id = $3)) GROUP BY job_types.id ORDER BY lower(job_types.name), job_types.name",
-    )
-    .bind(admin.admin_role)
-    .bind(admin.division_id)
-    .bind(admin.department_id)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    Ok(Json(json!({ "data": data })))
-}
-
+#[cfg(test)]
 pub(super) async fn admin_create_job_type(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -316,6 +274,7 @@ pub(super) async fn admin_create_job_type(
     ))
 }
 
+#[cfg(test)]
 pub(super) async fn admin_update_job_type(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -363,56 +322,12 @@ pub(super) async fn admin_update_job_type(
     ))
 }
 
-pub(super) async fn admin_delete_job_type(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let admin = authorized_operational_admin(&state.pool, &headers).await?;
-    admin.require_permission(JOB_TYPES_MANAGE)?;
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let name =
-        sqlx::query_scalar::<_, String>("SELECT name FROM job_types WHERE id = $1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *transaction)
-            .await
-            .map_err(internal_error)?
-            .ok_or(ApiError::NotFound("Jenis pekerjaan tidak ditemukan."))?;
-    match sqlx::query("DELETE FROM job_types WHERE id = $1")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-    {
-        Ok(_) => {}
-        Err(error) if is_foreign_key_violation(&error) => {
-            return Err(ApiError::Conflict(
-                "Jenis pekerjaan masih digunakan oleh lowongan. Ubah jenis pada lowongan terkait terlebih dahulu.",
-            ));
-        }
-        Err(error) => return Err(internal_error(error)),
-    }
-    record_admin_audit(
-        &mut transaction,
-        admin.id,
-        "delete",
-        "job_type",
-        &id.to_string(),
-        json!({ "name": name }),
-    )
-    .await
-    .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(
-        json!({ "message": "Jenis pekerjaan berhasil dihapus." }),
-    ))
-}
-
 pub(super) async fn admin_list_organization(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<OrganizationResponse>, ApiError> {
     let admin = authorized_admin_context(&state.pool, &headers).await?;
-    admin.require_any_permission(&[JOBS_CREATE, JOBS_UPDATE, EMPLOYEES_VIEW])?;
+    admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let divisions = sqlx::query_as::<_, DivisionRecord>(
         "SELECT id, name, description, secretariat_name, secretariat_description FROM divisions WHERE ($1 IN ('super_admin', 'admin') OR ($1 = 'division_head' AND id = $2) OR ($1 = 'department_head' AND id = (SELECT division_id FROM departments WHERE id = $3))) ORDER BY name",
     )
@@ -457,13 +372,13 @@ pub(super) async fn public_list_organization(
     .await
     .map_err(internal_error)?;
     let departments = sqlx::query_as::<_, PublicDepartmentRecord>(
-        "SELECT id, division_id, name FROM departments ORDER BY name",
+        "SELECT id, division_id, name, description FROM departments ORDER BY name",
     )
     .fetch_all(&state.pool)
     .await
     .map_err(internal_error)?;
     let bureaus = sqlx::query_as::<_, PublicBureauRecord>(
-        "SELECT id, department_id, name, unit_type FROM bureaus ORDER BY name",
+        "SELECT id, department_id, name, description, unit_type FROM bureaus ORDER BY name",
     )
     .fetch_all(&state.pool)
     .await
@@ -987,6 +902,7 @@ pub(super) async fn admin_delete_bureau(
     Ok(Json(json!({ "message": "Biro berhasil dihapus." })))
 }
 
+#[cfg(test)]
 struct JobTargetPath {
     division_id: i64,
     division: String,
@@ -996,6 +912,7 @@ struct JobTargetPath {
     unit: String,
 }
 
+#[cfg(test)]
 async fn resolve_job_target(
     pool: &PgPool,
     fields: &AdminJobFields,
@@ -1118,6 +1035,7 @@ fn validate_bureau_unit_type(unit_type: &str) -> Result<&'static str, ApiError> 
     }
 }
 
+#[cfg(test)]
 fn ensure_can_manage_job_target(
     admin: &AdminContext,
     fields: &AdminJobFields,
@@ -1130,6 +1048,7 @@ fn ensure_can_manage_job_target(
     }
 }
 
+#[cfg(test)]
 fn can_manage_job_target(admin: &AdminContext, target_level: &str, target: &JobTargetPath) -> bool {
     match admin.admin_role.as_str() {
         "super_admin" | "admin" => true,
@@ -1167,6 +1086,7 @@ pub(super) fn validate_organization_description(description: &str) -> Result<Str
     Ok(description.to_owned())
 }
 
+#[cfg(test)]
 pub(super) fn validate_job_type_name(name: &str) -> Result<String, ApiError> {
     let name = name.trim();
     if name.is_empty() || name.len() > 80 {
@@ -1177,6 +1097,7 @@ pub(super) fn validate_job_type_name(name: &str) -> Result<String, ApiError> {
     Ok(name.to_owned())
 }
 
+#[cfg(test)]
 async fn resolve_job_type_id(pool: &PgPool, name: &str) -> Result<i64, ApiError> {
     sqlx::query_scalar("SELECT id FROM job_types WHERE name = $1")
         .bind(name.trim())
@@ -1188,6 +1109,7 @@ async fn resolve_job_type_id(pool: &PgPool, name: &str) -> Result<i64, ApiError>
         ))
 }
 
+#[cfg(test)]
 pub(super) fn validate_admin_job(id: &str, fields: &AdminJobFields) -> Result<(), ApiError> {
     if id.trim().is_empty() || id.len() > 64 {
         return Err(ApiError::BadRequest(
@@ -1264,14 +1186,6 @@ pub(super) fn validate_admin_job(id: &str, fields: &AdminJobFields) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn public_job_status_defaults_to_open_and_allows_only_public_filters() {
-        assert_eq!(public_job_status_filter(None).unwrap(), "open");
-        assert_eq!(public_job_status_filter(Some("closed")).unwrap(), "closed");
-        assert_eq!(public_job_status_filter(Some("all")).unwrap(), "all");
-        assert!(public_job_status_filter(Some("draft")).is_err());
-    }
 
     fn admin_context(
         role: &str,

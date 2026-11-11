@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import JobCatalog from './features/applicant/JobCatalog'
 import PasswordResetPage from './features/auth/PasswordResetPage'
+import FirstLoginPasswordChange from './features/auth/FirstLoginPasswordChange'
 import AdminDashboard from './features/admin/AdminDashboard'
 import { apiRequest } from './api'
 import '../css/App.css'
@@ -14,10 +15,14 @@ function readStoredSession(key) {
   if (!stored) return null
   try {
     const session = JSON.parse(stored)
-    if (session?.token) return session
+    if ((session?.role === 'admin' && session.admin) || (session?.role === 'applicant' && session.applicant)) {
+      const safeSession = { ...session }
+      delete safeSession.token
+      localStorage.setItem(key, JSON.stringify(safeSession))
+      return safeSession
+    }
   } catch {
-    localStorage.removeItem(key)
-    return null
+    // Invalid stored session data is removed below.
   }
   localStorage.removeItem(key)
   return null
@@ -28,10 +33,32 @@ export default function App() {
   const [session, setSession] = useState(() => readStoredSession(APPLICANT_SESSION_KEY))
   const [adminSession, setAdminSession] = useState(() => readStoredSession(ADMIN_SESSION_KEY))
   const [sessionNotice, setSessionNotice] = useState('')
+  const authenticatedDuringRestore = useRef(false)
+  const storedSessionExists = useRef(Boolean(session || adminSession))
+  const restoreSessionRequest = useRef(null)
   const resetHash = window.location.hash.slice(1)
   const resetToken = resetHash.startsWith('reset_token=')
     ? new URLSearchParams(resetHash).get('reset_token')
     : null
+
+  const handleLogin = useCallback((newSession) => {
+    authenticatedDuringRestore.current = true
+    queryClient.clear()
+    setSessionNotice('')
+    const safeSession = { ...newSession }
+    delete safeSession.token
+    if (newSession.role === 'admin' || newSession.admin) {
+      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(safeSession))
+      localStorage.removeItem(APPLICANT_SESSION_KEY)
+      setSession(null)
+      setAdminSession(safeSession)
+      return
+    }
+    localStorage.setItem(APPLICANT_SESSION_KEY, JSON.stringify(safeSession))
+    localStorage.removeItem(ADMIN_SESSION_KEY)
+    setAdminSession(null)
+    setSession(safeSession)
+  }, [queryClient])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -54,24 +81,31 @@ export default function App() {
     return () => window.removeEventListener('talent-mobility:session-expired', clearExpiredSession)
   }, [queryClient])
 
-  function handleLogin(newSession) {
-    queryClient.clear()
-    setSessionNotice('')
-    if (newSession.role === 'admin' || newSession.admin) {
-      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(newSession))
-      localStorage.removeItem(APPLICANT_SESSION_KEY)
-      setSession(null)
-      setAdminSession(newSession)
-      return
-    }
-    localStorage.setItem(APPLICANT_SESSION_KEY, JSON.stringify(newSession))
-    localStorage.removeItem(ADMIN_SESSION_KEY)
-    setAdminSession(null)
-    setSession(newSession)
-  }
+  useEffect(() => {
+    let active = true
+    restoreSessionRequest.current ??= apiRequest('/session', { suppressSessionExpired: true })
+    restoreSessionRequest.current
+      .then((restoredSession) => {
+        if (!active || authenticatedDuringRestore.current) return
+        if (restoredSession) {
+          handleLogin(restoredSession)
+        } else if (storedSessionExists.current) {
+          localStorage.removeItem(APPLICANT_SESSION_KEY)
+          localStorage.removeItem(ADMIN_SESSION_KEY)
+          queryClient.clear()
+          setSession(null)
+          setAdminSession(null)
+        }
+      })
+      .catch((error) => {
+        if (active) setSessionNotice(error.message)
+      })
+    return () => { active = false }
+  }, [handleLogin, queryClient])
 
   async function handleLogout() {
-    await apiRequest('/logout', { method: 'POST', token: session.token })
+    authenticatedDuringRestore.current = true
+    await apiRequest('/logout', { method: 'POST' })
     localStorage.removeItem(APPLICANT_SESSION_KEY)
     queryClient.clear()
     setSession(null)
@@ -79,7 +113,8 @@ export default function App() {
   }
 
   async function handleAdminLogout() {
-    await apiRequest('/admin/logout', { method: 'POST', token: adminSession.token })
+    authenticatedDuringRestore.current = true
+    await apiRequest('/admin/logout', { method: 'POST' })
     localStorage.removeItem(ADMIN_SESSION_KEY)
     queryClient.clear()
     setAdminSession(null)
@@ -110,6 +145,10 @@ export default function App() {
 
   if (adminSession) {
     return <AdminDashboard onLogout={handleAdminLogout} onProfileUpdated={handleProfileUpdated} session={adminSession} />
+  }
+
+  if (session?.applicant?.must_change_password) {
+    return <FirstLoginPasswordChange onComplete={handleLogin} onLogout={handleLogout} />
   }
 
   return <JobCatalog onLogin={handleLogin} onLogout={handleLogout} onProfileUpdated={handleProfileUpdated} session={session} sessionNotice={sessionNotice} />

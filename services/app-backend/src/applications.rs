@@ -6,7 +6,7 @@ pub(super) async fn list_applications(
 ) -> Result<Json<ApplicationsResponse>, ApiError> {
     let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
     let data = sqlx::query_as::<_, ApplicationSummary>(
-        "SELECT applications.public_id AS id, applications.job_id, applications.status, applications.created_at::text AS created_at, COALESCE((SELECT json_agg(json_build_object('status', status_history.status, 'created_at', status_history.changed_at::text) ORDER BY status_history.changed_at, status_history.sequence) FROM (SELECT 'submitted'::text AS status, applications.created_at AS changed_at, 0::bigint AS sequence UNION ALL SELECT notifications.new_status, notifications.created_at, notifications.id FROM application_status_notifications AS notifications WHERE notifications.application_id = applications.id) AS status_history), '[]'::json) AS status_history FROM applications WHERE applications.applicant_id = $1 ORDER BY applications.created_at DESC",
+        "SELECT applications.public_id AS id, applications.job_id, applications.target_department_id, applications.target_bureau_id, COALESCE(job_postings.title, direct_bureaus.name, direct_departments.name) AS job_title, COALESCE(job_postings.target_level, CASE WHEN applications.target_bureau_id IS NULL THEN 'department' ELSE 'bureau' END) AS target_level, COALESCE(job_postings.division, direct_divisions.name, '') AS division, COALESCE(job_postings.department, direct_departments.name, '') AS department, COALESCE(job_postings.unit, CASE WHEN direct_bureaus.id IS NOT NULL THEN CONCAT(CASE direct_bureaus.unit_type WHEN 'bengkel' THEN 'Bengkel' ELSE 'Biro' END, ' — ', direct_bureaus.name) ELSE '' END, '') AS unit, applications.position_description, applications.status, applications.created_at::text AS created_at, COALESCE((SELECT json_agg(json_build_object('status', status_history.status, 'created_at', status_history.changed_at::text) ORDER BY status_history.changed_at, status_history.sequence) FROM (SELECT 'submitted'::text AS status, applications.created_at AS changed_at, 0::bigint AS sequence UNION ALL SELECT notifications.new_status, notifications.created_at, notifications.id FROM application_status_notifications AS notifications WHERE notifications.application_id = applications.id) AS status_history), '[]'::json) AS status_history FROM applications LEFT JOIN job_postings ON job_postings.id = applications.job_id LEFT JOIN departments AS direct_departments ON direct_departments.id = applications.target_department_id LEFT JOIN divisions AS direct_divisions ON direct_divisions.id = direct_departments.division_id LEFT JOIN bureaus AS direct_bureaus ON direct_bureaus.id = applications.target_bureau_id WHERE applications.applicant_id = $1 ORDER BY applications.created_at DESC",
     )
     .bind(applicant_id)
     .fetch_all(&state.pool)
@@ -21,7 +21,7 @@ pub(super) async fn list_applicant_notifications(
 ) -> Result<Json<ApplicantNotificationsResponse>, ApiError> {
     let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
     let data = sqlx::query_as::<_, ApplicantStatusNotification>(
-        "SELECT notifications.id, applications.public_id AS application_id, job_postings.id AS job_id, job_postings.title AS job_title, notifications.previous_status, notifications.new_status, notifications.reason, notifications.created_at::text AS created_at, notifications.read_at::text AS read_at FROM application_status_notifications AS notifications JOIN applications ON applications.id = notifications.application_id JOIN job_postings ON job_postings.id = applications.job_id WHERE notifications.applicant_id = $1 ORDER BY notifications.created_at DESC, notifications.id DESC LIMIT 50",
+        "SELECT notifications.id, applications.public_id AS application_id, applications.job_id, COALESCE(job_postings.title, direct_bureaus.name, direct_departments.name) AS job_title, CASE WHEN job_postings.id IS NOT NULL THEN CONCAT_WS(' / ', job_postings.division, job_postings.department, NULLIF(job_postings.unit, '')) ELSE CONCAT_WS(' / ', direct_divisions.name, direct_departments.name, CASE WHEN direct_bureaus.id IS NOT NULL THEN CONCAT(CASE direct_bureaus.unit_type WHEN 'bengkel' THEN 'Bengkel' ELSE 'Biro' END, ' — ', direct_bureaus.name) END) END AS target_label, COALESCE(job_postings.target_level, CASE WHEN applications.target_bureau_id IS NULL THEN 'department' ELSE 'bureau' END) AS target_level, notifications.previous_status, notifications.new_status, notifications.reason, notifications.created_at::text AS created_at, notifications.read_at::text AS read_at FROM application_status_notifications AS notifications JOIN applications ON applications.id = notifications.application_id LEFT JOIN job_postings ON job_postings.id = applications.job_id LEFT JOIN departments AS direct_departments ON direct_departments.id = applications.target_department_id LEFT JOIN divisions AS direct_divisions ON direct_divisions.id = direct_departments.division_id LEFT JOIN bureaus AS direct_bureaus ON direct_bureaus.id = applications.target_bureau_id WHERE notifications.applicant_id = $1 ORDER BY notifications.created_at DESC, notifications.id DESC LIMIT 50",
     )
     .bind(applicant_id)
     .fetch_all(&state.pool)
@@ -93,6 +93,8 @@ async fn parse_application_submission(
     ApiError,
 > {
     let mut job_id = None;
+    let mut target_department_id = None;
+    let mut target_bureau_id = None;
     let mut employee_number = None;
     let mut applicant_full_name = None;
     let mut origin_division = None;
@@ -113,6 +115,10 @@ async fn parse_application_submission(
             .to_owned();
         match name.as_str() {
             "job_id" => set_application_text(&mut job_id, field).await?,
+            "target_department_id" => {
+                set_application_text(&mut target_department_id, field).await?
+            }
+            "target_bureau_id" => set_application_text(&mut target_bureau_id, field).await?,
             "employee_number" => set_application_text(&mut employee_number, field).await?,
             "applicant_full_name" => set_application_text(&mut applicant_full_name, field).await?,
             "origin_division" => set_application_text(&mut origin_division, field).await?,
@@ -163,8 +169,27 @@ async fn parse_application_submission(
         }
     }
 
+    let job_id = job_id
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
+    if job_id.as_ref().is_some_and(|value| value.len() > 64) {
+        return Err(ApiError::BadRequest("Kode lowongan tidak valid."));
+    }
+    let target_department_id = parse_optional_application_id(target_department_id)?;
+    let target_bureau_id = parse_optional_application_id(target_bureau_id)?;
+    let is_job_application = job_id.is_some();
+    if is_job_application == target_department_id.is_some()
+        || (is_job_application && target_bureau_id.is_some())
+        || target_bureau_id.is_some() && target_department_id.is_none()
+    {
+        return Err(ApiError::BadRequest(
+            "Pilih satu lowongan atau satu unit tujuan secara valid.",
+        ));
+    }
     let fields = ApplicationSubmissionFields {
-        job_id: job_id.unwrap_or_default().trim().to_owned(),
+        job_id,
+        target_department_id,
+        target_bureau_id,
         employee_number: employee_number.unwrap_or_default().trim().to_owned(),
         applicant_full_name: applicant_full_name.unwrap_or_default().trim().to_owned(),
         origin_division: origin_division.unwrap_or_default().trim().to_owned(),
@@ -173,9 +198,6 @@ async fn parse_application_submission(
         study_field: study_field.unwrap_or_default().trim().to_owned(),
         motivation: motivation.unwrap_or_default().trim().to_owned(),
     };
-    if fields.job_id.is_empty() || fields.job_id.len() > 64 {
-        return Err(ApiError::BadRequest("Lowongan wajib dipilih."));
-    }
     if fields.employee_number.is_empty()
         || fields.employee_number.len() > 40
         || fields.employee_number.chars().any(char::is_control)
@@ -215,6 +237,15 @@ async fn parse_application_submission(
             "Alasan melamar wajib diisi dan maksimal 3000 karakter.",
         ));
     }
+    if fields.job_id.is_none()
+        && !documents
+            .iter()
+            .any(|document| document.document_type == "cv")
+    {
+        return Err(ApiError::BadRequest(
+            "CV wajib diunggah untuk lamaran langsung.",
+        ));
+    }
     if documents.is_empty() {
         return Err(ApiError::BadRequest(
             "Setidaknya satu berkas PDF pendukung wajib diunggah.",
@@ -222,6 +253,19 @@ async fn parse_application_submission(
     }
 
     Ok((fields, documents))
+}
+
+fn parse_optional_application_id(value: Option<String>) -> Result<Option<i64>, ApiError> {
+    value
+        .map(|value| {
+            let value = value.trim();
+            value
+                .parse::<i64>()
+                .ok()
+                .filter(|id| *id > 0)
+                .ok_or(ApiError::BadRequest("Unit tujuan tidak valid."))
+        })
+        .transpose()
 }
 
 async fn set_application_text(
@@ -286,26 +330,71 @@ pub(super) async fn create_application(
     let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
     let (fields, documents) = parse_application_submission(multipart).await?;
 
-    let is_open: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM job_postings WHERE id = $1 AND status = 'open')",
-    )
-    .bind(&fields.job_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    if !is_open {
-        return Err(ApiError::NotFound(
-            "Lowongan tidak ditemukan atau sudah ditutup.",
-        ));
-    }
+    let position_description = if let Some(job_id) = &fields.job_id {
+        let is_open: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM job_postings WHERE id = $1 AND status = 'open')",
+        )
+        .bind(job_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(internal_error)?;
+        if !is_open {
+            return Err(ApiError::NotFound(
+                "Lowongan tidak ditemukan atau sudah ditutup.",
+            ));
+        }
+        None
+    } else {
+        let description = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT CASE WHEN $2::BIGINT IS NULL THEN departments.description ELSE bureaus.description END FROM departments LEFT JOIN bureaus ON bureaus.id = $2 AND bureaus.department_id = departments.id WHERE departments.id = $1 AND ($2::BIGINT IS NULL OR bureaus.id IS NOT NULL)",
+        )
+        .bind(fields.target_department_id)
+        .bind(fields.target_bureau_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(internal_error)?
+        .ok_or(ApiError::BadRequest("Unit tujuan tidak ditemukan."))?;
+        description.and_then(|description| {
+            let description = description.trim();
+            (!description.is_empty()).then(|| description.to_owned())
+        })
+    };
 
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let max_applications = sqlx::query_scalar::<_, i32>(
+        "SELECT max_applications FROM applicant_application_limit WHERE id = 1",
+    )
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?;
+    if let Some(max_applications) = max_applications {
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(applicant_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_error)?;
+        let application_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM applications WHERE applicant_id = $1",
+        )
+        .bind(applicant_id)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(internal_error)?;
+        if application_count >= i64::from(max_applications) {
+            return Err(ApiError::Conflict(
+                "Anda telah mencapai batas maksimal lamaran yang diizinkan.",
+            ));
+        }
+    }
     let public_id = Ulid::new().to_string();
     let application = sqlx::query_as::<_, (i64, String, String)>(
-        "INSERT INTO applications (applicant_id, job_id, public_id, employee_number, applicant_full_name, origin_division, origin_unit, education_level, study_field, motivation) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (applicant_id, job_id) WHERE status <> 'rejected' DO NOTHING RETURNING id, public_id, created_at::text",
+        "INSERT INTO applications (applicant_id, job_id, target_department_id, target_bureau_id, position_description, public_id, employee_number, applicant_full_name, origin_division, origin_unit, education_level, study_field, motivation) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT DO NOTHING RETURNING id, public_id, created_at::text",
     )
     .bind(applicant_id)
     .bind(&fields.job_id)
+    .bind(fields.target_department_id)
+    .bind(fields.target_bureau_id)
+    .bind(position_description)
     .bind(&public_id)
     .bind(fields.employee_number)
     .bind(fields.applicant_full_name)
@@ -337,10 +426,11 @@ pub(super) async fn create_application(
     }
 
     sqlx::query(
-        "INSERT INTO admin_application_notifications (admin_id, application_id) SELECT admins.id, $1 FROM admins JOIN job_postings ON job_postings.id = $2 WHERE admins.is_active = TRUE AND (admins.admin_role IN ('super_admin', 'admin') OR (admins.admin_role = 'division_head' AND admins.division_id = job_postings.division_id) OR (admins.admin_role = 'department_head' AND job_postings.target_level <> 'division' AND admins.department_id = job_postings.department_id)) ON CONFLICT (admin_id, application_id, notification_type) DO NOTHING",
+        "INSERT INTO admin_application_notifications (admin_id, application_id) SELECT admins.id, $1 FROM admins LEFT JOIN job_postings AS target_job ON target_job.id = $2 LEFT JOIN departments AS target_department ON target_department.id = $3 WHERE admins.is_active = TRUE AND (admins.admin_role IN ('super_admin', 'admin') OR (admins.admin_role = 'division_head' AND admins.division_id = COALESCE(target_job.division_id, target_department.division_id)) OR (admins.admin_role = 'department_head' AND admins.department_id = COALESCE(target_job.department_id, $3))) ON CONFLICT (admin_id, application_id, notification_type) DO NOTHING",
     )
     .bind(application_id)
     .bind(&fields.job_id)
+    .bind(fields.target_department_id)
     .execute(&mut *transaction)
     .await
     .map_err(internal_error)?;
@@ -355,6 +445,9 @@ pub(super) async fn create_application(
         "message": "Lamaran berhasil dikirim.",
         "application_id": public_id,
         "job_id": fields.job_id,
+        "target_department_id": fields.target_department_id,
+        "target_bureau_id": fields.target_bureau_id,
+        "target_level": if fields.target_bureau_id.is_some() { "bureau" } else if fields.job_id.is_none() { "department" } else { "" },
         "status": "submitted",
         "created_at": created_at,
     })))

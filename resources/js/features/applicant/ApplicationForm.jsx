@@ -7,7 +7,7 @@ import { getJobTargetLabels } from './jobTargetLabels'
 const MAX_APPLICATION_FILE_BYTES = 5 * 1024 * 1024
 const MAX_APPLICATION_DOCUMENTS = 5
 
-export default function ApplicationForm({ job, session, organization, isSubmitting, onClose, onSubmit }) {
+export default function ApplicationForm({ job, directTarget, session, organization, isSubmitting, onClose, onSubmit }) {
   const [form, setForm] = useState({
     employee_number: '',
     applicant_full_name: session.applicant.name,
@@ -78,7 +78,12 @@ export default function ApplicationForm({ job, session, organization, isSubmitti
       return
     }
     const body = new FormData()
-    body.set('job_id', job.id)
+    if (directTarget) {
+      body.set('target_department_id', String(directTarget.target_department_id))
+      if (directTarget.target_bureau_id) body.set('target_bureau_id', String(directTarget.target_bureau_id))
+    } else {
+      body.set('job_id', job.id)
+    }
     body.set('employee_number', form.employee_number)
     body.set('applicant_full_name', form.applicant_full_name)
     body.set('origin_division', form.origin_division)
@@ -90,7 +95,12 @@ export default function ApplicationForm({ job, session, organization, isSubmitti
       setError('Unggah setidaknya satu berkas PDF pendukung.')
       return
     }
-    supportingFiles.forEach((file) => body.append('supporting_document', file))
+    if (directTarget) {
+      body.append('cv', supportingFiles[0])
+      supportingFiles.slice(1).forEach((file) => body.append('supporting_document', file))
+    } else {
+      supportingFiles.forEach((file) => body.append('supporting_document', file))
+    }
     try {
       await onSubmit(body)
     } catch (submitError) {
@@ -119,8 +129,10 @@ export default function ApplicationForm({ job, session, organization, isSubmitti
           <div className="application-form-body">
             <div className="application-target-position">
               <strong>POSISI &amp; PENEMPATAN TUJUAN:</strong>
-              <b>[{job.id}] {job.title}</b>
-              <span>{getJobTargetLabels(job).join(' › ')}</span>
+              <b>{directTarget ? directTarget.title : `[${job.id}] ${job.title}`}</b>
+              <span>{directTarget
+                ? [directTarget.division, directTarget.department, directTarget.unit].filter(Boolean).join(' › ')
+                : getJobTargetLabels(job).join(' › ')}</span>
             </div>
             <div className="application-form-grid">
               <label htmlFor="application-employee-number">
@@ -206,10 +218,10 @@ export default function ApplicationForm({ job, session, organization, isSubmitti
                 <textarea id="application-motivation" maxLength={3000} name="motivation" onChange={updateField} placeholder="Jelaskan alasan Anda ingin beralih tugas ke posisi ini serta kemampuan utama yang bisa Anda berikan..." required rows="3" value={form.motivation} />
               </label>
               <label className="application-form-wide">
-                <span className="application-form-label">Upload Berkas Pendukung (CV / Riwayat Kinerja) <em>*</em></span>
+                <span className="application-form-label">{directTarget ? 'Upload CV (wajib) dan berkas pendukung' : 'Upload Berkas Pendukung (CV / Riwayat Kinerja)'} <em>*</em></span>
                 <span className="application-upload">
                   <span className="application-upload-icon"><UploadCloud size={24} /></span>
-                  <strong>Klik untuk memilih berkas (Format PDF)</strong>
+                  <strong>Klik untuk memilih {directTarget ? 'CV dan berkas pendukung' : 'berkas'} (Format PDF)</strong>
                   <small>Hingga {MAX_APPLICATION_DOCUMENTS} berkas, maksimal 5 MB per berkas</small>
                   <input accept=".pdf,application/pdf" id="application-cv" multiple onChange={updateFiles} type="file" />
                 </span>

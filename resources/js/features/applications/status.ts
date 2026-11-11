@@ -9,8 +9,8 @@ export const applicationStatusOptions = [
 export type ApplicationStatus = typeof applicationStatusOptions[number]['value']
 
 export const applicationStatusTransitions: Record<ApplicationStatus, readonly ApplicationStatus[]> = {
-  submitted: ['screening', 'interview', 'accepted', 'rejected'],
-  screening: ['interview', 'accepted', 'rejected'],
+  submitted: ['screening', 'rejected'],
+  screening: ['interview', 'rejected'],
   interview: ['accepted', 'rejected'],
   accepted: [],
   rejected: [],

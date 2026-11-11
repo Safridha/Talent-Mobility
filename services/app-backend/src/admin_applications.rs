@@ -1,14 +1,158 @@
 use super::*;
 
+const APPLICATION_TARGET_JOINS: &str = "LEFT JOIN job_postings AS target_job ON target_job.id = applications.job_id LEFT JOIN departments AS target_department ON target_department.id = applications.target_department_id LEFT JOIN divisions AS target_division ON target_division.id = target_department.division_id LEFT JOIN bureaus AS target_bureau ON target_bureau.id = applications.target_bureau_id";
+const APPLICATION_TARGET_FIELDS: &str = "applications.job_id, COALESCE(target_job.title, target_bureau.name, target_department.name) AS job_title, CASE WHEN target_job.id IS NOT NULL THEN CONCAT('job:', target_job.id) ELSE CONCAT('direct:', applications.target_department_id, ':', COALESCE(applications.target_bureau_id::text, '')) END AS target_key, COALESCE(target_job.target_level, CASE WHEN applications.target_bureau_id IS NULL THEN 'department' ELSE 'bureau' END) AS target_level, CASE WHEN target_job.id IS NOT NULL THEN CONCAT_WS(' / ', target_job.division, target_job.department, NULLIF(target_job.unit, '')) ELSE CONCAT_WS(' / ', target_division.name, target_department.name, CASE WHEN target_bureau.id IS NOT NULL THEN CONCAT(CASE target_bureau.unit_type WHEN 'bengkel' THEN 'Bengkel' ELSE 'Biro' END, ' — ', target_bureau.name) END) END AS target_label, applications.position_description";
+
+#[derive(Deserialize)]
+pub(super) struct ApplicationLimitRequest {
+    max_applications: i32,
+}
+
+fn validate_application_limit(value: i32) -> Result<i32, ApiError> {
+    if (1..=10_000).contains(&value) {
+        Ok(value)
+    } else {
+        Err(ApiError::BadRequest(
+            "Batas maksimal lamaran harus berupa bilangan bulat antara 1 dan 10000.",
+        ))
+    }
+}
+
+pub(super) async fn admin_get_application_limit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    authorized_super_admin(&state.pool, &headers).await?;
+    let max_applications = sqlx::query_scalar::<_, i32>(
+        "SELECT max_applications FROM applicant_application_limit WHERE id = 1",
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(json!({ "max_applications": max_applications })))
+}
+
+pub(super) async fn admin_create_application_limit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ApplicationLimitRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = authorized_super_admin(&state.pool, &headers).await?;
+    let max_applications = validate_application_limit(request.max_applications)?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let result = sqlx::query(
+        "INSERT INTO applicant_application_limit (max_applications, updated_by) VALUES ($1, $2)",
+    )
+    .bind(max_applications)
+    .bind(admin.id)
+    .execute(&mut *transaction)
+    .await;
+    if let Err(error) = result {
+        return if is_unique_violation(&error) {
+            Err(ApiError::Conflict("Batas maksimal lamaran sudah dibuat."))
+        } else {
+            Err(internal_error(error))
+        };
+    }
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "create",
+        "application_limit",
+        "1",
+        json!({ "max_applications": max_applications }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "max_applications": max_applications })))
+}
+
+pub(super) async fn admin_update_application_limit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ApplicationLimitRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = authorized_super_admin(&state.pool, &headers).await?;
+    let max_applications = validate_application_limit(request.max_applications)?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous = sqlx::query_scalar::<_, i32>(
+        "SELECT max_applications FROM applicant_application_limit WHERE id = 1 FOR UPDATE",
+    )
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Batas maksimal lamaran belum dibuat."))?;
+    let result = sqlx::query(
+        "UPDATE applicant_application_limit SET max_applications = $1, updated_by = $2, updated_at = NOW() WHERE id = 1",
+    )
+    .bind(max_applications)
+    .bind(admin.id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(internal_error)?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound("Batas maksimal lamaran belum dibuat."));
+    }
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "update",
+        "application_limit",
+        "1",
+        json!({ "previous_max_applications": previous, "max_applications": max_applications }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({ "max_applications": max_applications })))
+}
+
+pub(super) async fn admin_delete_application_limit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = authorized_super_admin(&state.pool, &headers).await?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let previous = sqlx::query_scalar::<_, i32>(
+        "SELECT max_applications FROM applicant_application_limit WHERE id = 1 FOR UPDATE",
+    )
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Batas maksimal lamaran belum dibuat."))?;
+    let result = sqlx::query("DELETE FROM applicant_application_limit WHERE id = 1")
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_error)?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound("Batas maksimal lamaran belum dibuat."));
+    }
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "delete",
+        "application_limit",
+        "1",
+        json!({ "max_applications": previous }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(
+        json!({ "message": "Batas maksimal lamaran berhasil dihapus." }),
+    ))
+}
+
 pub(super) async fn admin_list_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<AdminNotificationsResponse>, ApiError> {
     let admin = authorized_admin_context(&state.pool, &headers).await?;
     admin.require_permission(APPLICATIONS_VIEW)?;
-    let scope_filter = "($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND job_postings.division_id = $3) OR ($2 = 'department_head' AND job_postings.target_level <> 'division' AND job_postings.department_id = $4))";
+    let scope_filter = "($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $3) OR ($2 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $4))";
     let data = sqlx::query_as::<_, AdminApplicationNotification>(&format!(
-        "SELECT notifications.id, applications.public_id AS application_id, job_postings.id AS job_id, job_postings.title AS job_title, COALESCE(applications.applicant_full_name, applicants.name) AS applicant_name, job_postings.target_level, notifications.created_at::text AS created_at, notifications.read_at::text AS read_at FROM admin_application_notifications AS notifications JOIN applications ON applications.id = notifications.application_id JOIN applicants ON applicants.id = applications.applicant_id JOIN job_postings ON job_postings.id = applications.job_id WHERE notifications.admin_id = $1 AND {scope_filter} ORDER BY notifications.created_at DESC, notifications.id DESC LIMIT 50"
+        "SELECT notifications.id, applications.public_id AS application_id, applications.job_id, COALESCE(target_job.title, target_bureau.name, target_department.name) AS job_title, CASE WHEN target_job.id IS NOT NULL THEN CONCAT_WS(' / ', target_job.division, target_job.department, NULLIF(target_job.unit, '')) ELSE CONCAT_WS(' / ', target_division.name, target_department.name, CASE WHEN target_bureau.id IS NOT NULL THEN CONCAT(CASE target_bureau.unit_type WHEN 'bengkel' THEN 'Bengkel' ELSE 'Biro' END, ' — ', target_bureau.name) END) END AS target_label, COALESCE(applications.applicant_full_name, applicants.name) AS applicant_name, COALESCE(target_job.target_level, CASE WHEN applications.target_bureau_id IS NULL THEN 'department' ELSE 'bureau' END) AS target_level, notifications.created_at::text AS created_at, notifications.read_at::text AS read_at FROM admin_application_notifications AS notifications JOIN applications ON applications.id = notifications.application_id JOIN applicants ON applicants.id = applications.applicant_id {APPLICATION_TARGET_JOINS} WHERE notifications.admin_id = $1 AND {scope_filter} ORDER BY notifications.created_at DESC, notifications.id DESC LIMIT 50"
     ))
     .bind(admin.id)
     .bind(&admin.admin_role)
@@ -18,7 +162,7 @@ pub(super) async fn admin_list_notifications(
     .await
     .map_err(internal_error)?;
     let unread_count = sqlx::query_scalar::<_, i64>(&format!(
-        "SELECT COUNT(*) FROM admin_application_notifications AS notifications JOIN applications ON applications.id = notifications.application_id JOIN job_postings ON job_postings.id = applications.job_id WHERE notifications.admin_id = $1 AND notifications.read_at IS NULL AND {scope_filter}"
+        "SELECT COUNT(*) FROM admin_application_notifications AS notifications JOIN applications ON applications.id = notifications.application_id {APPLICATION_TARGET_JOINS} WHERE notifications.admin_id = $1 AND notifications.read_at IS NULL AND {scope_filter}"
     ))
     .bind(admin.id)
     .bind(&admin.admin_role)
@@ -37,9 +181,9 @@ pub(super) async fn admin_mark_notification_read(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let admin = authorized_admin_context(&state.pool, &headers).await?;
     admin.require_permission(APPLICATIONS_VIEW)?;
-    let result = sqlx::query(
-        "UPDATE admin_application_notifications AS notifications SET read_at = COALESCE(notifications.read_at, NOW()) FROM applications JOIN job_postings ON job_postings.id = applications.job_id WHERE notifications.id = $1 AND notifications.admin_id = $2 AND notifications.application_id = applications.id AND ($3 IN ('super_admin', 'admin') OR ($3 = 'division_head' AND job_postings.division_id = $4) OR ($3 = 'department_head' AND job_postings.target_level <> 'division' AND job_postings.department_id = $5))",
-    )
+    let result = sqlx::query(&format!(
+        "UPDATE admin_application_notifications AS notifications SET read_at = COALESCE(notifications.read_at, NOW()) FROM applications {APPLICATION_TARGET_JOINS} WHERE notifications.id = $1 AND notifications.admin_id = $2 AND notifications.application_id = applications.id AND ($3 IN ('super_admin', 'admin') OR ($3 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $4) OR ($3 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $5))"
+    ))
     .bind(id)
     .bind(admin.id)
     .bind(admin.admin_role)
@@ -62,8 +206,9 @@ pub(super) async fn admin_list_applications(
 ) -> Result<Json<AdminApplicationsResponse>, ApiError> {
     let admin = authorized_admin_context(&state.pool, &headers).await?;
     admin.require_permission(APPLICATIONS_VIEW)?;
+    let scope_filter = "($1 IN ('super_admin', 'admin') OR ($1 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $2) OR ($1 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $3))";
     let data = sqlx::query_as::<_, AdminApplication>(
-        "SELECT applications.public_id AS id, COALESCE(applications.applicant_full_name, applicants.name) AS applicant_name, applicants.email AS applicant_email, job_postings.id AS job_id, job_postings.title AS job_title, applications.employee_number, applications.origin_division, applications.origin_unit, applications.education_level, applications.study_field, applications.phone_number, applications.current_position, applications.current_unit, applications.motivation, applications.status, (SELECT COUNT(*) FROM application_documents WHERE application_id = applications.id) AS documents_count, applications.created_at::text AS created_at FROM applications JOIN applicants ON applicants.id = applications.applicant_id JOIN job_postings ON job_postings.id = applications.job_id WHERE ($1 IN ('super_admin', 'admin') OR ($1 = 'division_head' AND job_postings.division_id = $2) OR ($1 = 'department_head' AND job_postings.target_level <> 'division' AND job_postings.department_id = $3)) ORDER BY applications.created_at DESC",
+        &format!("SELECT applications.public_id AS id, COALESCE(applications.applicant_full_name, applicants.name) AS applicant_name, applicants.email AS applicant_email, {APPLICATION_TARGET_FIELDS}, applications.employee_number, applications.origin_division, applications.origin_unit, applications.education_level, applications.study_field, applications.phone_number, applications.current_position, applications.current_unit, applications.motivation, applications.status, (SELECT COUNT(*) FROM application_documents WHERE application_id = applications.id) AS documents_count, applications.created_at::text AS created_at FROM applications JOIN applicants ON applicants.id = applications.applicant_id {APPLICATION_TARGET_JOINS} WHERE {scope_filter} ORDER BY applications.created_at DESC"),
     )
     .bind(&admin.admin_role)
     .bind(admin.division_id)
@@ -81,8 +226,9 @@ pub(super) async fn admin_get_application(
 ) -> Result<Json<AdminApplicationDetail>, ApiError> {
     let admin = authorized_admin_context(&state.pool, &headers).await?;
     admin.require_permission(APPLICATIONS_VIEW)?;
+    let scope_filter = "($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $3) OR ($2 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $4))";
     let internal_id = sqlx::query_scalar::<_, i64>(
-        "SELECT applications.id FROM applications JOIN job_postings ON job_postings.id = applications.job_id WHERE applications.public_id = $1 AND ($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND job_postings.division_id = $3) OR ($2 = 'department_head' AND job_postings.target_level <> 'division' AND job_postings.department_id = $4))",
+        &format!("SELECT applications.id FROM applications {APPLICATION_TARGET_JOINS} WHERE applications.public_id = $1 AND {scope_filter}"),
     )
     .bind(&public_id)
     .bind(&admin.admin_role)
@@ -93,7 +239,7 @@ pub(super) async fn admin_get_application(
     .map_err(internal_error)?
     .ok_or(ApiError::NotFound("Lamaran tidak ditemukan."))?;
     let application = sqlx::query_as::<_, AdminApplication>(
-        "SELECT applications.public_id AS id, COALESCE(applications.applicant_full_name, applicants.name) AS applicant_name, applicants.email AS applicant_email, job_postings.id AS job_id, job_postings.title AS job_title, applications.employee_number, applications.origin_division, applications.origin_unit, applications.education_level, applications.study_field, applications.phone_number, applications.current_position, applications.current_unit, applications.motivation, applications.status, (SELECT COUNT(*) FROM application_documents WHERE application_id = applications.id) AS documents_count, applications.created_at::text AS created_at FROM applications JOIN applicants ON applicants.id = applications.applicant_id JOIN job_postings ON job_postings.id = applications.job_id WHERE applications.id = $1",
+        &format!("SELECT applications.public_id AS id, COALESCE(applications.applicant_full_name, applicants.name) AS applicant_name, applicants.email AS applicant_email, {APPLICATION_TARGET_FIELDS}, applications.employee_number, applications.origin_division, applications.origin_unit, applications.education_level, applications.study_field, applications.phone_number, applications.current_position, applications.current_unit, applications.motivation, applications.status, (SELECT COUNT(*) FROM application_documents WHERE application_id = applications.id) AS documents_count, applications.created_at::text AS created_at FROM applications JOIN applicants ON applicants.id = applications.applicant_id {APPLICATION_TARGET_JOINS} WHERE applications.id = $1"),
     )
     .bind(internal_id)
     .fetch_optional(&state.pool)
@@ -122,8 +268,9 @@ pub(super) async fn admin_download_application_document(
 ) -> Result<Response, ApiError> {
     let admin = authorized_admin_context(&state.pool, &headers).await?;
     admin.require_permission(APPLICATIONS_DOWNLOAD_DOCUMENTS)?;
+    let scope_filter = "($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $3) OR ($2 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $4))";
     let application_id = sqlx::query_scalar::<_, i64>(
-        "SELECT applications.id FROM applications JOIN job_postings ON job_postings.id = applications.job_id WHERE applications.public_id = $1 AND ($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND job_postings.division_id = $3) OR ($2 = 'department_head' AND job_postings.target_level <> 'division' AND job_postings.department_id = $4))",
+        &format!("SELECT applications.id FROM applications {APPLICATION_TARGET_JOINS} WHERE applications.public_id = $1 AND {scope_filter}"),
     )
     .bind(&public_id)
     .bind(&admin.admin_role)
@@ -179,8 +326,9 @@ pub(super) async fn admin_set_application_status(
         return Err(ApiError::BadRequest("Status lamaran tidak valid."));
     }
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let scope_filter = "($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $3) OR ($2 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $4))";
     let current = sqlx::query_as::<_, (i64, i64, String)>(
-        "SELECT applications.id, applications.applicant_id, applications.status FROM applications JOIN job_postings ON job_postings.id = applications.job_id WHERE applications.public_id = $1 AND ($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND job_postings.division_id = $3) OR ($2 = 'department_head' AND job_postings.target_level <> 'division' AND job_postings.department_id = $4)) FOR UPDATE OF applications",
+        &format!("SELECT applications.id, applications.applicant_id, applications.status FROM applications {APPLICATION_TARGET_JOINS} WHERE applications.public_id = $1 AND {scope_filter} FOR UPDATE OF applications"),
     )
     .bind(&public_id)
     .bind(&admin.admin_role)
@@ -236,10 +384,82 @@ pub(super) fn is_valid_application_status_transition(
         || matches!(
             (previous_status, new_status),
             ("submitted", "screening")
-                | ("submitted", "interview")
-                | ("submitted", "accepted" | "rejected")
+                | ("submitted", "rejected")
                 | ("screening", "interview")
-                | ("screening", "accepted" | "rejected")
+                | ("screening", "rejected")
                 | ("interview", "accepted" | "rejected")
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn application_limit_accepts_positive_values_up_to_the_supported_maximum() {
+        assert_eq!(validate_application_limit(1).unwrap(), 1);
+        assert_eq!(validate_application_limit(10_000).unwrap(), 10_000);
+        assert!(matches!(
+            validate_application_limit(0),
+            Err(ApiError::BadRequest(_))
+        ));
+        assert!(matches!(
+            validate_application_limit(10_001),
+            Err(ApiError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn application_status_transitions_follow_the_selection_stages() {
+        assert!(is_valid_application_status_transition(
+            "submitted",
+            "screening"
+        ));
+        assert!(is_valid_application_status_transition(
+            "submitted",
+            "rejected"
+        ));
+        assert!(is_valid_application_status_transition(
+            "screening",
+            "interview"
+        ));
+        assert!(is_valid_application_status_transition(
+            "screening",
+            "rejected"
+        ));
+        assert!(is_valid_application_status_transition(
+            "interview",
+            "accepted"
+        ));
+        assert!(is_valid_application_status_transition(
+            "interview",
+            "rejected"
+        ));
+        assert!(is_valid_application_status_transition(
+            "accepted", "accepted"
+        ));
+        assert!(is_valid_application_status_transition(
+            "rejected", "rejected"
+        ));
+
+        assert!(!is_valid_application_status_transition(
+            "submitted",
+            "interview"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "submitted",
+            "accepted"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "screening",
+            "accepted"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "accepted", "rejected"
+        ));
+        assert!(!is_valid_application_status_transition(
+            "rejected",
+            "screening"
+        ));
+    }
 }

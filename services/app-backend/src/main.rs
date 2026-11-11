@@ -8,12 +8,14 @@ use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Json, Multipart, Path, Query, State},
     http::{
-        header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE},
+        header::{
+            CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, COOKIE, HOST, ORIGIN, SET_COOKIE,
+        },
         HeaderMap, HeaderValue, Request, StatusCode,
     },
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, patch, post, put},
+    routing::{any, get, patch, post, put},
     Router,
 };
 use lettre::{
@@ -37,7 +39,6 @@ mod admin_audit;
 mod admin_permissions;
 mod applications;
 mod auth;
-mod employee_directory;
 mod jobs;
 mod push;
 
@@ -47,7 +48,6 @@ use admin_audit::*;
 use admin_permissions::*;
 use applications::*;
 use auth::*;
-use employee_directory::*;
 use jobs::*;
 use push::*;
 
@@ -62,12 +62,17 @@ const MAX_APPLICATION_DOCUMENTS: usize = 5;
 const MAX_APPLICATION_BODY_BYTES: usize = 32 * 1024 * 1024;
 const MAX_APPLICATION_STATUS_REASON_CHARS: usize = 1000;
 const MAX_PROFILE_PHOTO_BYTES: usize = 2 * 1024 * 1024;
+const MAX_LOGIN_FAILURES: i32 = 5;
+const LOGIN_LOCKOUT_MINUTES: i32 = 15;
+const SESSION_COOKIE_NAME: &str = "tm_session";
 
 #[derive(Debug)]
 enum ApiError {
     BadRequest(&'static str),
     Unauthorized,
+    AccountSuspended,
     Forbidden,
+    PasswordChangeRequired,
     Conflict(&'static str),
     NotFound(&'static str),
     Unavailable(&'static str),
@@ -82,7 +87,15 @@ impl IntoResponse for ApiError {
                 StatusCode::UNAUTHORIZED,
                 "Sesi tidak valid atau telah berakhir.",
             ),
+            Self::AccountSuspended => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Akun ditangguhkan sementara selama 15 menit karena terlalu banyak percobaan login gagal.",
+            ),
             Self::Forbidden => (StatusCode::FORBIDDEN, "Akses tidak diizinkan."),
+            Self::PasswordChangeRequired => (
+                StatusCode::FORBIDDEN,
+                "Ubah kata sandi awal sebelum melanjutkan.",
+            ),
             Self::Conflict(message) => (StatusCode::CONFLICT, message),
             Self::NotFound(message) => (StatusCode::NOT_FOUND, message),
             Self::Unavailable(message) => (StatusCode::SERVICE_UNAVAILABLE, message),
@@ -102,9 +115,74 @@ fn set_api_no_store(response: &mut Response) {
 }
 
 async fn prevent_api_caching(request: Request<Body>, next: Next) -> Response {
+    let is_state_changing = !matches!(
+        *request.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    );
+    if is_state_changing && !request_has_same_origin(request.headers()) {
+        let mut response = ApiError::Forbidden.into_response();
+        set_api_no_store(&mut response);
+        return response;
+    }
+
     let mut response = next.run(request).await;
     set_api_no_store(&mut response);
     response
+}
+
+fn session_token(headers: &HeaderMap) -> Option<&str> {
+    let token = headers
+        .get(COOKIE)?
+        .to_str()
+        .ok()?
+        .split(';')
+        .find_map(|cookie| {
+            let (name, value) = cookie.trim().split_once('=')?;
+            (name == SESSION_COOKIE_NAME).then_some(value)
+        })?;
+    (token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(token)
+}
+
+fn request_has_same_origin(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers
+        .get(ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| url::Url::parse(value).ok())
+    else {
+        return false;
+    };
+    if !matches!(origin.scheme(), "http" | "https")
+        || !origin.username().is_empty()
+        || origin.password().is_some()
+        || origin.path() != "/"
+        || origin.query().is_some()
+        || origin.fragment().is_some()
+    {
+        return false;
+    }
+    let Some(host) = headers.get(HOST).and_then(|value| value.to_str().ok()) else {
+        return false;
+    };
+    url::Url::parse(&format!("{}://{host}", origin.scheme()))
+        .is_ok_and(|request_origin| origin.origin() == request_origin.origin())
+}
+
+fn session_cookie(token: Option<&str>) -> Result<HeaderValue, ApiError> {
+    let secure = env::var("APP_PUBLIC_URL")
+        .ok()
+        .and_then(|url| url::Url::parse(&url).ok())
+        .is_some_and(|url| url.scheme() == "https");
+    let value = match token {
+        Some(token) => format!(
+            "{SESSION_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000{}",
+            if secure { "; Secure" } else { "" },
+        ),
+        None => format!(
+            "{SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{}",
+            if secure { "; Secure" } else { "" },
+        ),
+    };
+    HeaderValue::from_str(&value).map_err(internal_error)
 }
 
 #[derive(Deserialize)]
@@ -115,13 +193,6 @@ struct LoginRequest {
 
 #[derive(Deserialize)]
 struct AdminLoginRequest {
-    email: String,
-    password: String,
-}
-
-#[derive(Deserialize)]
-struct RegisterRequest {
-    name: String,
     email: String,
     password: String,
 }
@@ -159,6 +230,7 @@ struct AccountIdentity {
     id: i64,
     role: &'static str,
     token_hash: String,
+    must_change_password: bool,
 }
 
 struct MailSettings {
@@ -222,11 +294,11 @@ struct AdminAccountStatusRequest {
 struct Applicant {
     name: String,
     email: String,
+    must_change_password: bool,
 }
 
 #[derive(Serialize)]
 struct AuthResponse {
-    token: String,
     role: String,
     applicant: Applicant,
 }
@@ -245,7 +317,6 @@ struct Admin {
 
 #[derive(Serialize)]
 struct AdminAuthResponse {
-    token: String,
     role: String,
     admin: Admin,
 }
@@ -263,6 +334,8 @@ struct ApplicantRecord {
     name: String,
     email: String,
     password_hash: String,
+    must_change_password: bool,
+    login_locked: bool,
 }
 
 #[derive(FromRow)]
@@ -271,6 +344,7 @@ struct AdminRecord {
     name: String,
     email: String,
     password_hash: String,
+    login_locked: bool,
     admin_role: String,
     division_id: Option<i64>,
     department_id: Option<i64>,
@@ -301,21 +375,12 @@ impl AdminContext {
             Err(ApiError::Forbidden)
         }
     }
-
-    fn require_any_permission(&self, permissions: &[&str]) -> Result<(), ApiError> {
-        if permissions
-            .iter()
-            .any(|permission| self.has_permission(permission))
-        {
-            Ok(())
-        } else {
-            Err(ApiError::Forbidden)
-        }
-    }
 }
 
 struct ApplicationSubmissionFields {
-    job_id: String,
+    job_id: Option<String>,
+    target_department_id: Option<i64>,
+    target_bureau_id: Option<i64>,
     employee_number: String,
     applicant_full_name: String,
     origin_division: String,
@@ -334,7 +399,15 @@ struct UploadedApplicationDocument {
 #[derive(FromRow, Serialize)]
 struct ApplicationSummary {
     id: String,
-    job_id: String,
+    job_id: Option<String>,
+    target_department_id: Option<i64>,
+    target_bureau_id: Option<i64>,
+    job_title: String,
+    target_level: String,
+    division: String,
+    department: String,
+    unit: String,
+    position_description: Option<String>,
     status: String,
     created_at: String,
     status_history: SqlJson<Vec<ApplicationStatusHistory>>,
@@ -355,8 +428,10 @@ struct ApplicationsResponse {
 struct ApplicantStatusNotification {
     id: i64,
     application_id: String,
-    job_id: String,
+    job_id: Option<String>,
     job_title: String,
+    target_label: String,
+    target_level: String,
     previous_status: String,
     new_status: String,
     reason: Option<String>,
@@ -378,6 +453,7 @@ struct AdminApplicantAccount {
     created_at: String,
     applications_count: i64,
     is_active: bool,
+    must_change_password: bool,
 }
 
 #[derive(FromRow, Serialize)]
@@ -395,6 +471,7 @@ struct ManagedAdminAccount {
     permissions: Vec<String>,
 }
 
+#[cfg(test)]
 #[derive(Deserialize)]
 struct AdminJobFields {
     title: String,
@@ -429,6 +506,7 @@ struct DivisionRequest {
     secretariat_description: String,
 }
 
+#[cfg(test)]
 #[derive(Deserialize)]
 struct JobTypeNameRequest {
     name: String,
@@ -491,13 +569,6 @@ struct BureauRecord {
     unit_type: String,
 }
 
-#[derive(FromRow, Serialize)]
-struct JobTypeRecord {
-    id: i64,
-    name: String,
-    job_count: i64,
-}
-
 #[derive(Serialize)]
 struct OrganizationResponse {
     divisions: Vec<DivisionRecord>,
@@ -517,6 +588,7 @@ struct PublicDepartmentRecord {
     id: i64,
     division_id: i64,
     name: String,
+    description: String,
 }
 
 #[derive(FromRow, Serialize)]
@@ -524,6 +596,7 @@ struct PublicBureauRecord {
     id: i64,
     department_id: i64,
     name: String,
+    description: String,
     unit_type: String,
 }
 
@@ -534,6 +607,7 @@ struct PublicOrganizationResponse {
     bureaus: Vec<PublicBureauRecord>,
 }
 
+#[cfg(test)]
 #[derive(Deserialize)]
 struct CreateAdminJobRequest {
     id: String,
@@ -541,6 +615,7 @@ struct CreateAdminJobRequest {
     fields: AdminJobFields,
 }
 
+#[cfg(test)]
 #[derive(Deserialize)]
 struct JobStatusRequest {
     status: String,
@@ -557,8 +632,12 @@ struct AdminApplication {
     id: String,
     applicant_name: String,
     applicant_email: String,
-    job_id: String,
+    job_id: Option<String>,
     job_title: String,
+    target_key: String,
+    target_label: String,
+    target_level: String,
+    position_description: Option<String>,
     employee_number: Option<String>,
     origin_division: Option<String>,
     origin_unit: Option<String>,
@@ -603,8 +682,9 @@ struct AdminApplicationsResponse {
 struct AdminApplicationNotification {
     id: i64,
     application_id: String,
-    job_id: String,
+    job_id: Option<String>,
     job_title: String,
+    target_label: String,
     applicant_name: String,
     target_level: String,
     created_at: String,
@@ -619,10 +699,6 @@ struct AdminNotificationsResponse {
 
 #[derive(FromRow, Serialize)]
 struct AdminDashboardMetrics {
-    positions_total: i64,
-    positions_draft: i64,
-    positions_open: i64,
-    positions_closed: i64,
     applications_total: i64,
     applications_submitted: i64,
     applications_screening: i64,
@@ -631,6 +707,7 @@ struct AdminDashboardMetrics {
     applications_rejected: i64,
 }
 
+#[cfg(test)]
 #[derive(FromRow, Serialize)]
 struct Job {
     id: String,
@@ -656,6 +733,7 @@ struct Job {
     has_applications: Option<bool>,
 }
 
+#[cfg(test)]
 #[derive(Serialize)]
 struct JobsResponse {
     data: Vec<Job>,
@@ -688,8 +766,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     seed_admin(&pool).await?;
 
     let app = Router::new()
-        .route("/api/register", post(register))
         .route("/api/login", post(login))
+        .route("/api/session", get(current_session))
         .route("/api/logout", post(logout))
         .route("/api/password/forgot", post(forgot_password))
         .route("/api/password/reset", post(reset_password))
@@ -710,7 +788,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/push/subscriptions",
             put(upsert_push_subscription).delete(delete_push_subscription),
         )
-        .route("/api/jobs", get(list_jobs))
         .route("/api/organization", get(public_list_organization))
         .route("/api/admin/login", post(admin_login))
         .route("/api/admin/logout", post(admin_logout))
@@ -741,23 +818,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/admin/admin-accounts/{id}/status",
             patch(admin_set_admin_account_status),
         )
-        .route(
-            "/api/admin/employees",
-            get(admin_list_employees).post(admin_create_employee),
-        )
-        .route("/api/admin/employees/{id}", put(admin_update_employee))
-        .route(
-            "/api/admin/employees/{id}/status",
-            patch(admin_set_employee_status),
-        )
-        .route(
-            "/api/admin/job-types",
-            get(admin_list_job_types).post(admin_create_job_type),
-        )
-        .route(
-            "/api/admin/job-types/{id}",
-            put(admin_update_job_type).delete(admin_delete_job_type),
-        )
         .route("/api/admin/organization", get(admin_list_organization))
         .route("/api/admin/divisions", post(admin_create_division))
         .route(
@@ -774,16 +834,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/admin/bureaus/{id}",
             put(admin_update_bureau).delete(admin_delete_bureau),
         )
-        .route(
-            "/api/admin/jobs",
-            get(admin_list_jobs).post(admin_create_job),
-        )
-        .route(
-            "/api/admin/jobs/{id}",
-            put(admin_update_job).delete(admin_delete_job),
-        )
-        .route("/api/admin/jobs/{id}/status", patch(admin_set_job_status))
         .route("/api/admin/applications", get(admin_list_applications))
+        .route(
+            "/api/admin/application-limit",
+            get(admin_get_application_limit)
+                .post(admin_create_application_limit)
+                .put(admin_update_application_limit)
+                .delete(admin_delete_application_limit),
+        )
         .route("/api/admin/notifications", get(admin_list_notifications))
         .route(
             "/api/admin/notifications/{id}/read",
@@ -804,6 +862,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .post(create_application)
                 .layer(DefaultBodyLimit::max(MAX_APPLICATION_BODY_BYTES)),
         )
+        .route("/api/{*path}", any(api_not_found))
         .route("/api/notifications", get(list_applicant_notifications))
         .route(
             "/api/notifications/{id}/read",
@@ -846,36 +905,19 @@ async fn authorized_applicant(
     pool: &PgPool,
     headers: &HeaderMap,
 ) -> Result<(i64, String), ApiError> {
-    let bearer = headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|value| !value.is_empty())
-        .ok_or(ApiError::Unauthorized)?;
-    let token_hash = hash_token(bearer);
-    let applicant_id: Option<i64> = sqlx::query_scalar(
-        "SELECT applicant_tokens.applicant_id FROM applicant_tokens JOIN applicants ON applicants.id = applicant_tokens.applicant_id WHERE applicant_tokens.token_hash = $1 AND applicant_tokens.expires_at > NOW() AND applicants.is_active = TRUE",
-    )
-    .bind(&token_hash)
-    .fetch_optional(pool)
-    .await
-    .map_err(internal_error)?;
-    applicant_id
-        .map(|applicant_id| (applicant_id, token_hash))
-        .ok_or(ApiError::Unauthorized)
+    let account = authorized_account(pool, headers).await?;
+    if account.role != "applicant" {
+        return Err(ApiError::Unauthorized);
+    }
+    Ok((account.id, account.token_hash))
 }
 
 async fn authorized_admin_context(
     pool: &PgPool,
     headers: &HeaderMap,
 ) -> Result<AdminContext, ApiError> {
-    let bearer = headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|value| !value.is_empty())
-        .ok_or(ApiError::Unauthorized)?;
-    let token_hash = hash_token(bearer);
+    let token = session_token(headers).ok_or(ApiError::Unauthorized)?;
+    let token_hash = hash_token(token);
     let admin = sqlx::query_as::<_, (i64, String, Option<i64>, Option<i64>, Vec<String>)>(
         "SELECT admins.id, admins.admin_role, admins.division_id, admins.department_id, COALESCE((SELECT array_agg(admin_permissions.permission_key ORDER BY admin_permissions.permission_key) FROM admin_permissions WHERE admin_permissions.admin_id = admins.id), ARRAY[]::TEXT[]) FROM admin_tokens JOIN admins ON admins.id = admin_tokens.admin_id WHERE admin_tokens.token_hash = $1 AND admin_tokens.expires_at > NOW() AND admins.is_active = TRUE",
     )
@@ -935,21 +977,27 @@ async fn authorized_account(
     pool: &PgPool,
     headers: &HeaderMap,
 ) -> Result<AccountIdentity, ApiError> {
-    let bearer = headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|value| !value.is_empty())
-        .ok_or(ApiError::Unauthorized)?;
-    let token_hash = hash_token(bearer);
-    let identity = sqlx::query_as::<_, (String, i64)>(
-        "SELECT account_type, account_id FROM (SELECT 'applicant'::text AS account_type, applicants.id AS account_id FROM applicant_tokens JOIN applicants ON applicants.id = applicant_tokens.applicant_id WHERE applicant_tokens.token_hash = $1 AND applicant_tokens.expires_at > NOW() AND applicants.is_active = TRUE UNION ALL SELECT 'admin'::text AS account_type, admins.id AS account_id FROM admin_tokens JOIN admins ON admins.id = admin_tokens.admin_id WHERE admin_tokens.token_hash = $1 AND admin_tokens.expires_at > NOW() AND admins.is_active = TRUE) AS accounts LIMIT 1",
+    let account = authorized_account_identity(pool, headers).await?;
+    if account.role == "applicant" && account.must_change_password {
+        return Err(ApiError::PasswordChangeRequired);
+    }
+    Ok(account)
+}
+
+async fn authorized_account_identity(
+    pool: &PgPool,
+    headers: &HeaderMap,
+) -> Result<AccountIdentity, ApiError> {
+    let token = session_token(headers).ok_or(ApiError::Unauthorized)?;
+    let token_hash = hash_token(token);
+    let identity = sqlx::query_as::<_, (String, i64, bool)>(
+        "SELECT account_type, account_id, must_change_password FROM (SELECT 'applicant'::text AS account_type, applicants.id AS account_id, applicants.must_change_password FROM applicant_tokens JOIN applicants ON applicants.id = applicant_tokens.applicant_id WHERE applicant_tokens.token_hash = $1 AND applicant_tokens.expires_at > NOW() AND applicants.is_active = TRUE UNION ALL SELECT 'admin'::text AS account_type, admins.id AS account_id, FALSE AS must_change_password FROM admin_tokens JOIN admins ON admins.id = admin_tokens.admin_id WHERE admin_tokens.token_hash = $1 AND admin_tokens.expires_at > NOW() AND admins.is_active = TRUE) AS accounts LIMIT 1",
     )
     .bind(&token_hash)
     .fetch_optional(pool)
     .await
     .map_err(internal_error)?;
-    let Some((role, id)) = identity else {
+    let Some((role, id, must_change_password)) = identity else {
         return Err(ApiError::Unauthorized);
     };
     let role = match role.as_str() {
@@ -961,6 +1009,7 @@ async fn authorized_account(
         id,
         role,
         token_hash,
+        must_change_password,
     })
 }
 
@@ -1116,6 +1165,10 @@ fn internal_error(error: impl std::fmt::Debug) -> ApiError {
     ApiError::Internal
 }
 
+async fn api_not_found() -> ApiError {
+    ApiError::NotFound("Endpoint API tidak ditemukan.")
+}
+
 async fn seed_admin(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     let name = env::var("ADMIN_NAME")
         .ok()
@@ -1180,6 +1233,45 @@ mod tests {
     };
     use super::*;
 
+    #[test]
+    fn session_cookie_is_http_only_and_not_accessible_as_a_bearer_header() {
+        let token = "a".repeat(64);
+        let cookie = session_cookie(Some(&token)).unwrap();
+        let cookie = cookie.to_str().unwrap();
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("SameSite=Strict"));
+        assert!(cookie.contains("Path=/"));
+        assert!(cookie.starts_with(&format!("{SESSION_COOKIE_NAME}={token}")));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            HeaderValue::from_str(&format!("{SESSION_COOKIE_NAME}={token}; theme=dark")).unwrap(),
+        );
+        assert_eq!(session_token(&headers), Some(token.as_str()));
+
+        headers.remove(COOKIE);
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+        );
+        assert_eq!(session_token(&headers), None);
+    }
+
+    #[test]
+    fn unsafe_requests_require_an_exact_origin_match() {
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("app.example.com"));
+        headers.insert(ORIGIN, HeaderValue::from_static("https://app.example.com"));
+        assert!(request_has_same_origin(&headers));
+
+        headers.insert(ORIGIN, HeaderValue::from_static("https://evil.example.com"));
+        assert!(!request_has_same_origin(&headers));
+
+        headers.remove(ORIGIN);
+        assert!(!request_has_same_origin(&headers));
+    }
+
     #[cfg(feature = "postgres-migration-tests")]
     #[sqlx::test(migrations = "./migrations")]
     async fn bootstrap_does_not_overwrite_existing_admin_credentials(pool: PgPool) {
@@ -1210,13 +1302,217 @@ mod tests {
 
     #[cfg(feature = "postgres-migration-tests")]
     #[sqlx::test(migrations = "./migrations")]
+    async fn public_organization_preserves_the_division_department_bureau_hierarchy(pool: PgPool) {
+        let state = AppState {
+            pool: pool.clone(),
+            push_service: None,
+        };
+        let division_id: i64 = sqlx::query_scalar(
+            "INSERT INTO divisions (name, description, secretariat_name, secretariat_description) VALUES ('Hierarchy Test Division', 'Division description', '', '') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("test division should be created");
+        let department_id: i64 = sqlx::query_scalar(
+            "INSERT INTO departments (division_id, name, description) VALUES ($1, 'Hierarchy Test Department', 'Department description') RETURNING id",
+        )
+        .bind(division_id)
+        .fetch_one(&pool)
+        .await
+        .expect("test department should be linked to its division");
+        let bureau_id: i64 = sqlx::query_scalar(
+            "INSERT INTO bureaus (department_id, name, description, unit_type) VALUES ($1, 'Hierarchy Test Bureau', 'Bureau description', 'biro') RETURNING id",
+        )
+        .bind(department_id)
+        .fetch_one(&pool)
+        .await
+        .expect("test bureau should be linked to its department");
+
+        let organization = public_list_organization(State(state))
+            .await
+            .expect("public organization should load")
+            .0;
+        let department = organization
+            .departments
+            .iter()
+            .find(|item| item.id == department_id)
+            .expect("public organization should expose the department");
+        let bureau = organization
+            .bureaus
+            .iter()
+            .find(|item| item.id == bureau_id)
+            .expect("public organization should expose the bureau");
+        assert_eq!(department.division_id, division_id);
+        assert_eq!(department.description, "Department description");
+        assert_eq!(bureau.department_id, department_id);
+        assert_eq!(bureau.description, "Bureau description");
+    }
+
+    #[cfg(feature = "postgres-migration-tests")]
+    #[sqlx::test(migrations = "./migrations")]
+    async fn applicant_and_admin_logins_suspend_after_five_failures_and_reset_after_expiry(
+        pool: PgPool,
+    ) {
+        let state = AppState {
+            pool: pool.clone(),
+            push_service: None,
+        };
+        let password_hash = hash_password("Correct!Password123").unwrap();
+        sqlx::query("INSERT INTO applicants (name, email, password_hash) VALUES ('Applicant', 'lockout-applicant@example.test', $1)")
+            .bind(&password_hash)
+            .execute(&pool)
+            .await
+            .expect("applicant account should be created");
+
+        for attempt in 1..=MAX_LOGIN_FAILURES {
+            let result = login(
+                State(state.clone()),
+                Json(LoginRequest {
+                    email: "lockout-applicant@example.test".to_owned(),
+                    password: "wrong-password".to_owned(),
+                }),
+            )
+            .await;
+            if attempt == MAX_LOGIN_FAILURES {
+                assert!(matches!(result, Err(ApiError::AccountSuspended)));
+            } else {
+                assert!(matches!(result, Err(ApiError::BadRequest(_))));
+            }
+        }
+        let applicant_is_suspended_for_15_minutes: bool = sqlx::query_scalar(
+            "SELECT locked_until > NOW() AND locked_until <= NOW() + INTERVAL '15 minutes' FROM applicants WHERE email = $1",
+        )
+        .bind("lockout-applicant@example.test")
+        .fetch_one(&pool)
+        .await
+        .expect("applicant lock expiry should be queryable");
+        assert!(applicant_is_suspended_for_15_minutes);
+        assert!(matches!(
+            login(
+                State(state.clone()),
+                Json(LoginRequest {
+                    email: "lockout-applicant@example.test".to_owned(),
+                    password: "Correct!Password123".to_owned(),
+                }),
+            )
+            .await,
+            Err(ApiError::AccountSuspended)
+        ));
+
+        sqlx::query(
+            "UPDATE applicants SET locked_until = NOW() - INTERVAL '1 second' WHERE email = $1",
+        )
+        .bind("lockout-applicant@example.test")
+        .execute(&pool)
+        .await
+        .expect("applicant lock should be expirable for this test");
+        assert!(matches!(
+            login(
+                State(state.clone()),
+                Json(LoginRequest {
+                    email: "lockout-applicant@example.test".to_owned(),
+                    password: "wrong-password".to_owned(),
+                }),
+            )
+            .await,
+            Err(ApiError::BadRequest(_))
+        ));
+        let (headers, _) = login(
+            State(state.clone()),
+            Json(LoginRequest {
+                email: "lockout-applicant@example.test".to_owned(),
+                password: "Correct!Password123".to_owned(),
+            }),
+        )
+        .await
+        .expect("applicant should sign in after the suspension expires");
+        assert!(headers.contains_key(SET_COOKIE));
+        let applicant_failures: i32 =
+            sqlx::query_scalar("SELECT failed_login_attempts FROM applicants WHERE email = $1")
+                .bind("lockout-applicant@example.test")
+                .fetch_one(&pool)
+                .await
+                .expect("applicant failure count should be queryable");
+        assert_eq!(applicant_failures, 0);
+
+        sqlx::query("INSERT INTO admins (name, email, password_hash) VALUES ('Admin', 'lockout-admin@example.test', $1)")
+            .bind(&password_hash)
+            .execute(&pool)
+            .await
+            .expect("admin account should be created");
+        for attempt in 1..=MAX_LOGIN_FAILURES {
+            let result = admin_login(
+                State(state.clone()),
+                Json(AdminLoginRequest {
+                    email: "lockout-admin@example.test".to_owned(),
+                    password: "wrong-password".to_owned(),
+                }),
+            )
+            .await;
+            if attempt == MAX_LOGIN_FAILURES {
+                assert!(matches!(result, Err(ApiError::AccountSuspended)));
+            } else {
+                assert!(matches!(result, Err(ApiError::BadRequest(_))));
+            }
+        }
+        let admin_is_suspended_for_15_minutes: bool = sqlx::query_scalar(
+            "SELECT locked_until > NOW() AND locked_until <= NOW() + INTERVAL '15 minutes' FROM admins WHERE email = $1",
+        )
+        .bind("lockout-admin@example.test")
+        .fetch_one(&pool)
+        .await
+        .expect("admin lock expiry should be queryable");
+        assert!(admin_is_suspended_for_15_minutes);
+        assert!(matches!(
+            admin_login(
+                State(state.clone()),
+                Json(AdminLoginRequest {
+                    email: "lockout-admin@example.test".to_owned(),
+                    password: "Correct!Password123".to_owned(),
+                }),
+            )
+            .await,
+            Err(ApiError::AccountSuspended)
+        ));
+        sqlx::query(
+            "UPDATE admins SET locked_until = NOW() - INTERVAL '1 second' WHERE email = $1",
+        )
+        .bind("lockout-admin@example.test")
+        .execute(&pool)
+        .await
+        .expect("admin lock should be expirable for this test");
+        let (_, _) = admin_login(
+            State(state.clone()),
+            Json(AdminLoginRequest {
+                email: "lockout-admin@example.test".to_owned(),
+                password: "Correct!Password123".to_owned(),
+            }),
+        )
+        .await
+        .expect("admin should sign in after the suspension expires");
+        let admin_failures: i32 =
+            sqlx::query_scalar("SELECT failed_login_attempts FROM admins WHERE email = $1")
+                .bind("lockout-admin@example.test")
+                .fetch_one(&pool)
+                .await
+                .expect("admin failure count should be queryable");
+        assert_eq!(admin_failures, 0);
+    }
+
+    #[cfg(feature = "postgres-migration-tests")]
+    #[sqlx::test(migrations = "./migrations")]
     async fn admin_job_application_and_account_workflow(pool: PgPool) {
-        fn bearer(token: &str) -> HeaderMap {
+        fn session_cookie_headers(response_headers: &HeaderMap) -> HeaderMap {
             let mut headers = HeaderMap::new();
-            headers.insert(
-                AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
-            );
+            let cookie = response_headers
+                .get(SET_COOKIE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap();
+            headers.insert(COOKIE, HeaderValue::from_str(cookie).unwrap());
             headers
         }
 
@@ -1268,7 +1564,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let super_admin = admin_login(
+        let (super_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
                 email: "super@example.com".to_owned(),
@@ -1276,9 +1572,8 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
-        .0;
-        let super_headers = bearer(&super_admin.token);
+        .unwrap();
+        let super_headers = session_cookie_headers(&super_login_headers);
         assert!(matches!(
             admin_create_admin_account(
                 State(state.clone()),
@@ -1401,7 +1696,16 @@ mod tests {
                     division_id,
                     department_id,
                     bureau_id: None,
-                    permissions: None,
+                    permissions: Some(vec![
+                        APPLICATIONS_VIEW.to_owned(),
+                        APPLICATIONS_CHANGE_STATUS.to_owned(),
+                        APPLICATIONS_DOWNLOAD_DOCUMENTS.to_owned(),
+                        JOBS_VIEW.to_owned(),
+                        JOBS_CREATE.to_owned(),
+                        JOBS_UPDATE.to_owned(),
+                        JOBS_DELETE.to_owned(),
+                        JOBS_CHANGE_STATUS.to_owned(),
+                    ]),
                 }),
             )
             .await
@@ -1610,7 +1914,7 @@ mod tests {
         .await
         .unwrap();
 
-        let kadep = admin_login(
+        let (kadep_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
                 email: "kadep@example.com".to_owned(),
@@ -1618,9 +1922,8 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
-        .0;
-        let kadep_headers = bearer(&kadep.token);
+        .unwrap();
+        let kadep_headers = session_cookie_headers(&kadep_login_headers);
         assert_eq!(
             admin_list_jobs(State(state.clone()), kadep_headers.clone())
                 .await
@@ -1630,7 +1933,7 @@ mod tests {
                 .len(),
             1
         );
-        let kadiv = admin_login(
+        let (kadiv_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
                 email: "kadiv@example.com".to_owned(),
@@ -1638,9 +1941,8 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
-        .0;
-        let kadiv_headers = bearer(&kadiv.token);
+        .unwrap();
+        let kadiv_headers = session_cookie_headers(&kadiv_login_headers);
         assert_eq!(
             admin_list_jobs(State(state.clone()), kadiv_headers.clone())
                 .await
@@ -1650,7 +1952,7 @@ mod tests {
                 .len(),
             2
         );
-        let operational = admin_login(
+        let (operational_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
                 email: "operational@example.com".to_owned(),
@@ -1658,18 +1960,20 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
-        .0;
+        .unwrap();
         assert_eq!(
-            admin_list_jobs(State(state.clone()), bearer(&operational.token))
-                .await
-                .unwrap()
-                .0
-                .data
-                .len(),
+            admin_list_jobs(
+                State(state.clone()),
+                session_cookie_headers(&operational_login_headers)
+            )
+            .await
+            .unwrap()
+            .0
+            .data
+            .len(),
             3
         );
-        let operational_headers = bearer(&operational.token);
+        let operational_headers = session_cookie_headers(&operational_login_headers);
         assert!(matches!(
             admin_list_applications(State(state.clone()), operational_headers.clone()).await,
             Err(ApiError::Forbidden)
@@ -1743,18 +2047,68 @@ mod tests {
             Err(ApiError::Forbidden)
         ));
 
-        let applicant = register(
+        let initial_applicant_password = "Applicant!Temp123";
+        let _ = admin_create_account(
             State(state.clone()),
-            Json(RegisterRequest {
+            super_headers.clone(),
+            Json(AdminApplicantCreateRequest {
                 name: "Audit Applicant".to_owned(),
                 email: "applicant@example.com".to_owned(),
-                password: "Applicant!Pass123".to_owned(),
+                password: initial_applicant_password.to_owned(),
             }),
         )
         .await
-        .unwrap()
-        .0;
-        let applicant_headers = bearer(&applicant.token);
+        .unwrap();
+        let (applicant_login_headers, applicant_login_response) = login(
+            State(state.clone()),
+            Json(LoginRequest {
+                email: "applicant@example.com".to_owned(),
+                password: initial_applicant_password.to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let LoginResponse::Applicant(applicant_login_response) = applicant_login_response.0 else {
+            panic!("the applicant account should use the applicant login response");
+        };
+        assert!(applicant_login_response.applicant.must_change_password);
+        let applicant_headers = session_cookie_headers(&applicant_login_headers);
+        assert!(matches!(
+            list_applications(State(state.clone()), applicant_headers.clone()).await,
+            Err(ApiError::PasswordChangeRequired)
+        ));
+        assert!(matches!(
+            change_account_password(
+                State(state.clone()),
+                applicant_headers.clone(),
+                Json(ChangePasswordRequest {
+                    current_password: initial_applicant_password.to_owned(),
+                    new_password: initial_applicant_password.to_owned(),
+                }),
+            )
+            .await,
+            Err(ApiError::BadRequest(_))
+        ));
+        let _ = change_account_password(
+            State(state.clone()),
+            applicant_headers.clone(),
+            Json(ChangePasswordRequest {
+                current_password: initial_applicant_password.to_owned(),
+                new_password: "Applicant!New123".to_owned(),
+            }),
+        )
+        .await
+        .unwrap();
+        let restored_applicant_session =
+            current_session(State(state.clone()), applicant_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        let LoginResponse::Applicant(restored_applicant_session) = restored_applicant_session
+        else {
+            panic!("the restored session should belong to the applicant");
+        };
+        assert!(!restored_applicant_session.applicant.must_change_password);
         let submitted = submit_test_application(
             &state,
             applicant_headers.clone(),
@@ -1845,7 +2199,7 @@ mod tests {
             )
             .await
             .unwrap();
-            let admin = admin_login(
+            let (admin_login_headers, _) = admin_login(
                 State(state.clone()),
                 Json(AdminLoginRequest {
                     email: email.to_owned(),
@@ -1853,9 +2207,8 @@ mod tests {
                 }),
             )
             .await
-            .unwrap()
-            .0;
-            bearer(&admin.token)
+            .unwrap();
+            session_cookie_headers(&admin_login_headers)
         }
 
         let view_only_headers = create_permission_admin(
@@ -2162,7 +2515,7 @@ mod tests {
         .await
         .unwrap();
         assert!(matches!(
-            admin_list_jobs(State(state.clone()), bearer(&kadep.token)).await,
+            admin_list_jobs(State(state.clone()), kadep_headers.clone()).await,
             Err(ApiError::Unauthorized)
         ));
 
@@ -2185,7 +2538,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let refreshed_super_login = admin_login(
+        let (refreshed_super_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
                 email: "super@example.com".to_owned(),
@@ -2196,7 +2549,7 @@ mod tests {
         .unwrap();
         let final_audit_response = admin_list_audit_events(
             State(state.clone()),
-            bearer(&refreshed_super_login.token),
+            session_cookie_headers(&refreshed_super_login_headers),
             Query(AdminAuditQuery {
                 before_id: None,
                 limit: Some(50),
@@ -2397,11 +2750,11 @@ mod tests {
             "submitted",
             "screening"
         ));
-        assert!(is_valid_application_status_transition(
+        assert!(!is_valid_application_status_transition(
             "submitted",
             "interview"
         ));
-        assert!(is_valid_application_status_transition(
+        assert!(!is_valid_application_status_transition(
             "submitted",
             "accepted"
         ));
@@ -2413,7 +2766,7 @@ mod tests {
             "screening",
             "interview"
         ));
-        assert!(is_valid_application_status_transition(
+        assert!(!is_valid_application_status_transition(
             "screening",
             "accepted"
         ));

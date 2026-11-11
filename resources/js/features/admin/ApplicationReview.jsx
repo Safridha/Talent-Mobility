@@ -17,7 +17,6 @@ export function ApplicationReview({
   onClose,
   onSave,
   isSaving,
-  sessionToken,
   canChangeStatus = true,
   canDownloadDocuments = true,
 }) {
@@ -44,7 +43,7 @@ export function ApplicationReview({
     try {
       const blob = await apiDownload(
         `/admin/applications/${application.id}/documents/${file.id}`,
-        { token: sessionToken },
+        {},
       )
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -137,9 +136,17 @@ export function ApplicationReview({
             <section className="application-review-section">
               <h3><FileText aria-hidden="true" size={17} /> Posisi yang dilamar</h3>
               <dl className="application-detail-grid">
-                <div><dt>Kode posisi</dt><dd>{application.job_id}</dd></div>
+                <div><dt>Jenis lamaran</dt><dd>{application.job_id ? 'Lowongan' : 'Lamar langsung'}</dd></div>
+                {application.job_id ? (
+                  <div><dt>Kode posisi</dt><dd>{application.job_id}</dd></div>
+                ) : (
+                  <div className="application-detail-wide"><dt>Unit tujuan</dt><dd>{application.target_label || application.job_title}</dd></div>
+                )}
                 <div><dt>ID lamaran</dt><dd>{application.id}</dd></div>
               </dl>
+              {!application.job_id && application.position_description && (
+                <p className="application-review-position-description">{application.position_description}</p>
+              )}
             </section>
           </div>
 
@@ -176,7 +183,7 @@ export function ApplicationReview({
           {canChangeStatus ? (
             <section className="application-review-section application-review-status">
               <h3>Perbarui tahap seleksi</h3>
-              <p className="application-review-help">Status yang dipilih akan menjadi informasi terbaru bagi pelamar.</p>
+              <p className="application-review-help">Alur seleksi berurutan: Masuk, lalu Seleksi, Wawancara, dan Diterima. Lamaran dapat ditolak di setiap tahap; Diterima dan Ditolak adalah status akhir. Perubahan status akan diberitahukan kepada pelamar.</p>
               <label className="application-status-select">Status proses
                 <SearchableSelect
                   onChange={setStatus}

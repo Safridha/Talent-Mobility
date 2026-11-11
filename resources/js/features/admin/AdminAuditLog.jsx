@@ -20,9 +20,10 @@ const entityLabels = {
   bureau: 'Biro / bengkel',
   job_type: 'Jenis pekerjaan',
   employee: 'Direktori karyawan',
+  application_limit: 'Batas lamaran',
 }
 
-export function AdminAuditLog({ sessionToken }) {
+export function AdminAuditLog() {
   const [events, setEvents] = useState([])
   const [nextBeforeId, setNextBeforeId] = useState(null)
   const [search, setSearch] = useState('')
@@ -32,7 +33,7 @@ export function AdminAuditLog({ sessionToken }) {
 
   useEffect(() => {
     let active = true
-    apiRequest('/admin/audit-log?limit=100', { token: sessionToken })
+    apiRequest('/admin/audit-log?limit=100')
       .then((response) => {
         if (!active) return
         setEvents(response.data)
@@ -46,7 +47,7 @@ export function AdminAuditLog({ sessionToken }) {
         if (active) setIsLoading(false)
       })
     return () => { active = false }
-  }, [sessionToken])
+  }, [])
 
   async function loadMore() {
     if (!nextBeforeId || isLoadingMore) return
@@ -55,7 +56,7 @@ export function AdminAuditLog({ sessionToken }) {
     try {
       const response = await apiRequest(
         `/admin/audit-log?limit=100&before_id=${encodeURIComponent(nextBeforeId)}`,
-        { token: sessionToken },
+        {},
       )
       setEvents((current) => [...current, ...response.data])
       setNextBeforeId(response.next_before_id)

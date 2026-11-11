@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../query/queryKeys'
 import ApplicationForm from './ApplicationForm'
-import { JobCard, JobDetail } from './JobCards'
-import { ArrowLeft, Bell, Building2, ChevronLeft, ChevronRight, FileText, LogIn, Megaphone, RotateCcw, Search, SlidersHorizontal, Users, UserPlus, Wrench, X } from 'lucide-react'
+import { ArrowLeft, Bell, Building2, Eye, FileText, LogIn, Megaphone, RotateCcw, Search, Users, Wrench, X } from 'lucide-react'
 import { apiRequest } from '../../api'
 import Brand from '../../components/Brand'
+import ModalBackdrop from '../../components/ModalBackdrop'
 import SuccessPopup from '../../components/SuccessPopup'
-import ComingSoonPopup from '../../components/ComingSoonPopup'
 import SearchableSelect from '../../components/SearchableSelect'
 import PushNotificationControl from '../../components/PushNotificationControl'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -18,100 +17,72 @@ import AuthDialog from '../auth/AuthDialog'
 import { applicationStatusOptions, getApplicationStatusDescription } from '../applications/status'
 import { useHashRoute } from '../../useHashRoute'
 
-const PUBLIC_JOBS_PER_PAGE = 12
-const EMPTY_JOBS = []
 const APPLICANT_ROUTES = ['lowongan', 'lamaran', 'akun/profil', 'akun/keamanan']
 
 export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdated, sessionNotice }) {
   const queryClient = useQueryClient()
   const [route, navigate] = useHashRoute('lowongan', APPLICANT_ROUTES)
-  const [isComingSoonOpen, setIsComingSoonOpen] = useState(true)
-  const [jobStatus, setJobStatus] = useState('open')
   const accountSection = route === 'akun/profil' ? 'profile' : route === 'akun/keamanan' ? 'security' : null
   const [accountReturnTab, setAccountReturnTab] = useState(route === 'lamaran' ? 'applications' : 'jobs')
   const activeTab = accountSection
     ? accountReturnTab
     : route === 'lamaran' ? 'applications' : 'jobs'
-  const jobsQuery = useQuery({
-    queryKey: [...queryKeys.publicJobs, jobStatus],
-    queryFn: async () => (await apiRequest(`/jobs?status=${jobStatus}`)).data,
-  })
   const organizationQuery = useQuery({
     queryKey: queryKeys.publicOrganization,
     queryFn: async () => apiRequest('/organization'),
   })
-  const jobs = jobsQuery.data ?? EMPTY_JOBS
-  const statusFilteredJobs = useMemo(
-    () => jobs.filter((job) => (
-      jobStatus === 'all'
-        ? job.status === 'open' || job.status === 'closed'
-        : job.status === jobStatus
-    )),
-    [jobStatus, jobs],
-  )
   const organization = organizationQuery.data ?? { divisions: [], departments: [], bureaus: [] }
-  const targetUnitCount = new Set(statusFilteredJobs.map((job) => (
-    `${job.target_level}:${job.division_id}:${job.department_id ?? ''}:${job.bureau_id ?? ''}`
-  ))).size
-  const jobStatusLabels = {
-    open: { title: 'Posisi Aktif', results: 'aktif' },
-    closed: { title: 'Posisi Ditutup', results: 'nonaktif / ditutup' },
-    all: { title: 'Semua Posisi', results: 'aktif dan ditutup' },
-  }[jobStatus]
-  const isLoading = jobsQuery.isPending || organizationQuery.isPending
-  const jobsError = jobsQuery.error?.message || organizationQuery.error?.message || ''
+  const isLoading = organizationQuery.isPending
+  const organizationError = organizationQuery.error?.message || ''
   const [logoutError, setLogoutError] = useState('')
   const [applicationActionError, setApplicationActionError] = useState('')
   const [applicationNotice, setApplicationNotice] = useState('')
   const [divisionId, setDivisionId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
   const [unitTarget, setUnitTarget] = useState('')
-  const [jobPage, setJobPage] = useState(1)
-  const [selectedJob, setSelectedJob] = useState(null)
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
+  const [selectedDirectTarget, setSelectedDirectTarget] = useState(null)
   const [authMode, setAuthMode] = useState(null)
   const [applicationFormOpen, setApplicationFormOpen] = useState(false)
-  const [pendingJob, setPendingJob] = useState(null)
+  const [pendingDirectTarget, setPendingDirectTarget] = useState(null)
   const [applyingJobId, setApplyingJobId] = useState('')
   const [notificationActionError, setNotificationActionError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [markingNotificationId, setMarkingNotificationId] = useState(null)
-  const sessionToken = session?.token
-  const [avatarUrl, refreshAvatar] = useAccountAvatar(sessionToken)
+  const isAuthenticated = Boolean(session)
+  const [avatarUrl, refreshAvatar] = useAccountAvatar(isAuthenticated)
   const applicationsQuery = useQuery({
     queryKey: queryKeys.applicantApplications,
-    queryFn: () => apiRequest('/applications', { token: sessionToken }),
-    enabled: Boolean(sessionToken),
+    queryFn: () => apiRequest('/applications'),
+    enabled: isAuthenticated,
     refetchInterval: 15_000,
   })
   const notificationsQuery = useQuery({
     queryKey: queryKeys.applicantNotifications,
-    queryFn: () => apiRequest('/notifications', { token: sessionToken }),
-    enabled: Boolean(sessionToken),
+    queryFn: () => apiRequest('/notifications'),
+    enabled: isAuthenticated,
     refetchInterval: 15_000,
   })
   const currentUserApplications = applicationsQuery.data?.data ?? []
   const selectedApplication = currentUserApplications.find((application) => application.id === selectedApplicationId)
-  const selectedApplicationJob = selectedApplication
-    ? jobs.find((job) => job.id === selectedApplication.job_id)
-    : null
-  const appliedJobIds = new Set(
-    currentUserApplications
-      .filter((application) => application.status !== 'rejected')
-      .map((application) => application.job_id),
-  )
-  const isApplicationsLoading = Boolean(sessionToken && applicationsQuery.isPending)
+  const selectedApplicationJob = selectedApplication ? {
+    id: selectedApplication.job_id,
+    title: selectedApplication.job_title || selectedApplication.position_title,
+    division: selectedApplication.division,
+    department: selectedApplication.department,
+    unit: selectedApplication.unit,
+  } : null
+  const isApplicationsLoading = Boolean(isAuthenticated && applicationsQuery.isPending)
   const currentUserNotifications = notificationsQuery.data?.data ?? []
   const currentUnreadNotificationCount = notificationsQuery.data?.unread_count ?? 0
   const applicationsError = applicationActionError || applicationsQuery.error?.message || ''
   const notificationsError = notificationActionError || notificationsQuery.error?.message || ''
   const submitApplicationMutation = useMutation({
-    mutationFn: ({ token, body }) => apiRequest('/applications', {
+    mutationFn: ({ body }) => apiRequest('/applications', {
       method: 'POST',
-      token,
       body,
     }),
-    onSuccess: (application, { job }) => {
+    onSuccess: (application, { position }) => {
       queryClient.setQueryData(queryKeys.applicantApplications, (current) => {
         const data = current?.data ?? []
         if (data.some((item) => item.id === application.application_id)) return current
@@ -120,20 +91,26 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
           data: [...data, {
             id: application.application_id,
             job_id: application.job_id,
+            target_department_id: application.target_department_id,
+            target_bureau_id: application.target_bureau_id,
+            job_title: position.title,
+            target_level: position.target_level,
+            division: position.division,
+            department: position.department,
+            unit: position.unit,
+            position_description: position.description || null,
             status: application.status,
             created_at: application.created_at,
           }],
         }
       })
       void queryClient.invalidateQueries({ queryKey: queryKeys.applicantNotifications })
-      setApplicationNotice(`Lamaran untuk ${job.title} berhasil dikirim.`)
-      setSelectedJob(null)
+      setApplicationNotice(`Lamaran untuk ${position.title} berhasil dikirim.`)
     },
   })
   const markNotificationMutation = useMutation({
     mutationFn: (notification) => apiRequest(`/notifications/${notification.id}/read`, {
       method: 'PATCH',
-      token: sessionToken,
     }),
     onSuccess: (_, notification) => {
       queryClient.setQueryData(queryKeys.applicantNotifications, (current) => {
@@ -162,64 +139,79 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
 
   function navigateAccountSection(section) {
     if (section) setAccountReturnTab(activeTab)
-    navigate(section ? `akun/${section}` : activeTab === 'applications' ? 'lamaran' : 'lowongan')
+    navigate(section ? `akun/${section === 'profile' ? 'profil' : 'keamanan'}` : activeTab === 'applications' ? 'lamaran' : 'lowongan')
   }
 
   const divisions = organization.divisions
-  const selectedDivision = divisions.find((division) => String(division.id) === divisionId)
   const departments = useMemo(
     () => organization.departments.filter((department) => !divisionId || String(department.division_id) === divisionId),
     [divisionId, organization.departments],
   )
-  const units = useMemo(() => {
-    const bureaus = organization.bureaus
-      .filter((bureau) => {
-        const department = organization.departments.find((item) => String(item.id) === String(bureau.department_id))
-        return Boolean(departmentId) && !departmentId.startsWith('secretariat:')
-          && String(department?.division_id) === divisionId
-          && String(bureau.department_id) === departmentId
-      })
-      .map((bureau) => ({
-        key: `bureau:${bureau.id}`,
-        label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
-      }))
-    return bureaus
-  }, [departmentId, divisionId, organization.bureaus, organization.departments])
-  const filteredJobs = useMemo(() => {
-    return statusFilteredJobs.filter((job) => (
-      (!divisionId || String(job.division_id) === divisionId)
-      && (!departmentId
-        || (departmentId.startsWith('secretariat:')
-          ? job.target_level === 'secretariat'
-            && String(job.division_id) === departmentId.slice('secretariat:'.length)
-          : String(job.department_id) === departmentId))
-      && (!unitTarget
-        || (unitTarget.startsWith('bureau:')
-          && job.target_level === 'bureau'
-          && String(job.bureau_id) === unitTarget.slice('bureau:'.length)))
-    ))
-  }, [departmentId, divisionId, statusFilteredJobs, unitTarget])
-  const jobPageCount = Math.ceil(filteredJobs.length / PUBLIC_JOBS_PER_PAGE)
-  const currentJobPage = Math.min(jobPage, Math.max(1, jobPageCount))
-  const visibleJobs = filteredJobs.slice(
-    (currentJobPage - 1) * PUBLIC_JOBS_PER_PAGE,
-    currentJobPage * PUBLIC_JOBS_PER_PAGE,
-  )
+  const units = useMemo(() => organization.bureaus
+    .filter((bureau) => {
+      const department = organization.departments.find((item) => String(item.id) === String(bureau.department_id))
+      return Boolean(departmentId)
+        && String(department?.division_id) === divisionId
+        && String(bureau.department_id) === departmentId
+    })
+    .map((bureau) => ({
+      key: `bureau:${bureau.id}`,
+      label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+    })), [departmentId, divisionId, organization.bureaus, organization.departments])
+  const directTargets = useMemo(() => {
+    if (!divisionId || !departmentId) return []
+    const department = organization.departments.find((item) => String(item.id) === departmentId)
+    if (!department || String(department.division_id) !== divisionId) return []
+    const division = organization.divisions.find((item) => String(item.id) === divisionId)
+    const targets = [{
+      key: `direct:${department.id}:`,
+      title: department.name,
+      target_department_id: department.id,
+      target_bureau_id: null,
+      target_level: 'department',
+      division: division?.name || '',
+      department: department.name,
+      unit: '',
+      description: (department.description || '').trim(),
+    }]
+    if (unitTarget.startsWith('bureau:')) {
+      const bureauId = unitTarget.slice('bureau:'.length)
+      const bureau = organization.bureaus.find(
+        (item) => String(item.id) === bureauId && String(item.department_id) === departmentId,
+      )
+      if (bureau) {
+        targets.push({
+          key: `direct:${department.id}:${bureau.id}`,
+          title: bureau.name,
+          target_department_id: department.id,
+          target_bureau_id: bureau.id,
+          target_level: 'bureau',
+          division: division?.name || '',
+          department: department.name,
+          unit: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+          description: (bureau.description || '').trim(),
+        })
+      }
+    }
+    return targets
+  }, [departmentId, divisionId, organization.bureaus, organization.departments, organization.divisions, unitTarget])
+  const appliedDirectTargetKeys = new Set(currentUserApplications
+    .filter((application) => !application.job_id && application.status !== 'rejected')
+    .map((application) => `direct:${application.target_department_id}:${application.target_bureau_id ?? ''}`))
 
-  function resetFilters() {
-    setJobStatus('open')
+  function resetDirectTargetSelection() {
     setDivisionId('')
     setDepartmentId('')
     setUnitTarget('')
-    setJobPage(1)
+    setApplicationActionError('')
   }
 
-  async function submitApplication(job, token, body) {
+  async function submitApplication(position, body) {
     setApplicationNotice('')
     setApplicationActionError('')
-    setApplyingJobId(job.id)
+    setApplyingJobId(position.id || position.key)
     try {
-      await submitApplicationMutation.mutateAsync({ job, token, body })
+      await submitApplicationMutation.mutateAsync({ position, body })
     } catch (requestError) {
       setApplicationActionError(requestError.message)
       throw requestError
@@ -228,39 +220,39 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     }
   }
 
-  function handleApply(job) {
-    if (job.status !== 'open') return
-    setSelectedJob(null)
+  function handleDirectApply(directTarget) {
     setApplicationNotice('')
     if (!session) {
-      setPendingJob(job)
-      setAuthMode('register')
+      setPendingDirectTarget(directTarget)
+      setAuthMode('login')
       return
     }
-    if (!appliedJobIds.has(job.id)) {
-      setPendingJob(job)
-      setApplicationFormOpen(true)
+    if (appliedDirectTargetKeys.has(directTarget.key)) {
+      setApplicationActionError('Anda sudah melamar unit ini dan lamaran masih diproses.')
+      return
     }
+    setPendingDirectTarget(directTarget)
+    setApplicationFormOpen(true)
   }
 
   function handleAuthSuccess(newSession) {
     onLogin(newSession)
     setAuthMode(null)
     setApplicationActionError('')
-    const job = pendingJob
-    if (job && newSession.role !== 'admin') {
+    if (pendingDirectTarget && newSession.role !== 'admin') {
       setApplicationFormOpen(true)
     } else {
-      setPendingJob(null)
+      setPendingDirectTarget(null)
       setApplicationFormOpen(false)
     }
   }
 
   async function handleApplicationSubmit(body) {
-    if (!pendingJob || !session) return
-    await submitApplication(pendingJob, session.token, body)
+    const position = pendingDirectTarget
+    if (!position || !session) return
+    await submitApplication(position, body)
     setApplicationFormOpen(false)
-    setPendingJob(null)
+    setPendingDirectTarget(null)
   }
 
   async function openApplicantNotification(notification) {
@@ -322,7 +314,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                         <div><strong>Status lamaran</strong><span>Perubahan proses dari tim rekrutmen</span></div>
                         <button aria-label="Tutup notifikasi" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                       </header>
-                      <PushNotificationControl sessionToken={sessionToken} />
+                      <PushNotificationControl isAuthenticated={isAuthenticated} />
                       {notificationsError ? (
                         <p className="applicant-notification-error" role="alert">{notificationsError}</p>
                       ) : notificationsQuery.isPending ? (
@@ -370,7 +362,6 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             ) : (
               <div className="auth-actions">
                 <button className="header-auth-button" onClick={() => setAuthMode('login')}><LogIn size={16} /> Masuk</button>
-                <button className="header-register-button" onClick={() => setAuthMode('register')}><UserPlus size={16} /> Daftar</button>
               </div>
             )}
           </div>
@@ -387,7 +378,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             onProfileUpdated={onProfileUpdated}
             onSectionChange={navigateAccountSection}
             section={accountSection}
-            session={{ role: session.role, token: session.token, user: session.applicant }}
+            session={{ role: session.role, user: session.applicant }}
           />
         ) : activeTab === 'jobs' ? (
           <>
@@ -397,66 +388,75 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 <h1>Reskilling, Upskilling, Mobility in Production</h1>
                 <p>Program PAL Indonesia melalui reskilling, upskilling, dan mobilitas talenta lintas fungsi untuk memberdayakan karyawan menjadi kekuatan nyata dalam proses produksi.</p>
               </div>
-              <div className="hero-stats" aria-label="Ringkasan lowongan">
-                <div><strong>{statusFilteredJobs.length}</strong><span>{jobStatusLabels.title}</span></div>
-                <div><strong>{targetUnitCount}</strong><span>Unit Tujuan</span></div>
+              <div className="hero-stats organization-hero-stats" aria-label="Unit kerja yang tersedia untuk Lamar Langsung">
+                <div><strong>{organization.divisions.length}</strong><span>Divisi</span></div>
+                <div><strong>{organization.departments.length}</strong><span>Departemen</span></div>
+                <div><strong>{organization.bureaus.length}</strong><span>Biro / Bengkel</span></div>
               </div>
             </section>
 
-            <section className="filter-panel" aria-label="Filter lowongan">
-              <div className="filter-heading">
-                <h2><SlidersHorizontal size={21} /> Filter lowongan</h2>
-                <button className="reset-button" onClick={resetFilters}><RotateCcw size={15} /> Reset Filter</button>
-              </div>
-              <div className="filter-grid">
-                <label>Status lowongan
+            <section aria-label="Pilih tujuan lamaran langsung" className="direct-application-picker">
+              <header className="direct-application-picker-heading">
+                <div>
+                  <span className="direct-application-picker-kicker">TUJUAN LAMARAN</span>
+                  <h2>Pilih unit tujuan</h2>
+                  <p>Pilih Divisi dan Departemen. Biro atau Bengkel dapat dipilih jika ingin tujuan yang lebih spesifik.</p>
+                </div>
+                <button
+                  className="reset-button"
+                  disabled={!divisionId && !departmentId && !unitTarget}
+                  onClick={resetDirectTargetSelection}
+                  type="button"
+                >
+                  <RotateCcw size={14} /> Atur ulang
+                </button>
+              </header>
+              <div className="direct-application-picker-grid">
+                <label>
+                  <span><b>1</b> Divisi</span>
                   <SearchableSelect
-                    onChange={(value) => { setJobStatus(value); setJobPage(1); setSelectedJob(null) }}
+                    menuPlacement="below"
+                    onChange={(value) => {
+                      setDivisionId(value)
+                      setDepartmentId('')
+                      setUnitTarget('')
+                      setApplicationActionError('')
+                    }}
                     options={[
-                      { value: 'open', label: 'Aktif / Open' },
-                      { value: 'closed', label: 'Nonaktif / Closed' },
-                      { value: 'all', label: 'Semua lowongan' },
-                    ]}
-                    value={jobStatus}
-                  />
-                </label>
-                <label>Divisi Tujuan
-                  <SearchableSelect
-                    onChange={(value) => { setDivisionId(value); setDepartmentId(''); setUnitTarget(''); setJobPage(1) }}
-                    options={[
-                      { value: '', label: 'Semua Divisi' },
+                      { value: '', label: 'Pilih divisi' },
                       ...divisions.map((item) => ({ value: String(item.id), label: item.name })),
                     ]}
                     value={divisionId}
                   />
                 </label>
-                <label>Departemen / Sekretariat Tujuan
+                <label>
+                  <span><b>2</b> Departemen</span>
                   <SearchableSelect
                     disabled={!divisionId}
-                    onChange={(value) => { setDepartmentId(value); setUnitTarget(''); setJobPage(1) }}
+                    menuPlacement="below"
+                    onChange={(value) => {
+                      setDepartmentId(value)
+                      setUnitTarget('')
+                      setApplicationActionError('')
+                    }}
                     options={[
-                      { value: '', label: divisionId ? 'Semua Departemen / Sekretariat' : 'Pilih divisi dahulu' },
+                      { value: '', label: divisionId ? 'Pilih departemen' : 'Pilih divisi dahulu' },
                       ...departments.map((item) => ({ value: String(item.id), label: item.name })),
-                      ...(selectedDivision?.secretariat_name
-                        ? [{ value: `secretariat:${divisionId}`, label: `Sekretariat Divisi — ${selectedDivision.secretariat_name}` }]
-                        : []),
                     ]}
                     value={departmentId}
                   />
                 </label>
-                <label>Biro / Bengkel Tujuan
+                <label>
+                  <span><b>3</b> Biro / Bengkel <small>(opsional)</small></span>
                   <SearchableSelect
-                    disabled={!departmentId || departmentId.startsWith('secretariat:')}
-                    onChange={(value) => { setUnitTarget(value); setJobPage(1) }}
+                    disabled={!departmentId}
+                    menuPlacement="below"
+                    onChange={(value) => {
+                      setUnitTarget(value)
+                      setApplicationActionError('')
+                    }}
                     options={[
-                      {
-                        value: '',
-                        label: departmentId
-                          ? departmentId.startsWith('secretariat:')
-                            ? 'Tidak berlaku untuk sekretariat'
-                            : 'Semua Biro & Bengkel'
-                          : 'Pilih departemen dahulu',
-                      },
+                      { value: '', label: departmentId ? 'Semua departemen' : 'Pilih departemen dahulu' },
                       ...units.map((item) => ({ value: item.key, label: item.label })),
                     ]}
                     value={unitTarget}
@@ -465,64 +465,65 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
               </div>
             </section>
 
-            <div className="results-bar">
-              <span>Menampilkan <strong>{filteredJobs.length}</strong> lowongan {jobStatusLabels.results}</span>
-            </div>
             {applicationsError && <p className="login-error" role="alert">{applicationsError}</p>}
             <SuccessPopup message={applicationNotice} onClose={setApplicationNotice} />
             {isLoading ? (
-              <section className="empty-state"><h2>Memuat lowongan...</h2></section>
-            ) : jobsError ? (
-              <section className="empty-state"><h2>Lowongan belum dapat dimuat</h2><p role="alert">{jobsError}</p></section>
-            ) : filteredJobs.length ? (
-              <section className="job-grid public-job-grid" aria-label="Daftar lowongan">
-                {visibleJobs.map((job) => (
-                  <JobCard
-                    hasApplied={appliedJobIds.has(job.id)}
-                    isApplying={applyingJobId === job.id}
-                    job={job}
-                    key={job.id}
-                    onApply={handleApply}
-                    onSelect={setSelectedJob}
-                  />
-                ))}
+              <section className="empty-state"><h2>Memuat unit kerja...</h2></section>
+            ) : organizationError ? (
+              <section className="empty-state"><h2>Unit kerja belum dapat dimuat</h2><p role="alert">{organizationError}</p></section>
+            ) : directTargets.length > 0 ? (
+              <section aria-label="Pilihan unit kerja untuk Lamar Langsung" className="direct-application-results">
+                <div className="results-bar">
+                  <span><strong>{directTargets.length}</strong> tujuan tersedia di {divisions.length} divisi.</span>
+                  <span>Pilih unit untuk melihat cakupan tugas atau mengajukan lamaran langsung.</span>
+                </div>
+                <div className="job-grid public-job-grid direct-application-grid">
+                  {directTargets.map((target) => {
+                    const hasApplied = appliedDirectTargetKeys.has(target.key)
+                    const isApplying = applyingJobId === target.key
+                    return (
+                      <article className="job-card direct-application-card" key={target.key}>
+                        <div className="card-top">
+                          <span className="division-tag"><Building2 size={14} /> {target.division}</span>
+                        </div>
+                        <h2>{target.title}</h2>
+                        <div className="job-organization">
+                          <span><Users size={15} />{target.department}</span>
+                          {target.unit && <span><Wrench size={15} />{target.unit}</span>}
+                        </div>
+                        <p className="job-summary direct-application-card-description">
+                          {target.description || `Lamaran langsung untuk ${target.target_level === 'department' ? 'seluruh departemen ini' : 'unit ini'}.`}
+                        </p>
+                        <div className="card-footer">
+                          <button
+                            className="detail-button"
+                            onClick={() => setSelectedDirectTarget(target)}
+                            type="button"
+                          >
+                            <Eye size={15} /> Lihat detail
+                          </button>
+                          <button
+                            className="apply-button"
+                            disabled={hasApplied || Boolean(applyingJobId)}
+                            onClick={() => handleDirectApply(target)}
+                            type="button"
+                          >
+                            {isApplying ? 'Mengirim...' : hasApplied ? 'Sudah melamar' : 'Apply'}
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
               </section>
             ) : (
-              <section className="empty-state"><Search size={24} /><h2>{jobStatus === 'closed' && statusFilteredJobs.length === 0 ? 'Belum ada lowongan nonaktif' : 'Lowongan tidak ditemukan'}</h2><p>{jobStatus === 'closed' && statusFilteredJobs.length === 0 ? 'Saat ini belum ada lowongan yang berstatus nonaktif / ditutup.' : 'Coba pilih divisi, departemen, atau biro / bengkel lain.'}</p><button className="reset-button" onClick={resetFilters}>Reset Filter</button></section>
-            )}
-            {jobPageCount > 1 && (
-              <nav aria-label="Halaman daftar lowongan" className="job-pagination">
-                <button
-                  aria-label="Halaman sebelumnya"
-                  className="job-pagination-control"
-                  disabled={currentJobPage === 1}
-                  onClick={() => setJobPage(currentJobPage - 1)}
-                  type="button"
-                >
-                  <ChevronLeft aria-hidden="true" size={18} />
-                </button>
-                {Array.from({ length: jobPageCount }, (_, index) => index + 1).map((page) => (
-                  <button
-                    aria-current={currentJobPage === page ? 'page' : undefined}
-                    aria-label={`Halaman ${page}`}
-                    className={`job-pagination-page${currentJobPage === page ? ' active' : ''}`}
-                    key={page}
-                    onClick={() => setJobPage(page)}
-                    type="button"
-                  >
-                    {page}
-                  </button>
-                ))}
-                <button
-                  aria-label="Halaman berikutnya"
-                  className="job-pagination-control"
-                  disabled={currentJobPage === jobPageCount}
-                  onClick={() => setJobPage(currentJobPage + 1)}
-                  type="button"
-                >
-                  <ChevronRight aria-hidden="true" size={18} />
-                </button>
-              </nav>
+              <section className="empty-state">
+                <Search size={24} />
+                <h2>{departmentId ? 'Belum ada pilihan untuk unit ini' : 'Tentukan unit tujuan terlebih dahulu'}</h2>
+                <p>{departmentId
+                  ? 'Periksa kembali pilihan Departemen atau Biro/Bengkel yang tersedia.'
+                  : 'Pilih Divisi dan Departemen untuk melihat kartu tujuan lamaran langsung.'}</p>
+              </section>
             )}
           </>
         ) : activeTab === 'applications' && session ? (
@@ -555,7 +556,12 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             ) : currentUserApplications.length ? (
               <section aria-label="Riwayat lamaran" className="applications-card-grid">
                 {currentUserApplications.map((application) => {
-                  const job = jobs.find((item) => item.id === application.job_id)
+                  const job = application.job_title || application.position_title ? {
+                    title: application.job_title || application.position_title,
+                    division: application.division,
+                    department: application.department,
+                    unit: application.unit,
+                  } : null
                   const status = applicationStatusOptions.find((item) => item.value === application.status)
                   const submittedAt = new Date(application.created_at)
                   const submittedAtLabel = Number.isNaN(submittedAt.getTime())
@@ -573,14 +579,16 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                         <span className={`status-pill status-${application.status}`}>{status?.label || application.status}</span>
                         <time dateTime={Number.isNaN(submittedAt.getTime()) ? undefined : application.created_at}>{submittedAtLabel}</time>
                       </div>
-                      <h2>{job?.title || 'Posisi tidak lagi tersedia'}</h2>
-                      {job ? (
+                      <h2>{job?.title || application.job_title || application.position_title || 'Posisi tidak lagi tersedia'}</h2>
+                      {job && (job.division || job.department || job.unit) ? (
                         <div className="application-card-organization">
-                          <span><Building2 size={15} />{job.division}</span>
-                          <span><Users size={15} />{job.department}</span>
-                          <span><Wrench size={15} />{job.unit}</span>
+                          {job.division && <span><Building2 size={15} />{job.division}</span>}
+                          {job.department && <span><Users size={15} />{job.department}</span>}
+                          {job.unit && <span><Wrench size={15} />{job.unit}</span>}
                         </div>
-                      ) : <p className="application-card-unavailable">Detail posisi sudah tidak tersedia.</p>}
+                      ) : !application.job_title && !application.position_title ? (
+                        <p className="application-card-unavailable">Detail posisi sudah tidak tersedia.</p>
+                      ) : null}
                       <p className="application-card-summary">{getApplicationStatusDescription(application.status) || 'Status lamaran sedang diperbarui.'}</p>
                       <footer><span>ID lamaran</span><code>{application.id || 'ID belum tersedia'}</code></footer>
                     </button>
@@ -598,30 +606,66 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
         ) : null}
       </div>
 
-      {selectedJob && (
-        <JobDetail
-          hasApplied={appliedJobIds.has(selectedJob.id)}
-          isApplying={applyingJobId === selectedJob.id}
-          job={selectedJob}
-          onApply={handleApply}
-          onClose={() => setSelectedJob(null)}
-        />
+      {selectedDirectTarget && (
+        <ModalBackdrop onDismiss={() => setSelectedDirectTarget(null)}>
+          <section
+            aria-labelledby="direct-target-detail-title"
+            aria-modal="true"
+            className="detail-modal direct-target-detail-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="modal-heading">
+              <span className="division-tag"><Building2 size={14} /> {selectedDirectTarget.division}</span>
+              <button
+                aria-label="Tutup detail unit"
+                className="icon-button"
+                onClick={() => setSelectedDirectTarget(null)}
+                type="button"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <h2 id="direct-target-detail-title">{selectedDirectTarget.title}</h2>
+            <div className="job-organization">
+              <span><Users size={15} />{selectedDirectTarget.department}</span>
+              {selectedDirectTarget.unit && <span><Wrench size={15} />{selectedDirectTarget.unit}</span>}
+            </div>
+            <section className="direct-target-detail-description">
+              <h3>Deskripsi unit</h3>
+              <p>{selectedDirectTarget.description || 'Deskripsi unit belum tersedia pada master data.'}</p>
+            </section>
+            <footer className="detail-actions">
+              <button className="detail-button" onClick={() => setSelectedDirectTarget(null)} type="button">Tutup</button>
+              <button
+                className="apply-button"
+                disabled={appliedDirectTargetKeys.has(selectedDirectTarget.key) || Boolean(applyingJobId)}
+                onClick={() => {
+                  const target = selectedDirectTarget
+                  setSelectedDirectTarget(null)
+                  handleDirectApply(target)
+                }}
+                type="button"
+              >
+                {appliedDirectTargetKeys.has(selectedDirectTarget.key) ? 'Sudah melamar' : 'Apply'}
+              </button>
+            </footer>
+          </section>
+        </ModalBackdrop>
       )}
       {authMode && (
-        <AuthDialog initialMode={authMode} onClose={() => { setAuthMode(null); setPendingJob(null) }} onSuccess={handleAuthSuccess} />
+        <AuthDialog initialMode={authMode} onClose={() => { setAuthMode(null); setPendingDirectTarget(null) }} onSuccess={handleAuthSuccess} />
       )}
-      {applicationFormOpen && pendingJob && session && (
+      {applicationFormOpen && pendingDirectTarget && session && (
         <ApplicationForm
-          isSubmitting={applyingJobId === pendingJob.id}
-          job={pendingJob}
+          directTarget={pendingDirectTarget}
+          isSubmitting={applyingJobId === pendingDirectTarget.key}
+          job={null}
           organization={organization}
-          onClose={() => { setApplicationFormOpen(false); setPendingJob(null) }}
+          onClose={() => { setApplicationFormOpen(false); setPendingDirectTarget(null) }}
           onSubmit={handleApplicationSubmit}
           session={session}
         />
-      )}
-      {route === 'lowongan' && isComingSoonOpen && (
-        <ComingSoonPopup onClose={() => setIsComingSoonOpen(false)} />
       )}
       {selectedApplication && (
         <ApplicantApplicationProgress

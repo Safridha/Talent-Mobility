@@ -5,6 +5,7 @@ import { ChevronDown, Search } from 'lucide-react'
 export default function SearchableSelect({
   disabled = false,
   id,
+  menuPlacement = 'auto',
   name,
   onChange,
   options,
@@ -55,8 +56,10 @@ export default function SearchableSelect({
       const spaceBelow = Math.max(0, viewportHeight - bounds.bottom - margin)
       const spaceAbove = Math.max(0, bounds.top - margin)
       const expectedMenuHeight = Math.min(280, Math.max(48, options.length * 42 + 10))
-      const opensAbove = spaceBelow < expectedMenuHeight && spaceAbove > spaceBelow
-      const availableHeight = opensAbove ? spaceAbove : spaceBelow
+      const opensAbove = menuPlacement === 'auto'
+        && spaceBelow < expectedMenuHeight
+        && spaceAbove > spaceBelow
+      const availableHeight = opensAbove ? spaceAbove : Math.max(48, spaceBelow)
       const maxWidth = viewportWidth - margin * 2
       const width = Math.min(Math.max(bounds.width, Math.min(240, maxWidth)), maxWidth)
       const left = Math.min(
@@ -80,7 +83,7 @@ export default function SearchableSelect({
       window.removeEventListener('resize', updateMenuPosition)
       window.removeEventListener('scroll', updateMenuPosition, true)
     }
-  }, [isOpen, options.length])
+  }, [isOpen, menuPlacement, options.length])
 
   useEffect(() => {
     if (!isOpen) return
