@@ -37,7 +37,6 @@ mod admin_audit;
 mod admin_permissions;
 mod applications;
 mod auth;
-mod dev_seed;
 mod employee_directory;
 mod jobs;
 
@@ -60,8 +59,6 @@ const MAX_APPLICATION_DOCUMENTS: usize = 5;
 const MAX_APPLICATION_BODY_BYTES: usize = 32 * 1024 * 1024;
 const MAX_APPLICATION_STATUS_REASON_CHARS: usize = 1000;
 const MAX_PROFILE_PHOTO_BYTES: usize = 2 * 1024 * 1024;
-const LOCAL_DEV_DATABASE_URL: &str =
-    "postgres://postgres:local-dev-only@127.0.0.1:54329/talent_mobility_dev";
 
 #[derive(Debug)]
 enum ApiError {
@@ -674,17 +671,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&database_url)
         .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
-    if env::var("APP_DEV_MASTER_SEED").is_ok_and(|value| value == "true") {
-        let database_name: String = sqlx::query_scalar("SELECT current_database()")
-            .fetch_one(&pool)
-            .await?;
-        if database_name != "talent_mobility_dev" || database_url != LOCAL_DEV_DATABASE_URL {
-            return Err(
-                "APP_DEV_MASTER_SEED is restricted to the local development database.".into(),
-            );
-        }
-        dev_seed::seed_dev_master_data(&pool).await?;
-    }
     ensure_application_public_ids(&pool).await?;
     seed_admin(&pool).await?;
 

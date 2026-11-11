@@ -7,27 +7,28 @@ Axum recruitment API with PostgreSQL, applicant accounts, bearer-token authentic
 - Rust and Cargo
 - PostgreSQL
 - Node.js and npm for the React frontend
-- Docker Desktop for the no-`.env` development setup
 
 ## Run locally
 
-For the no-`.env` development setup, follow the root [README](../../README.md); `npm run dev` starts a loopback-only PostgreSQL container and seeds the versioned development master snapshot into a fresh database.
-
-To run the backend directly with a separate development database, copy the example environment file and set the PostgreSQL connection and all three `ADMIN_*` bootstrap values. Use a unique password of 8–128 characters containing uppercase and lowercase letters, a number, and a symbol:
+From the project root, copy the example environment file, set the PostgreSQL connection, and configure all three `ADMIN_*` bootstrap values with a unique password of 8–128 characters containing uppercase and lowercase letters, a number, and a symbol:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Create the `talent_mobility` database if it does not exist, then build the frontend and start the backend from the project root:
+Create the `talent_mobility` database if it does not exist, then install the React dependencies:
 
 ```powershell
-npm ci
-npm run build
-cargo run -p app-backend
+npm install
 ```
 
-Open `http://127.0.0.1:8000`. SQLx applies the schema and official organization migrations on startup.
+Start the frontend and backend together from the project root:
+
+```powershell
+npm run dev
+```
+
+Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema and the four official organization divisions on startup. Press `Ctrl+C` to stop both processes.
 
 To enable forgotten-password emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `APP_PUBLIC_URL` in the server environment. Do not commit SMTP credentials.
 

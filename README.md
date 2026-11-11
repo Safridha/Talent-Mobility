@@ -13,23 +13,19 @@ Portal rekrutmen dengan frontend React/Vite dan backend Rust/Axum, memakai Postg
 - `Cargo.toml`: Cargo workspace.
 - `.env.example`: contoh konfigurasi lokal; salin menjadi `.env` dan isi kredensial database. Jangan commit `.env`.
 
-## Menjalankan lokal tanpa `.env`
+## Menjalankan lokal
 
-Persiapkan Docker Desktop, Node.js 22+, dan Rust stable. Setelah clone atau pull:
+1. Pastikan database PostgreSQL `talent_mobility` tersedia.
+2. Dari root project: `Copy-Item .env.example .env`, lalu isi `DATABASE_URL` dan tiga variabel `ADMIN_*` untuk membuat akun admin awal.
+3. Pasang dependensi frontend dengan `npm install`.
+4. Jalankan frontend dan backend bersama-sama dari root: `npm run dev`.
+5. Buka `http://127.0.0.1:8000`.
 
-```powershell
-npm ci
-npm run dev
-```
+Dalam mode pengembangan, Vite menerima halaman dan API pada port 8000, lalu meneruskan permintaan `/api` ke backend Rust pada port internal 8001. Jadi cukup jalankan satu perintah dan buka `http://127.0.0.1:8000`. Tekan `Ctrl+C` untuk menghentikan keduanya.
 
-`npm run dev` menyalakan PostgreSQL lokal melalui Docker Compose pada `127.0.0.1:54329`, menjalankan migrasi, lalu mengimpor snapshot master data versi project pada database development yang masih kosong. Snapshot hanya berisi divisi, departemen, biro/bengkel, dan jenis pekerjaan—tidak berisi akun pengguna, data karyawan, pelamar, atau lamaran. Database lokal menggunakan kredensial development khusus dan tidak dapat diakses dari jaringan luar.
+Untuk menjalankan versi build, jalankan `npm run build`, lalu `cargo run -p app-backend`; backend menyajikan frontend dan API pada port 8000.
 
-
-Jika `DATABASE_URL` sudah diberikan sebagai environment variable, `npm run dev` memakai database development tersebut dan tidak menjalankan snapshot seeder. Jangan arahkan development ke production.
-
-Untuk memperbarui snapshot dari database development yang berisi master data yang sudah disepakati, jalankan `cargo run -p app-backend --bin export_dev_master -- --write`, tinjau perubahan `services/app-backend/dev-seed/master-data.json`, lalu commit bersama kode. Exporter hanya membaca tabel organisasi dan jenis pekerjaan.
-
-Untuk build production-style, siapkan konfigurasi server secara terpisah melalui environment atau `.env` lokal yang tidak di-commit, jalankan `npm run build`, lalu `cargo run -p app-backend`. Jangan memakai kredensial development lokal di server.
+Dashboard admin tersedia dari tombol **Admin**. Akun awal dibuat dari `ADMIN_NAME`, `ADMIN_EMAIL`, dan `ADMIN_PASSWORD` di `.env`; kata sandi harus 8–128 karakter dengan huruf besar, huruf kecil, angka, dan simbol.
 
 Detail API dan database tersedia di [`services/app-backend/README.md`](services/app-backend/README.md).
 
