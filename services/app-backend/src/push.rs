@@ -35,11 +35,7 @@ impl PushService {
 
         let private_key = private_key.trim().to_owned();
         let public_key = public_key.trim().to_owned();
-        let private_key_bytes = URL_SAFE_NO_PAD.decode(&private_key)?;
-        let vapid_key = ES256KeyPair::from_bytes(&private_key_bytes)?;
-        if URL_SAFE_NO_PAD.encode(vapid_key.public_key().to_bytes()) != public_key {
-            return Err("VAPID_PUBLIC_KEY does not match VAPID_PRIVATE_KEY.".into());
-        }
+        let vapid_key = parse_vapid_keys(&public_key, &private_key)?;
 
         let subject = env::var("VAPID_SUBJECT")
             .ok()
@@ -113,6 +109,46 @@ impl PushService {
             ))
         }
     }
+}
+
+/// Memvalidasi pasangan kunci VAPID dan mengembalikan key pair untuk menandatangani push.
+///
+/// Format yang diharapkan (standar VAPID dan Push API browser):
+/// - private key: 32 byte, base64url tanpa padding (43 karakter)
+/// - public key: 65 byte tidak terkompresi (diawali 0x04), base64url tanpa padding (87 karakter)
+///
+/// Kedua public key dibandingkan sebagai titik kurva P-256, bukan sebagai string, karena
+/// `ES256KeyPair::public_key().to_bytes()` bisa memakai bentuk terkompresi (33 byte) yang
+/// berbeda dari bentuk tidak terkompresi yang dikirim ke browser. Pesan error sengaja tidak
+/// memuat nilai kunci.
+fn parse_vapid_keys(
+    public_key: &str,
+    private_key: &str,
+) -> Result<ES256KeyPair, Box<dyn std::error::Error>> {
+    let private_key_bytes = URL_SAFE_NO_PAD.decode(private_key).map_err(|_| {
+        "VAPID_PRIVATE_KEY must be base64url without padding (43 characters)."
+    })?;
+    let vapid_key = ES256KeyPair::from_bytes(&private_key_bytes).map_err(|_| {
+        "VAPID_PRIVATE_KEY is not a valid P-256 private key (expected 32 bytes)."
+    })?;
+
+    let configured_bytes = URL_SAFE_NO_PAD.decode(public_key).map_err(|_| {
+        "VAPID_PUBLIC_KEY must be base64url without padding (87 characters)."
+    })?;
+    if configured_bytes.len() != 65 || configured_bytes[0] != 0x04 {
+        return Err(
+            "VAPID_PUBLIC_KEY must be an uncompressed P-256 public key (65 bytes, 87 characters)."
+                .into(),
+        );
+    }
+    let configured = PublicKey::from_sec1_bytes(&configured_bytes)
+        .map_err(|_| "VAPID_PUBLIC_KEY is not a valid P-256 public key.")?;
+    let derived = PublicKey::from_sec1_bytes(&vapid_key.public_key().to_bytes())
+        .map_err(|_| "Could not derive the public key from VAPID_PRIVATE_KEY.")?;
+    if configured != derived {
+        return Err("VAPID_PUBLIC_KEY does not match VAPID_PRIVATE_KEY.".into());
+    }
+    Ok(vapid_key)
 }
 
 #[derive(Deserialize)]
@@ -385,7 +421,24 @@ fn is_valid_subscription_key(value: &str, min_length: usize, max_length: usize) 
 
 #[cfg(test)]
 mod tests {
-    use super::{is_valid_subscription_endpoint, is_valid_subscription_key};
+    use super::{is_valid_subscription_endpoint, is_valid_subscription_key, parse_vapid_keys};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use web_push_native::{
+        jwt_simple::algorithms::ES256KeyPair,
+        p256::{elliptic_curve::sec1::ToEncodedPoint, PublicKey},
+    };
+
+    /// Public key dalam format yang dipakai browser dan VAPID: 65 byte tidak terkompresi.
+    fn browser_public_key(key: &ES256KeyPair, compress: bool) -> String {
+        let point = PublicKey::from_sec1_bytes(&key.public_key().to_bytes())
+            .expect("public key derived from a generated key pair is valid")
+            .to_encoded_point(compress);
+        URL_SAFE_NO_PAD.encode(point.as_bytes())
+    }
+
+    fn private_key_string(key: &ES256KeyPair) -> String {
+        URL_SAFE_NO_PAD.encode(key.to_bytes())
+    }
 
     #[test]
     fn subscription_endpoints_are_limited_to_known_push_services() {
@@ -412,5 +465,53 @@ mod tests {
             87,
             87
         ));
+    }
+
+    #[test]
+    fn generated_vapid_pair_is_accepted_in_browser_format() {
+        let key = ES256KeyPair::generate();
+        let public_key = browser_public_key(&key, false);
+        let private_key = private_key_string(&key);
+
+        assert_eq!(public_key.len(), 87);
+        assert_eq!(private_key.len(), 43);
+        let decoded = URL_SAFE_NO_PAD.decode(&public_key).unwrap();
+        assert_eq!(decoded.len(), 65);
+        assert_eq!(decoded[0], 0x04);
+        assert!(parse_vapid_keys(&public_key, &private_key).is_ok());
+    }
+
+    #[test]
+    fn mismatched_vapid_pair_is_rejected() {
+        let first = ES256KeyPair::generate();
+        let second = ES256KeyPair::generate();
+        let error = parse_vapid_keys(&browser_public_key(&second, false), &private_key_string(&first))
+            .err()
+            .expect("a public key from another pair must be rejected");
+        assert_eq!(
+            error.to_string(),
+            "VAPID_PUBLIC_KEY does not match VAPID_PRIVATE_KEY."
+        );
+    }
+
+    #[test]
+    fn compressed_public_key_is_rejected_with_a_clear_message() {
+        let key = ES256KeyPair::generate();
+        let error = parse_vapid_keys(&browser_public_key(&key, true), &private_key_string(&key))
+            .err()
+            .expect("a compressed public key must be rejected");
+        assert!(error.to_string().contains("uncompressed"));
+    }
+
+    #[test]
+    fn padded_or_truncated_keys_are_rejected() {
+        let key = ES256KeyPair::generate();
+        let public_key = browser_public_key(&key, false);
+        let private_key = private_key_string(&key);
+
+        assert!(parse_vapid_keys(&format!("{public_key}="), &private_key).is_err());
+        assert!(parse_vapid_keys(&public_key[..86], &private_key).is_err());
+        assert!(parse_vapid_keys(&public_key, &private_key[..42]).is_err());
+        assert!(parse_vapid_keys(&public_key, &format!("{private_key}docker compose")).is_err());
     }
 }
