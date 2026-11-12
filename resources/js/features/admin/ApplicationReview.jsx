@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Building2, CalendarDays, Download, FileText, Mail, MapPin, Paperclip, Phone, Save, UserRound, X } from 'lucide-react'
+import { Building2, CalendarDays, Download, FileText, Mail, MapPin, Paperclip, Save, UserRound, X } from 'lucide-react'
 import { apiDownload } from '../../api'
 import ModalBackdrop from '../../components/ModalBackdrop'
 import SearchableSelect from '../../components/SearchableSelect'
@@ -101,7 +101,6 @@ export function ApplicationReview({
                   <div><dt>Nama</dt><dd>{application.applicant_name}</dd></div>
                   <div><dt>Email</dt><dd>{application.applicant_email ? <a href={`mailto:${application.applicant_email}`}><Mail aria-hidden="true" size={14} /> {application.applicant_email}</a> : 'Belum diisi'}</dd></div>
                   {application.employee_number && <div><dt>NIP</dt><dd>{application.employee_number}</dd></div>}
-                  <div><dt>Nomor HP</dt><dd>{application.phone_number ? <a href={`tel:${application.phone_number}`}><Phone aria-hidden="true" size={14} /> {application.phone_number}</a> : 'Belum diisi'}</dd></div>
                 </dl>
               </div>
               <div>

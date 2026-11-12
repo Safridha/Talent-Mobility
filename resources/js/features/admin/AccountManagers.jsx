@@ -191,10 +191,10 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       })
       setNotice(editingId
         ? !isAdminAccount && form.reset_password
-          ? 'Kata sandi pelamar direset ke pal@123. Pelamar wajib menggantinya saat masuk berikutnya.'
+          ? 'Kata sandi pelamar direset ke kata sandi awal. Pelamar wajib menggantinya saat masuk berikutnya.'
           : `Perubahan akun ${accountKind} berhasil disimpan. Sesi aktifnya telah diakhiri.`
         : !isAdminAccount
-          ? 'Akun pelamar dibuat. Pelamar masuk dengan NIP dan kata sandi awal pal@123, lalu wajib menggantinya saat masuk pertama.'
+          ? 'Akun pelamar dibuat. Pelamar masuk dengan NIP dan kata sandi awal, lalu wajib menggantinya saat masuk pertama.'
           : `Akun ${accountKind} berhasil ditambahkan.`)
       resetForm()
       refreshAccounts()
@@ -322,7 +322,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
     <form className="organization-form account-manager-form" onSubmit={submitAccount}>
       <p className="organization-help account-form-help">
         {!isAdminAccount && !editingId
-          ? <>Akun dibuat dengan kata sandi awal <strong>pal@123</strong>. Pelamar masuk memakai NIP dan wajib menggantinya saat masuk pertama. Email tidak wajib.</>
+          ? <>Akun dibuat dengan kata sandi awal. Pelamar masuk memakai NIP dan wajib menggantinya saat masuk pertama. Email tidak wajib.</>
           : isAdminAccount
             ? <><em>*</em> Wajib diisi. Saat edit, kata sandi boleh dikosongkan jika tidak ingin menggantinya.</>
             : <><em>*</em> Wajib diisi. Pelamar masuk memakai NIP.</>}
@@ -452,7 +452,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       ) : editingId ? (
         <label className="account-permission-option">
           <input checked={form.reset_password} onChange={(event) => setForm({ ...form, reset_password: event.target.checked })} type="checkbox" />
-          <span>Reset kata sandi ke default (pal@123). Pelamar wajib menggantinya saat masuk berikutnya.</span>
+          <span>Reset kata sandi ke kata sandi awal. Pelamar wajib menggantinya saat masuk berikutnya.</span>
         </label>
       ) : null}
       {isAdminAccount && (
@@ -688,7 +688,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                             aria-label={`Reset kata sandi ${account.name} ke default`}
                             className="admin-small-button admin-icon-button"
                             onClick={() => { setError(''); setPendingReset(account) }}
-                            title="Reset kata sandi ke default (pal@123)"
+                            title="Reset kata sandi ke kata sandi awal"
                             type="button"
                           >
                             <KeyRound aria-hidden="true" size={15} />
@@ -732,7 +732,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           error={error}
           icon={KeyRound}
           isBusy={isResetting}
-          message={`Kata sandi ${pendingReset.name}${pendingReset.employee_number ? ` (NIP ${pendingReset.employee_number})` : ''} akan direset ke default pal@123. Sesi aktifnya diakhiri dan pelamar wajib menggantinya saat masuk berikutnya.`}
+          message={`Kata sandi ${pendingReset.name}${pendingReset.employee_number ? ` (NIP ${pendingReset.employee_number})` : ''} akan direset ke kata sandi awal. Sesi aktifnya diakhiri dan pelamar wajib menggantinya saat masuk berikutnya.`}
           onCancel={() => { setPendingReset(null); setError('') }}
           onConfirm={() => void resetPassword()}
           title="Reset kata sandi ke default?"

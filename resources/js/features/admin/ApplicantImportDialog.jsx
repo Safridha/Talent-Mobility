@@ -161,7 +161,7 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
           </div>
         )}
         <p className="organization-help account-form-help">
-          Akun baru dibuat dengan kata sandi awal <strong>pal@123</strong> dan wajib diganti saat masuk pertama. Untuk file yang diperbarui: NIP yang sudah terdaftar <strong>diperbarui</strong> (nama, divisi, departemen, jabatan, pendidikan). Sel kosong tidak menghapus data lama; email, kata sandi, dan biro tidak diubah (biro dikosongkan hanya jika departemen berpindah). Divisi dan Departemen baru otomatis ditambahkan ke master data.
+          Akun baru dibuat dengan kata sandi awal dan wajib diganti saat masuk pertama. Untuk file yang diperbarui: NIP yang sudah terdaftar <strong>diperbarui</strong> (nama, divisi, departemen, jabatan, pendidikan). Sel kosong tidak menghapus data lama; email, kata sandi, dan biro tidak diubah (biro dikosongkan hanya jika departemen berpindah). Divisi dan Departemen baru otomatis ditambahkan ke master data.
         </p>
         {preview && !result && (
           <section aria-label="Pratinjau perubahan" className="import-diff">

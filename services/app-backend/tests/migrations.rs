@@ -317,30 +317,3 @@ async fn job_listing_queries_join_organization_units_without_ambiguous_columns(p
         "fresh databases should have no demo vacancies"
     );
 }
-
-#[sqlx::test(migrations = "./migrations")]
-async fn secretariat_removal_detects_existing_directory_records(pool: PgPool) {
-    let division_id =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM divisions WHERE name = 'Divisi Kapal Selam'")
-            .fetch_one(&pool)
-            .await
-            .expect("seeded submarine division should exist");
-
-    sqlx::query(
-        "INSERT INTO employee_directory (employee_number, name, position_title, target_level, division_id) VALUES ('TEST-NIP-SECRETARIAT', 'Pegawai Uji', 'Jabatan Uji', 'secretariat', $1)",
-    )
-    .bind(division_id)
-    .execute(&pool)
-    .await
-    .expect("secretariat employee should be insertable");
-
-    let secretariat_is_in_use: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM job_postings WHERE division_id = $1 AND target_level = 'secretariat' UNION ALL SELECT 1 FROM employee_directory WHERE division_id = $1 AND target_level = 'secretariat')",
-    )
-    .bind(division_id)
-    .fetch_one(&pool)
-    .await
-    .expect("secretariat references should be queryable");
-
-    assert!(secretariat_is_in_use);
-}

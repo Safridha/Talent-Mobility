@@ -56,7 +56,7 @@ pub(super) async fn admin_create_account(
             return Ok((replayed_headers(), Json(response)));
         }
     }
-    let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
+    let password_hash = hash_password(default_applicant_password())?;
     let id = match sqlx::query_scalar::<_, i64>(
         "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education, bureau_id) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8, $9) RETURNING id",
     )
@@ -91,7 +91,7 @@ pub(super) async fn admin_create_account(
     )
     .await
     .map_err(internal_error)?;
-    let response = json!({ "message": "Akun berhasil ditambahkan. Kata sandi awal: pal@123 (wajib diganti saat masuk pertama)." });
+    let response = json!({ "message": "Akun berhasil ditambahkan. Pelamar masuk dengan NIP dan kata sandi awal, lalu wajib menggantinya saat masuk pertama." });
     if let Some(key) = &idempotency_key {
         complete_idempotency_key(&mut transaction, &idempotency_scope, key, &response).await?;
     }
@@ -171,7 +171,7 @@ pub(super) async fn admin_import_accounts(
     }
     let dry_run = request.dry_run;
     // One shared initial password for the batch: hash once (Argon2 is deliberately slow).
-    let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
+    let password_hash = hash_password(default_applicant_password())?;
 
     let mut created = 0_i64;
     let mut updated = 0_i64;
@@ -459,7 +459,7 @@ pub(super) async fn admin_reset_account_password(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let admin = authorized_operational_admin(&state.pool, &headers).await?;
     admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
-    let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
+    let password_hash = hash_password(default_applicant_password())?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let result = sqlx::query(
         "UPDATE applicants SET password_hash = $1, must_change_password = TRUE, failed_login_attempts = 0, locked_until = NULL WHERE id = $2",
@@ -489,7 +489,7 @@ pub(super) async fn admin_reset_account_password(
     .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(json!({
-        "message": "Kata sandi direset ke pal@123. Pelamar wajib menggantinya saat masuk berikutnya."
+        "message": "Kata sandi direset ke kata sandi awal. Pelamar wajib menggantinya saat masuk berikutnya."
     })))
 }
 
@@ -527,7 +527,7 @@ pub(super) async fn admin_update_account(
     .ok_or(ApiError::NotFound("Akun tidak ditemukan."))?;
     let new_password = match account.password.as_deref() {
         Some(password) => Some(password),
-        None if account.reset_password => Some(DEFAULT_APPLICANT_PASSWORD),
+        None if account.reset_password => Some(default_applicant_password()),
         None => None,
     };
     let result = if let Some(password) = new_password {

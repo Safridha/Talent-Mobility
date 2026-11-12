@@ -194,7 +194,6 @@ export async function downloadApplicantPdf(details, { statusLabel } = {}) {
     ['Nama lengkap', name],
     ['NIP', details.employee_number],
     ['Email', details.applicant_email],
-    ['Nomor telepon', details.phone_number],
   ])
   section('Asal unit dan pendidikan', [
     ['Divisi asal', details.origin_division],

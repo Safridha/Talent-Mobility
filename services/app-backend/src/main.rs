@@ -712,7 +712,6 @@ struct AdminApplication {
     origin_unit: Option<String>,
     education_level: Option<String>,
     study_field: Option<String>,
-    phone_number: Option<String>,
     current_position: Option<String>,
     current_unit: Option<String>,
     motivation: Option<String>,
@@ -832,6 +831,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     ensure_application_public_ids(&pool).await?;
+    load_default_applicant_password()?;
     seed_admin(&pool).await?;
     {
         let pool = pool.clone();
@@ -1400,7 +1400,26 @@ async fn ensure_import_org(
 /// Initial password for accounts created by an admin or imported from Excel.
 /// It intentionally does not meet the normal strength policy: it is only usable once,
 /// because accounts are created with `must_change_password` and the replacement must pass the policy.
-const DEFAULT_APPLICANT_PASSWORD: &str = "pal@123";
+/// The value comes from `DEFAULT_APPLICANT_PASSWORD` in the environment and never appears in the source,
+/// the API responses or the frontend bundle (the bundle is public).
+static DEFAULT_APPLICANT_PASSWORD_VALUE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Reads and validates the setting; call once at startup so a missing value stops the server early.
+fn load_default_applicant_password() -> Result<&'static str, Box<dyn std::error::Error>> {
+    let value = env::var("DEFAULT_APPLICANT_PASSWORD").unwrap_or_default();
+    let value = value.trim();
+    if value.len() < 6 || value.len() > 128 {
+        return Err("DEFAULT_APPLICANT_PASSWORD must be set (6-128 characters)".into());
+    }
+    Ok(DEFAULT_APPLICANT_PASSWORD_VALUE.get_or_init(|| value.to_owned()))
+}
+
+fn default_applicant_password() -> &'static str {
+    DEFAULT_APPLICANT_PASSWORD_VALUE.get_or_init(|| {
+        // Only reached when startup validation was skipped (unit tests): a random value nobody knows.
+        Ulid::new().to_string()
+    })
+}
 
 fn normalize_optional_email(email: Option<&str>) -> Result<Option<String>, ApiError> {
     let email = email.unwrap_or("").trim().to_ascii_lowercase();
@@ -1918,7 +1937,8 @@ mod tests {
             create_application(State(state.clone()), headers, multipart)
                 .await
                 .unwrap()
-                .0
+                .1
+                 .0
         }
 
         let state = AppState {
@@ -1950,6 +1970,7 @@ mod tests {
                 super_headers.clone(),
                 Json(AdminAccountCreateRequest {
                     name: "Additional Super Admin".to_owned(),
+                    employee_number: None,
                     email: "additional-super@example.com".to_owned(),
                     password: "Admin!Pass123".to_owned(),
                     admin_role: "super_admin".to_owned(),
@@ -2060,6 +2081,7 @@ mod tests {
                 super_headers.clone(),
                 Json(AdminAccountCreateRequest {
                     name: name.to_owned(),
+                    employee_number: None,
                     email: email.to_owned(),
                     password: "Admin!Pass123".to_owned(),
                     admin_role: role.to_owned(),
@@ -2272,6 +2294,7 @@ mod tests {
             super_headers.clone(),
             Json(AdminAccountCreateRequest {
                 name: "Audit Operational Admin".to_owned(),
+                employee_number: None,
                 email: "operational@example.com".to_owned(),
                 password: "Admin!Pass123".to_owned(),
                 admin_role: "admin".to_owned(),
@@ -2417,14 +2440,17 @@ mod tests {
             Err(ApiError::Forbidden)
         ));
 
-        let initial_applicant_password = "Applicant!Temp123";
+        let initial_applicant_password = default_applicant_password();
         let _ = admin_create_account(
             State(state.clone()),
             super_headers.clone(),
             Json(AdminApplicantCreateRequest {
                 name: "Audit Applicant".to_owned(),
-                email: "applicant@example.com".to_owned(),
-                password: initial_applicant_password.to_owned(),
+                email: Some("applicant@example.com".to_owned()),
+                profile: ApplicantProfileInput {
+                    employee_number: Some("900001".to_owned()),
+                    ..Default::default()
+                },
             }),
         )
         .await
@@ -2432,7 +2458,7 @@ mod tests {
         let (applicant_login_headers, applicant_login_response) = login(
             State(state.clone()),
             Json(LoginRequest {
-                email: "applicant@example.com".to_owned(),
+                email: "900001".to_owned(),
                 password: initial_applicant_password.to_owned(),
             }),
         )
@@ -2452,7 +2478,7 @@ mod tests {
                 State(state.clone()),
                 applicant_headers.clone(),
                 Json(ChangePasswordRequest {
-                    current_password: initial_applicant_password.to_owned(),
+                    current_password: Some(initial_applicant_password.to_owned()),
                     new_password: initial_applicant_password.to_owned(),
                 }),
             )
@@ -2463,7 +2489,7 @@ mod tests {
             State(state.clone()),
             applicant_headers.clone(),
             Json(ChangePasswordRequest {
-                current_password: initial_applicant_password.to_owned(),
+                current_password: Some(initial_applicant_password.to_owned()),
                 new_password: "Applicant!New123".to_owned(),
             }),
         )
@@ -2558,6 +2584,7 @@ mod tests {
                 super_headers.clone(),
                 Json(AdminAccountCreateRequest {
                     name: email.to_owned(),
+                    employee_number: None,
                     email: email.to_owned(),
                     password: "Matrix!Pass123".to_owned(),
                     admin_role: "department_head".to_owned(),
@@ -2619,6 +2646,7 @@ mod tests {
                 Json(ApplicationStatusRequest {
                     status: "screening".to_owned(),
                     reason: None,
+                    expected_status: None,
                 }),
             )
             .await,
@@ -2652,6 +2680,7 @@ mod tests {
                 Json(ApplicationStatusRequest {
                     status: "screening".to_owned(),
                     reason: None,
+                    expected_status: None,
                 }),
             )
             .await,
@@ -2685,6 +2714,7 @@ mod tests {
             Json(ApplicationStatusRequest {
                 status: "screening".to_owned(),
                 reason: None,
+                expected_status: None,
             }),
         )
         .await
@@ -2738,6 +2768,7 @@ mod tests {
             Json(ApplicationStatusRequest {
                 status: "screening".to_owned(),
                 reason: None,
+                expected_status: None,
             }),
         )
         .await
@@ -2749,6 +2780,7 @@ mod tests {
             Json(ApplicationStatusRequest {
                 status: "rejected".to_owned(),
                 reason: Some("Tidak sesuai kualifikasi".to_owned()),
+                expected_status: None,
             }),
         )
         .await
@@ -2848,6 +2880,7 @@ mod tests {
                 Path(kadep_id),
                 Json(AdminAccountUpdateRequest {
                     name: "Audit Department Head".to_owned(),
+                    employee_number: None,
                     email: "kadep@example.com".to_owned(),
                     password: None,
                     admin_role: "super_admin".to_owned(),
@@ -2866,6 +2899,7 @@ mod tests {
             Path(kadep_id),
             Json(AdminAccountUpdateRequest {
                 name: "Updated Audit Department Head".to_owned(),
+                employee_number: None,
                 email: "kadep@example.com".to_owned(),
                 password: None,
                 admin_role: "department_head".to_owned(),
@@ -2894,6 +2928,7 @@ mod tests {
             super_headers.clone(),
             Json(ProfileUpdateRequest {
                 name: "Updated Audit Admin".to_owned(),
+                email: None,
             }),
         )
         .await
@@ -2902,7 +2937,7 @@ mod tests {
             State(state.clone()),
             super_headers,
             Json(ChangePasswordRequest {
-                current_password: super_password.to_owned(),
+                current_password: Some(super_password.to_owned()),
                 new_password: "Admin!Pass456".to_owned(),
             }),
         )
