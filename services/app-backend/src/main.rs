@@ -210,17 +210,6 @@ struct ChangePasswordRequest {
     new_password: String,
 }
 
-#[derive(Deserialize)]
-struct ForgotPasswordRequest {
-    email: String,
-}
-
-#[derive(Deserialize)]
-struct ResetPasswordRequest {
-    token: String,
-    new_password: String,
-}
-
 #[derive(Serialize)]
 struct AccountProfileResponse {
     role: String,
