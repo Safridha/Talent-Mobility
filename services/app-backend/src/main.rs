@@ -38,6 +38,7 @@ mod admin_applications;
 mod admin_audit;
 mod admin_permissions;
 mod applications;
+mod employee_master;
 mod auth;
 mod jobs;
 mod push;
@@ -47,6 +48,7 @@ use admin_applications::*;
 use admin_audit::*;
 use admin_permissions::*;
 use applications::*;
+use employee_master::*;
 use auth::*;
 use jobs::*;
 use push::*;
@@ -247,10 +249,50 @@ struct AdminApplicantCreateRequest {
     name: String,
     email: String,
     password: String,
+    #[serde(flatten)]
+    profile: ApplicantProfileInput,
+}
+
+#[derive(Deserialize, Default)]
+struct ApplicantProfileInput {
+    #[serde(default)]
+    employee_number: Option<String>,
+    #[serde(default)]
+    division_id: Option<i64>,
+    #[serde(default)]
+    department_id: Option<i64>,
+    #[serde(default)]
+    position_title: Option<String>,
+    #[serde(default)]
+    last_education: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApplicantImportRow {
+    employee_number: String,
+    name: String,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    division_name: Option<String>,
+    #[serde(default)]
+    department_name: Option<String>,
+    #[serde(default)]
+    position_title: Option<String>,
+    #[serde(default)]
+    last_education: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApplicantImportRequest {
+    default_password: String,
+    rows: Vec<ApplicantImportRow>,
 }
 
 #[derive(Deserialize)]
 struct AdminApplicantUpdateRequest {
+    #[serde(flatten)]
+    profile: ApplicantProfileInput,
     name: String,
     email: String,
     password: Option<String>,
@@ -450,6 +492,13 @@ struct AdminApplicantAccount {
     id: i64,
     name: String,
     email: String,
+    employee_number: Option<String>,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    division_name: Option<String>,
+    department_name: Option<String>,
+    position_title: Option<String>,
+    last_education: Option<String>,
     created_at: String,
     applications_count: i64,
     is_active: bool,
@@ -799,6 +848,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(admin_list_accounts).post(admin_create_account),
         )
         .route(
+            "/api/admin/accounts/import",
+            post(admin_import_accounts).layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
+        .route("/api/admin/employee-master", get(admin_list_employee_master))
+        .route(
+            "/api/admin/employee-master/divisions",
+            post(admin_create_employee_division),
+        )
+        .route(
+            "/api/admin/employee-master/divisions/{id}",
+            put(admin_update_employee_division).delete(admin_delete_employee_division),
+        )
+        .route(
+            "/api/admin/employee-master/departments",
+            post(admin_create_employee_department),
+        )
+        .route(
+            "/api/admin/employee-master/departments/{id}",
+            put(admin_update_employee_department).delete(admin_delete_employee_department),
+        )
+        .route(
             "/api/admin/accounts/{id}",
             put(admin_update_account).delete(admin_deactivate_account),
         )
@@ -1083,6 +1153,151 @@ fn validate_applicant_name_and_email(name: &str, email: &str) -> Result<(), ApiE
         return Err(ApiError::BadRequest("Format email tidak valid."));
     }
     Ok(())
+}
+
+struct CleanApplicantProfile {
+    employee_number: Option<String>,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    position_title: Option<String>,
+    last_education: Option<String>,
+}
+
+fn clean_profile_text(value: &Option<String>, max: usize) -> Result<Option<String>, ApiError> {
+    let text = value.as_deref().unwrap_or("").trim();
+    if text.is_empty() || matches!(text, "-" | "\u{2014}" | "\u{2013}") {
+        return Ok(None);
+    }
+    if text.chars().count() > max {
+        return Err(ApiError::BadRequest("Salah satu kolom profil terlalu panjang."));
+    }
+    Ok(Some(text.split_whitespace().collect::<Vec<_>>().join(" ")))
+}
+
+/// Validates a manually entered profile: Divisi/Departemen must exist in the employee master data.
+async fn resolve_applicant_profile(
+    pool: &PgPool,
+    input: &ApplicantProfileInput,
+) -> Result<CleanApplicantProfile, ApiError> {
+    let mut division_id = input.division_id;
+    if let Some(department_id) = input.department_id {
+        let owner = sqlx::query_scalar::<_, i64>(
+            "SELECT division_id FROM employee_departments WHERE id = $1",
+        )
+        .bind(department_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(internal_error)?
+        .ok_or(ApiError::BadRequest("Departemen tidak ditemukan di master data."))?;
+        if division_id.is_some_and(|selected| selected != owner) {
+            return Err(ApiError::BadRequest(
+                "Departemen tidak termasuk divisi yang dipilih.",
+            ));
+        }
+        division_id = Some(owner);
+    } else if let Some(id) = division_id {
+        let exists = sqlx::query_scalar::<_, i64>("SELECT id FROM employee_divisions WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+            .map_err(internal_error)?;
+        if exists.is_none() {
+            return Err(ApiError::BadRequest("Divisi tidak ditemukan di master data."));
+        }
+    }
+    Ok(CleanApplicantProfile {
+        employee_number: clean_profile_text(&input.employee_number, 40)?,
+        division_id,
+        department_id: input.department_id,
+        position_title: clean_profile_text(&input.position_title, 200)?,
+        last_education: clean_profile_text(&input.last_education, 80)?,
+    })
+}
+
+fn org_name_key(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+struct ImportOrgCache {
+    divisions: std::collections::HashMap<String, i64>,
+    departments: std::collections::HashMap<(i64, String), i64>,
+    created_divisions: i64,
+    created_departments: i64,
+}
+
+async fn load_import_org_cache(pool: &PgPool) -> Result<ImportOrgCache, ApiError> {
+    let mut cache = ImportOrgCache {
+        divisions: Default::default(),
+        departments: Default::default(),
+        created_divisions: 0,
+        created_departments: 0,
+    };
+    for (id, name) in sqlx::query_as::<_, (i64, String)>("SELECT id, name FROM employee_divisions")
+        .fetch_all(pool)
+        .await
+        .map_err(internal_error)?
+    {
+        cache.divisions.insert(org_name_key(&name), id);
+    }
+    for (id, division_id, name) in sqlx::query_as::<_, (i64, i64, String)>(
+        "SELECT id, division_id, name FROM employee_departments",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(internal_error)?
+    {
+        cache.departments.insert((division_id, org_name_key(&name)), id);
+    }
+    Ok(cache)
+}
+
+/// Finds or creates the Divisi/Departemen master rows named in an imported row.
+async fn ensure_import_org(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    cache: &mut ImportOrgCache,
+    division: Option<&str>,
+    department: Option<&str>,
+) -> Result<(Option<i64>, Option<i64>), ApiError> {
+    let Some(division) = division else {
+        return Ok((None, None));
+    };
+    let division_key = org_name_key(division);
+    let division_id = match cache.divisions.get(&division_key) {
+        Some(id) => *id,
+        None => {
+            let id = sqlx::query_scalar::<_, i64>(
+                "INSERT INTO employee_divisions (name) VALUES ($1) RETURNING id",
+            )
+            .bind(division)
+            .fetch_one(&mut **transaction)
+            .await
+            .map_err(internal_error)?;
+            cache.divisions.insert(division_key, id);
+            cache.created_divisions += 1;
+            id
+        }
+    };
+    let Some(department) = department else {
+        return Ok((Some(division_id), None));
+    };
+    let department_key = (division_id, org_name_key(department));
+    let department_id = match cache.departments.get(&department_key) {
+        Some(id) => *id,
+        None => {
+            let id = sqlx::query_scalar::<_, i64>(
+                "INSERT INTO employee_departments (division_id, name) VALUES ($1, $2) RETURNING id",
+            )
+            .bind(division_id)
+            .bind(department)
+            .fetch_one(&mut **transaction)
+            .await
+            .map_err(internal_error)?;
+            cache.departments.insert(department_key, id);
+            cache.created_departments += 1;
+            id
+        }
+    };
+    Ok((Some(division_id), Some(department_id)))
 }
 
 fn validate_applicant_password(password: &str) -> Result<(), ApiError> {

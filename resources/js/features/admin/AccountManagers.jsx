@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Eye, EyeOff, Plus, Shield, Users } from 'lucide-react'
+import { Database, Eye, EyeOff, FileSpreadsheet, Plus, Shield, Users } from 'lucide-react'
 import { apiRequest } from '../../api'
 import PasswordRequirements from '../../components/PasswordRequirements'
 import { meetsPasswordRequirements } from '../../components/passwordValidation'
@@ -9,6 +9,10 @@ import { AdminTablePagination } from './AdminPagination'
 import { useAdminPagination } from './useAdminPagination'
 import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
+import ApplicantImportDialog from './ApplicantImportDialog'
+import EmployeeMasterDialog from './EmployeeMasterDialog'
+
+const EDUCATION_OPTIONS = ['SMA/SMK/SEDERAJAT', 'D1', 'D2', 'D3', 'D4', 'S1', 'S2', 'S3']
 
 const adminRoles = [
   { value: 'admin', label: 'Admin Operasional' },
@@ -54,12 +58,15 @@ function permissionsForRole(role) {
 function emptyAccountForm() {
   return {
     name: '',
+    employee_number: '',
+    division_id: '',
+    department_id: '',
+    position_title: '',
+    last_education: '',
     email: '',
     password: '',
     passwordConfirmation: '',
     admin_role: '',
-    division_id: '',
-    department_id: '',
     bureau_id: '',
     permissions: [],
   }
@@ -89,6 +96,18 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   const [updatingStatusId, setUpdatingStatusId] = useState(null)
   const divisions = organization?.divisions ?? []
   const departments = organization?.departments ?? []
+  const [employeeMaster, setEmployeeMaster] = useState({ divisions: [], departments: [] })
+  const [isImportOpen, setIsImportOpen] = useState(false)
+  const [isMasterOpen, setIsMasterOpen] = useState(false)
+
+  function loadEmployeeMaster() {
+    if (isAdminAccount) return
+    apiRequest('/admin/employee-master')
+      .then((response) => setEmployeeMaster(response))
+      .catch(() => {})
+  }
+
+  useEffect(loadEmployeeMaster, [isAdminAccount])
 
   useEffect(() => {
     let active = true
@@ -144,6 +163,13 @@ export function AccountListManager({ accountType, currentAdminId, organization }
     setIsSaving(true)
     const body = { name: form.name.trim(), email: form.email.trim() }
     if (form.password) body.password = form.password
+    if (!isAdminAccount) {
+      body.employee_number = form.employee_number.trim()
+      body.division_id = form.division_id ? Number(form.division_id) : null
+      body.department_id = form.department_id ? Number(form.department_id) : null
+      body.position_title = form.position_title.trim()
+      body.last_education = form.last_education
+    }
     if (isAdminAccount) {
       body.admin_role = form.admin_role
       body.division_id = form.admin_role === 'division_head' ? Number(form.division_id) : null
@@ -182,6 +208,9 @@ export function AccountListManager({ accountType, currentAdminId, organization }
     setForm({
       ...emptyAccountForm(),
       name: account.name,
+      employee_number: account.employee_number || '',
+      position_title: account.position_title || '',
+      last_education: account.last_education || '',
       email: account.email,
       admin_role: role,
       division_id: account.division_id ? String(account.division_id) : '',
@@ -259,7 +288,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   }
 
   const filteredAccounts = accounts.filter((account) => (
-    `${account.name} ${account.email} ${account.admin_role || ''} ${account.scope_label || ''}`.toLocaleLowerCase('id').includes(search.trim().toLocaleLowerCase('id'))
+    `${account.name} ${account.email} ${account.admin_role || ''} ${account.scope_label || ''} ${account.employee_number || ''} ${account.division_name || ''} ${account.department_name || ''} ${account.position_title || ''}`.toLocaleLowerCase('id').includes(search.trim().toLocaleLowerCase('id'))
     && (statusFilter === 'all' || (account.is_active ? 'active' : 'inactive') === statusFilter)
   ))
   const { items: pageAccounts, page, setPage } = useAdminPagination(filteredAccounts)
@@ -275,6 +304,50 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       <label><span>Nama lengkap <em>*</em></span>
         <input autoComplete="name" maxLength={200} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} />
       </label>
+      {!isAdminAccount && (
+        <>
+          <label><span>NIP <em>*</em></span>
+            <input inputMode="numeric" maxLength={40} onChange={(event) => setForm({ ...form, employee_number: event.target.value })} required value={form.employee_number} />
+          </label>
+          <label><span>Divisi</span>
+            <SearchableSelect
+              onChange={(value) => setForm((current) => ({ ...current, division_id: value, department_id: '' }))}
+              options={[{ value: '', label: 'Tanpa divisi' }, ...employeeMaster.divisions.map((item) => ({ value: String(item.id), label: item.name }))]}
+              placeholder="Pilih divisi"
+              value={form.division_id}
+            />
+          </label>
+          {form.division_id && (
+            <label><span>Departemen (Unit Kerja)</span>
+              <SearchableSelect
+                onChange={(value) => setForm((current) => ({ ...current, department_id: value }))}
+                options={[
+                  { value: '', label: 'Tanpa departemen' },
+                  ...employeeMaster.departments
+                    .filter((item) => String(item.division_id) === String(form.division_id))
+                    .map((item) => ({ value: String(item.id), label: item.name })),
+                ]}
+                placeholder="Pilih departemen"
+                value={form.department_id}
+              />
+            </label>
+          )}
+          <label><span>Jabatan</span>
+            <input maxLength={200} onChange={(event) => setForm({ ...form, position_title: event.target.value })} value={form.position_title} />
+          </label>
+          <label><span>Pendidikan terakhir</span>
+            <SearchableSelect
+              onChange={(value) => setForm((current) => ({ ...current, last_education: value }))}
+              options={[
+                { value: '', label: 'Belum diisi' },
+                ...[...new Set([...EDUCATION_OPTIONS, form.last_education].filter(Boolean))].map((item) => ({ value: item, label: item })),
+              ]}
+              placeholder="Pilih pendidikan"
+              value={form.last_education}
+            />
+          </label>
+        </>
+      )}
       <label><span>Email <em>*</em></span>
         <input autoComplete="email" maxLength={254} onChange={(event) => setForm({ ...form, email: event.target.value })} required type="email" value={form.email} />
       </label>
@@ -444,7 +517,15 @@ export function AccountListManager({ accountType, currentAdminId, organization }
     <section className="account-manager">
       <div className="admin-table-heading">
         <div><h2>Monitoring akun {accountKind}</h2><p>{accounts.length} akun terdaftar · {activeCount} aktif</p></div>
-        <button className="apply-button" onClick={openCreateForm} type="button"><Plus size={16} /> Tambah akun {accountKind}</button>
+        <div className="account-heading-actions">
+          {!isAdminAccount && (
+            <>
+              <button className="detail-button" onClick={() => setIsMasterOpen(true)} type="button"><Database size={16} /> Master data</button>
+              <button className="detail-button" onClick={() => setIsImportOpen(true)} type="button"><FileSpreadsheet size={16} /> Import Excel</button>
+            </>
+          )}
+          <button className="apply-button" onClick={openCreateForm} type="button"><Plus size={16} /> Tambah akun {accountKind}</button>
+        </div>
       </div>
       {editingId && (
         <AdminFormDialog className="admin-account-editor-modal" onClose={resetForm} title={`Edit akun ${accountKind}`}>
@@ -461,13 +542,13 @@ export function AccountListManager({ accountType, currentAdminId, organization }
         onPageChange={setPage}
         onSearchChange={setSearch}
         search={search}
-        searchPlaceholder="Cari nama atau email..."
+        searchPlaceholder={isAdminAccount ? 'Cari nama atau email...' : 'Cari nama, NIP, divisi, atau jabatan...'}
         onDownloadPdf={() => downloadTablePdf(
           isAdminAccount ? 'akun-admin' : 'akun-pelamar',
           isAdminAccount ? 'Daftar Akun Admin' : 'Daftar Akun Pelamar',
           isAdminAccount
             ? ['Nama', 'Email', 'Peran', 'Lingkup organisasi', 'Izin aktif', 'Terdaftar', 'Status']
-            : ['Nama', 'Email', 'Jumlah lamaran', 'Kata sandi', 'Terdaftar', 'Status'],
+            : ['NIP', 'Nama', 'Divisi', 'Departemen', 'Jabatan', 'Pendidikan', 'Email', 'Lamaran', 'Status'],
           filteredAccounts.map((account) => isAdminAccount
             ? [
                 account.name,
@@ -479,11 +560,14 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                 account.is_active ? 'Aktif' : 'Nonaktif',
               ]
             : [
+                account.employee_number || '-',
                 account.name,
+                account.division_name || '-',
+                account.department_name || '-',
+                account.position_title || '-',
+                account.last_education || '-',
                 account.email,
                 account.applications_count,
-                account.must_change_password ? 'Wajib diganti' : 'Sudah diganti',
-                new Date(account.created_at).toLocaleDateString('id-ID'),
                 account.is_active ? 'Aktif' : 'Nonaktif',
               ]),
         )}
@@ -499,7 +583,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           </div>
         ) : filteredAccounts.length ? (
           <table className="admin-table account-table">
-            <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <><th>LAMARAN</th><th>KATA SANDI</th></>}<th>TERDAFTAR</th><th>STATUS</th><th>AKSI</th></tr></thead>
+            <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <><th>DATA KARYAWAN</th><th>LAMARAN</th><th>KATA SANDI</th></>}<th>TERDAFTAR</th><th>STATUS</th><th>AKSI</th></tr></thead>
             <tbody>
               {pageAccounts.map((account) => {
                 const isCurrentAdmin = isAdminAccount && account.id === currentAdminId
@@ -511,6 +595,11 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                     {adminRoles.find((role) => role.value === account.admin_role)?.label || account.admin_role}
                     <span className="admin-table-subtext">{account.scope_label}</span>
                     <span className="admin-table-subtext">{account.admin_role === 'super_admin' ? 'Hak akses penuh' : `${(account.permissions || []).filter((permission) => ACTIVE_ADMIN_PERMISSION_KEYS.has(permission)).length} izin aktif`}</span>
+                  </td>}
+                  {!isAdminAccount && <td>
+                    {account.employee_number ? <>NIP {account.employee_number}</> : <span className="admin-table-subtext">NIP belum diisi</span>}
+                    <span className="admin-table-subtext">{[account.division_name, account.department_name].filter(Boolean).join(' / ') || 'Divisi/departemen belum diisi'}</span>
+                    <span className="admin-table-subtext">{[account.position_title, account.last_education].filter(Boolean).join(' · ') || 'Jabatan belum diisi'}</span>
                   </td>}
                   {!isAdminAccount && <td>{account.applications_count}</td>}
                   {!isAdminAccount && <td>{account.must_change_password ? 'Wajib diganti saat masuk' : 'Sudah diganti'}</td>}
@@ -555,6 +644,18 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           : 'Akun yang dinonaktifkan tidak dapat masuk, tetapi data lamaran dan dokumen tetap dipertahankan. Reset kata sandi akan mengakhiri sesi aktif pelamar.'}
       </p>
       <SuccessPopup message={notice} onClose={setNotice} />
+      {isImportOpen && (
+        <ApplicantImportDialog
+          onClose={() => setIsImportOpen(false)}
+          onImported={() => { refreshAccounts(); loadEmployeeMaster() }}
+        />
+      )}
+      {isMasterOpen && (
+        <EmployeeMasterDialog
+          onChanged={() => { loadEmployeeMaster(); refreshAccounts() }}
+          onClose={() => setIsMasterOpen(false)}
+        />
+      )}
       {isCreateModalOpen && (
         <AdminFormDialog onClose={resetForm} title={`Tambah akun ${accountKind}`}>
           {accountForm}

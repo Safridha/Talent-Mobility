@@ -8,7 +8,7 @@ pub(super) async fn admin_list_accounts(
         .await?
         .require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let data = sqlx::query_as::<_, AdminApplicantAccount>(
-        "SELECT applicants.id, applicants.name, applicants.email, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active, applicants.must_change_password FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id GROUP BY applicants.id ORDER BY applicants.created_at DESC, applicants.id DESC",
+        "SELECT applicants.id, applicants.name, applicants.email, applicants.employee_number, applicants.division_id, applicants.department_id, employee_divisions.name AS division_name, employee_departments.name AS department_name, applicants.position_title, applicants.last_education, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active, applicants.must_change_password FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id GROUP BY applicants.id, employee_divisions.id, employee_departments.id ORDER BY applicants.created_at DESC, applicants.id DESC",
     )
     .fetch_all(&state.pool)
     .await
@@ -27,20 +27,29 @@ pub(super) async fn admin_create_account(
     let email = account.email.trim().to_ascii_lowercase();
     validate_applicant_account(name, &email, &account.password)?;
 
+    let profile = resolve_applicant_profile(&state.pool, &account.profile).await?;
+    if profile.employee_number.is_none() {
+        return Err(ApiError::BadRequest("NIP wajib diisi."));
+    }
     let password_hash = hash_password(&account.password)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let id = match sqlx::query_scalar::<_, i64>(
-        "INSERT INTO applicants (name, email, password_hash, must_change_password) VALUES ($1, $2, $3, TRUE) RETURNING id",
+        "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8) RETURNING id",
     )
     .bind(name)
     .bind(&email)
     .bind(password_hash)
+    .bind(&profile.employee_number)
+    .bind(profile.division_id)
+    .bind(profile.department_id)
+    .bind(&profile.position_title)
+    .bind(&profile.last_education)
     .fetch_one(&mut *transaction)
     .await
     {
         Ok(id) => id,
         Err(error) if is_unique_violation(&error) => {
-            return Err(ApiError::Conflict("Email sudah terdaftar."));
+            return Err(ApiError::Conflict("Email atau NIP sudah terdaftar."));
         }
         Err(error) => return Err(internal_error(error)),
     };
@@ -50,12 +59,123 @@ pub(super) async fn admin_create_account(
         "create",
         "applicant_account",
         &id.to_string(),
-        json!({ "name": name, "email": email }),
+        json!({ "name": name, "email": email, "employee_number": profile.employee_number }),
     )
     .await
     .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(json!({ "message": "Akun berhasil ditambahkan." })))
+}
+
+pub(super) async fn admin_import_accounts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ApplicantImportRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = authorized_operational_admin(&state.pool, &headers).await?;
+    admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    if request.rows.is_empty() {
+        return Err(ApiError::BadRequest("File tidak berisi data karyawan."));
+    }
+    if request.rows.len() > 5000 {
+        return Err(ApiError::BadRequest("Maksimal 5000 baris per impor."));
+    }
+    validate_applicant_password(&request.default_password)?;
+    // One shared initial password for the batch: hash once (Argon2 is deliberately slow).
+    let password_hash = hash_password(&request.default_password)?;
+    let mut cache = load_import_org_cache(&state.pool).await?;
+
+    let mut created = 0_i64;
+    let mut skipped = 0_i64;
+    let mut invalid: Vec<serde_json::Value> = Vec::new();
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    for (index, row) in request.rows.iter().enumerate() {
+        let line = index + 2; // header is line 1
+        let name = row.name.trim();
+        let prepared = (|| -> Result<_, ApiError> {
+            let employee_number = clean_profile_text(&Some(row.employee_number.clone()), 40)?
+                .ok_or(ApiError::BadRequest("NIP kosong."))?;
+            let email = match row
+                .email
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                Some(email) => email.to_ascii_lowercase(),
+                None => format!("{}@karyawan.local", employee_number.to_ascii_lowercase()),
+            };
+            validate_applicant_name_and_email(name, &email)?;
+            Ok((
+                employee_number,
+                email,
+                clean_profile_text(&row.division_name, 200)?,
+                clean_profile_text(&row.department_name, 200)?,
+                clean_profile_text(&row.position_title, 200)?,
+                clean_profile_text(&row.last_education, 80)?,
+            ))
+        })();
+        let (employee_number, email, division, department, position_title, last_education) =
+            match prepared {
+                Ok(value) => value,
+                Err(error) => {
+                    let message = match error {
+                        ApiError::BadRequest(message) => message,
+                        _ => "Baris tidak valid.",
+                    };
+                    invalid.push(json!({ "line": line, "message": message }));
+                    continue;
+                }
+            };
+        // A department only makes sense inside a division; without one it is dropped.
+        let (division_id, department_id) = ensure_import_org(
+            &mut transaction,
+            &mut cache,
+            division.as_deref(),
+            department.as_deref(),
+        )
+        .await?;
+        let inserted = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING RETURNING id",
+        )
+        .bind(name)
+        .bind(&email)
+        .bind(&password_hash)
+        .bind(&employee_number)
+        .bind(division_id)
+        .bind(department_id)
+        .bind(&position_title)
+        .bind(&last_education)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_error)?;
+        if inserted.is_some() {
+            created += 1;
+        } else {
+            skipped += 1;
+        }
+    }
+    let invalid_count = invalid.len();
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "create",
+        "applicant_account",
+        "import",
+        json!({ "source": "excel_import", "created": created, "skipped": skipped, "invalid": invalid_count, "new_divisions": cache.created_divisions, "new_departments": cache.created_departments }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    invalid.truncate(50);
+    Ok(Json(json!({
+        "created": created,
+        "skipped": skipped,
+        "new_divisions": cache.created_divisions,
+        "new_departments": cache.created_departments,
+        "invalid_count": invalid_count,
+        "invalid": invalid,
+        "message": format!("{created} akun dibuat, {skipped} dilewati (NIP/email sudah terdaftar), {invalid_count} baris tidak valid. Master data bertambah {} divisi dan {} departemen.", cache.created_divisions, cache.created_departments),
+    })))
 }
 
 pub(super) async fn admin_update_account(
@@ -69,6 +189,10 @@ pub(super) async fn admin_update_account(
     let name = account.name.trim();
     let email = account.email.trim().to_ascii_lowercase();
     validate_applicant_name_and_email(name, &email)?;
+    let profile = resolve_applicant_profile(&state.pool, &account.profile).await?;
+    if profile.employee_number.is_none() {
+        return Err(ApiError::BadRequest("NIP wajib diisi."));
+    }
     if let Some(password) = account.password.as_deref() {
         validate_applicant_password(password)?;
     }
@@ -84,25 +208,35 @@ pub(super) async fn admin_update_account(
     .ok_or(ApiError::NotFound("Akun tidak ditemukan."))?;
     let result = if let Some(password) = account.password.as_deref() {
         let password_hash = hash_password(password)?;
-        sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3, must_change_password = TRUE, failed_login_attempts = 0, locked_until = NULL WHERE id = $4")
+        sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3, must_change_password = TRUE, failed_login_attempts = 0, locked_until = NULL, employee_number = $5, division_id = $6, department_id = $7, position_title = $8, last_education = $9 WHERE id = $4")
             .bind(name)
             .bind(&email)
             .bind(password_hash)
             .bind(id)
+            .bind(&profile.employee_number)
+            .bind(profile.division_id)
+            .bind(profile.department_id)
+            .bind(&profile.position_title)
+            .bind(&profile.last_education)
             .execute(&mut *transaction)
             .await
     } else {
-        sqlx::query("UPDATE applicants SET name = $1, email = $2 WHERE id = $3")
+        sqlx::query("UPDATE applicants SET name = $1, email = $2, employee_number = $4, division_id = $5, department_id = $6, position_title = $7, last_education = $8 WHERE id = $3")
             .bind(name)
             .bind(&email)
             .bind(id)
+            .bind(&profile.employee_number)
+            .bind(profile.division_id)
+            .bind(profile.department_id)
+            .bind(&profile.position_title)
+            .bind(&profile.last_education)
             .execute(&mut *transaction)
             .await
     };
     let result = match result {
         Ok(result) => result,
         Err(error) if is_unique_violation(&error) => {
-            return Err(ApiError::Conflict("Email sudah digunakan akun lain."));
+            return Err(ApiError::Conflict("Email atau NIP sudah digunakan akun lain."));
         }
         Err(error) => return Err(internal_error(error)),
     };
