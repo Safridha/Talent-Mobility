@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../query/queryKeys'
 import ApplicationForm from './ApplicationForm'
-import { ArrowLeft, Bell, Building2, Eye, FileText, LogIn, Megaphone, RotateCcw, Search, Users, Wrench, X } from 'lucide-react'
+import { ArrowLeft, Bell, Building2, ChevronLeft, ChevronRight, Eye, FileText, LogIn, Megaphone, RotateCcw, Search, Users, Wrench, X } from 'lucide-react'
 import { apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import ModalBackdrop from '../../components/ModalBackdrop'
@@ -18,6 +18,28 @@ import { applicationStatusOptions, getApplicationStatusDescription } from '../ap
 import { usePathRoute } from '../../usePathRoute'
 import { APPLICANT_ROUTES } from '../../routes'
 
+
+const TARGETS_PER_PAGE = 12
+
+// 1 2 3 ... 9 style page list: always first/last, the current page and its neighbours.
+function pageNumbers(current, count) {
+  if (count <= 7) return Array.from({ length: count }, (_, index) => index + 1)
+  const pages = new Set([1, count, current - 1, current, current + 1])
+  if (current <= 3) { pages.add(2); pages.add(3); pages.add(4) }
+  if (current >= count - 2) { pages.add(count - 1); pages.add(count - 2); pages.add(count - 3) }
+  const sorted = [...pages].filter((page) => page >= 1 && page <= count).sort((a, b) => a - b)
+  const items = []
+  sorted.forEach((page, index) => {
+    if (index > 0 && page - sorted[index - 1] > 1) items.push('gap')
+    items.push(page)
+  })
+  return items
+}
+
+function targetKind(target) {
+  if (target.target_level === 'department') return { label: 'Departemen', tone: 'department' }
+  return target.unit.startsWith('Bengkel') ? { label: 'Bengkel', tone: 'workshop' } : { label: 'Biro', tone: 'bureau' }
+}
 
 export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdated, sessionNotice }) {
   const queryClient = useQueryClient()
@@ -40,6 +62,8 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const [divisionId, setDivisionId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
   const [unitTarget, setUnitTarget] = useState('')
+  const [targetPage, setTargetPage] = useState(1)
+  const resultsRef = useRef(null)
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [selectedDirectTarget, setSelectedDirectTarget] = useState(null)
   const [authMode, setAuthMode] = useState(null)
@@ -217,6 +241,16 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
       return [departmentTarget, ...bureauTargets]
     })
   }, [departmentId, divisionId, organization.bureaus, organization.departments, organization.divisions, unitTarget])
+  useEffect(() => { setTargetPage(1) }, [divisionId, departmentId, unitTarget])
+  const targetPageCount = Math.max(1, Math.ceil(directTargets.length / TARGETS_PER_PAGE))
+  const currentTargetPage = Math.min(targetPage, targetPageCount)
+  const visibleTargets = directTargets.slice((currentTargetPage - 1) * TARGETS_PER_PAGE, currentTargetPage * TARGETS_PER_PAGE)
+
+  function goToTargetPage(nextPage) {
+    setTargetPage(Math.min(Math.max(1, nextPage), targetPageCount))
+    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   const appliedDirectTargetKeys = new Set(currentUserApplications
     .filter((application) => !application.job_id && application.status !== 'rejected')
     .map((application) => `direct:${application.target_department_id}:${application.target_bureau_id ?? ''}`))
@@ -491,27 +525,30 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             ) : organizationError ? (
               <section className="empty-state"><h2>Unit kerja belum dapat dimuat</h2><p role="alert">{organizationError}</p></section>
             ) : directTargets.length > 0 ? (
-              <section aria-label="Pilihan unit kerja untuk Lamar Langsung" className="direct-application-results">
+              <section aria-label="Pilihan unit kerja" className="direct-application-results" ref={resultsRef}>
                 <div className="results-bar">
                   <span><strong>{directTargets.length}</strong> tujuan tersedia di {divisions.length} divisi.</span>
-                  <span>Pilih unit untuk melihat cakupan tugas atau mengajukan lamaran langsung.</span>
+                  <span>Pilih unit untuk melihat cakupan tugas atau mengajukan lamaran.</span>
                 </div>
                 <div className="job-grid public-job-grid direct-application-grid">
-                  {directTargets.map((target) => {
+                  {visibleTargets.map((target) => {
                     const hasApplied = appliedDirectTargetKeys.has(target.key)
                     const isApplying = applyingJobId === target.key
+                    const kind = targetKind(target)
                     return (
                       <article className="job-card direct-application-card" key={target.key}>
                         <div className="card-top">
-                          <span className="division-tag"><Building2 size={14} /> {target.division}</span>
+                          <span className="division-tag"><Building2 size={14} /> <span>{target.division}</span></span>
+                          <span className={`target-kind target-kind-${kind.tone}`}>{kind.label}</span>
                         </div>
-                        <h2>{target.title}</h2>
-                        <div className="job-organization">
-                          <span><Users size={15} />{target.department}</span>
-                          {target.unit && <span><Wrench size={15} />{target.unit}</span>}
-                        </div>
+                        <h2 title={target.title}>{target.title}</h2>
+                        {target.target_level === 'bureau' && (
+                          <div className="job-organization">
+                            <span><Users size={15} />{target.department}</span>
+                          </div>
+                        )}
                         <p className="job-summary direct-application-card-description">
-                          {target.description || `Lamaran langsung untuk ${target.target_level === 'department' ? 'seluruh departemen ini' : 'unit ini'}.`}
+                          {target.description || `Ajukan lamaran untuk ${target.target_level === 'department' ? 'seluruh departemen ini' : 'unit ini'}.`}
                         </p>
                         <div className="card-footer">
                           <button
@@ -534,6 +571,37 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                     )
                   })}
                 </div>
+                {targetPageCount > 1 && (
+                  <div className="job-pagination-bar">
+                    <p className="job-pagination-summary">
+                      Menampilkan {(currentTargetPage - 1) * TARGETS_PER_PAGE + 1}-{Math.min(currentTargetPage * TARGETS_PER_PAGE, directTargets.length)} dari {directTargets.length} unit
+                    </p>
+                    <nav aria-label="Halaman daftar unit" className="job-pagination">
+                      <button aria-label="Halaman sebelumnya" className="job-pagination-control" disabled={currentTargetPage === 1} onClick={() => goToTargetPage(currentTargetPage - 1)} type="button">
+                        <ChevronLeft aria-hidden="true" size={18} />
+                      </button>
+                      {pageNumbers(currentTargetPage, targetPageCount).map((item, index) => (
+                        item === 'gap'
+                          ? <span aria-hidden="true" className="job-pagination-gap" key={`gap-${index}`}>...</span>
+                          : (
+                            <button
+                              aria-current={item === currentTargetPage ? 'page' : undefined}
+                              aria-label={`Halaman ${item}`}
+                              className={`job-pagination-page${item === currentTargetPage ? ' active' : ''}`}
+                              key={item}
+                              onClick={() => goToTargetPage(item)}
+                              type="button"
+                            >
+                              {item}
+                            </button>
+                          )
+                      ))}
+                      <button aria-label="Halaman berikutnya" className="job-pagination-control" disabled={currentTargetPage === targetPageCount} onClick={() => goToTargetPage(currentTargetPage + 1)} type="button">
+                        <ChevronRight aria-hidden="true" size={18} />
+                      </button>
+                    </nav>
+                  </div>
+                )}
               </section>
             ) : (
               <section className="empty-state">
