@@ -173,6 +173,52 @@ pub(super) async fn admin_import_accounts(
     })))
 }
 
+pub(super) async fn admin_reset_account_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = authorized_operational_admin(&state.pool, &headers).await?;
+    admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let result = sqlx::query(
+        "UPDATE applicants SET password_hash = $1, must_change_password = TRUE, failed_login_attempts = 0, locked_until = NULL WHERE id = $2",
+    )
+    .bind(password_hash)
+    .bind(id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(internal_error)?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound("Akun tidak ditemukan."));
+    }
+    sqlx::query("DELETE FROM applicant_tokens WHERE applicant_id = $1")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_error)?;
+    sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_error)?;
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "update",
+        "applicant_account",
+        &id.to_string(),
+        json!({ "password_reset_to_default": true }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(json!({
+        "message": "Kata sandi direset ke pal@123. Pelamar wajib menggantinya saat masuk berikutnya."
+    })))
+}
+
 pub(super) async fn admin_update_account(
     State(state): State<AppState>,
     headers: HeaderMap,

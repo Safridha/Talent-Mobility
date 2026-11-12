@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Database, Eye, EyeOff, FileSpreadsheet, Plus, Shield, Users } from 'lucide-react'
+import { Database, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, Shield, Users } from 'lucide-react'
 import { apiRequest } from '../../api'
 import PasswordRequirements from '../../components/PasswordRequirements'
 import { meetsPasswordRequirements } from '../../components/passwordValidation'
@@ -95,6 +95,8 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   const [pendingDelete, setPendingDelete] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [updatingStatusId, setUpdatingStatusId] = useState(null)
+  const [pendingReset, setPendingReset] = useState(null)
+  const [isResetting, setIsResetting] = useState(false)
   const divisions = organization?.divisions ?? []
   const departments = organization?.departments ?? []
   const [employeeMaster, setEmployeeMaster] = useState({ divisions: [], departments: [] })
@@ -269,6 +271,22 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       setError(requestError.message)
     } finally {
       setUpdatingStatusId(null)
+    }
+  }
+
+  async function resetPassword() {
+    if (!pendingReset) return
+    setError('')
+    setIsResetting(true)
+    try {
+      const response = await apiRequest(`${accountsPath}/${pendingReset.id}/reset-password`, { method: 'POST' })
+      setPendingReset(null)
+      setNotice(response.message)
+      refreshAccounts()
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsResetting(false)
     }
   }
 
@@ -637,7 +655,20 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                   <td className="admin-row-actions">
                     {isCurrentAdmin
                       ? <span className="admin-table-subtext">Akun admin Anda</span>
-                      : <button className="admin-small-button" onClick={() => editAccount(account)} type="button">Edit</button>}
+                      : <>
+                        <button className="admin-small-button" onClick={() => editAccount(account)} type="button">Edit</button>
+                        {!isAdminAccount && (
+                          <button
+                            aria-label={`Reset kata sandi ${account.name} ke default`}
+                            className="admin-small-button admin-icon-button"
+                            onClick={() => { setError(''); setPendingReset(account) }}
+                            title="Reset kata sandi ke default (pal@123)"
+                            type="button"
+                          >
+                            <KeyRound aria-hidden="true" size={15} />
+                          </button>
+                        )}
+                      </>}
                   </td>
                 </tr>
                 )
@@ -667,6 +698,20 @@ export function AccountListManager({ accountType, currentAdminId, organization }
         <AdminFormDialog onClose={resetForm} title={`Tambah akun ${accountKind}`}>
           {accountForm}
         </AdminFormDialog>
+      )}
+      {pendingReset && (
+        <ConfirmDialog
+          busyLabel="Mereset..."
+          confirmLabel="Reset kata sandi"
+          error={error}
+          icon={KeyRound}
+          isBusy={isResetting}
+          message={`Kata sandi ${pendingReset.name}${pendingReset.employee_number ? ` (NIP ${pendingReset.employee_number})` : ''} akan direset ke default pal@123. Sesi aktifnya diakhiri dan pelamar wajib menggantinya saat masuk berikutnya.`}
+          onCancel={() => { setPendingReset(null); setError('') }}
+          onConfirm={() => void resetPassword()}
+          title="Reset kata sandi ke default?"
+          tone="primary"
+        />
       )}
       {pendingDelete && (
         <ConfirmDialog

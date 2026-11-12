@@ -1090,3 +1090,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .master-manager { display: grid; gap: 12px; }
 .master-subtabs { width: fit-content; max-width: 100%; box-shadow: none; background: #f8fafc; }
+.admin-small-button.admin-icon-button { display: inline-flex; align-items: center; justify-content: center; padding-right: 9px; padding-left: 9px; }
