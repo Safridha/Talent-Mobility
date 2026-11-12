@@ -260,17 +260,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 @media (max-width: 900px) {
   .site-header { height: auto; min-height: 72px; }
-  .header-inner { height: auto; min-height: 72px; flex-wrap: wrap; gap: 8px; padding: 10px 0; }
-  .header-account { margin-left: auto; }
+  .header-inner { height: auto; min-height: 72px; flex-wrap: nowrap; gap: 8px; padding: 10px 0; }
+  .header-account { min-width: 0; margin-left: auto; }
 }
 @media (max-width: 700px) {
   .site-header { height: auto; min-height: 72px; }
-  .header-inner { min-height: 72px; flex-wrap: wrap; gap: 8px; padding: 10px 0; }
-  .header-account { width: 100%; justify-content: flex-end; }
-  .brand { gap: 9px; }
+  .header-inner { min-height: 72px; flex-wrap: nowrap; gap: 8px; padding: 10px 0; }
+  .header-account { width: auto; flex: 0 0 auto; justify-content: flex-end; }
+  .brand { min-width: 0; flex: 1 1 auto; gap: 8px; }
+  .brand-copy { min-width: 0; }
   .brand-icon { width: 40px; height: 40px; flex-basis: 40px; border-radius: 12px; }
-  .brand-title { gap: 7px; font-size: 16px; }
-  .brand-subtitle { font-size: 11px; }
+  .brand-title { gap: 7px; overflow: hidden; font-size: clamp(12px, 3.8vw, 16px); text-overflow: ellipsis; }
+  .brand-subtitle { overflow: hidden; font-size: clamp(8px, 2.7vw, 11px); text-overflow: ellipsis; white-space: nowrap; }
+  .header-auth-button { gap: 6px; padding: 0 10px; font-size: 12px; }
+  .header-auth-button svg { width: 15px; }
   .page-content { width: calc(100% - 30px); min-height: auto; padding: 20px 0 26px; }
   .hero-panel { min-height: 0; gap: 18px; padding: 20px 16px; border-radius: 16px; }
   .hero-badge { gap: 6px; padding: 5px 9px; font-size: 11px; }
