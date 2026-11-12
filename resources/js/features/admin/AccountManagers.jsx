@@ -166,8 +166,8 @@ export function AccountListManager({ accountType, currentAdminId, organization }
     const body = { name: form.name.trim(), email: form.email.trim() }
     if (!isAdminAccount) body.reset_password = form.reset_password
     if (form.password) body.password = form.password
+    body.employee_number = form.employee_number.trim()
     if (!isAdminAccount) {
-      body.employee_number = form.employee_number.trim()
       body.division_id = form.division_id ? Number(form.division_id) : null
       body.department_id = form.department_id ? Number(form.department_id) : null
       body.position_title = form.position_title.trim()
@@ -325,6 +325,11 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       <label><span>Nama lengkap <em>*</em></span>
         <input autoComplete="name" maxLength={200} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} />
       </label>
+      {isAdminAccount && (
+        <label><span>NIP (untuk login)</span>
+          <input inputMode="numeric" maxLength={40} onChange={(event) => setForm({ ...form, employee_number: event.target.value })} value={form.employee_number} />
+        </label>
+      )}
       {!isAdminAccount && (
         <>
           <label><span>NIP <em>*</em></span>
@@ -621,7 +626,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                 const isLastActiveAdmin = isAdminAccount && account.is_active && account.admin_role === 'super_admin' && activeSuperAdminCount <= 1
                 return (
                 <tr key={account.id}>
-                  <td className="position-name">{account.name}<span className="admin-table-subtext">{account.email || 'Tanpa email'}</span></td>
+                  <td className="position-name">{account.name}<span className="admin-table-subtext">{isAdminAccount && account.employee_number ? `NIP ${account.employee_number} · ` : ''}{account.email || 'Tanpa email'}</span></td>
                   {isAdminAccount && <td>
                     {adminRoles.find((role) => role.value === account.admin_role)?.label || account.admin_role}
                     <span className="admin-table-subtext">{account.scope_label}</span>

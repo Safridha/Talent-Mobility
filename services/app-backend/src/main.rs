@@ -193,6 +193,8 @@ struct LoginRequest {
 
 #[derive(Deserialize)]
 struct AdminLoginRequest {
+    /// NIP, or the account email as a fallback.
+    #[serde(alias = "identifier")]
     email: String,
     password: String,
 }
@@ -296,6 +298,8 @@ struct ApplicantAccountStatusRequest {
 #[derive(Deserialize)]
 struct AdminAccountCreateRequest {
     name: String,
+    #[serde(default)]
+    employee_number: Option<String>,
     email: String,
     password: String,
     admin_role: String,
@@ -308,6 +312,8 @@ struct AdminAccountCreateRequest {
 #[derive(Deserialize)]
 struct AdminAccountUpdateRequest {
     name: String,
+    #[serde(default)]
+    employee_number: Option<String>,
     email: String,
     password: Option<String>,
     admin_role: String,
@@ -502,6 +508,7 @@ struct ManagedAdminAccount {
     id: i64,
     name: String,
     email: String,
+    employee_number: Option<String>,
     created_at: String,
     is_active: bool,
     admin_role: String,
@@ -1421,6 +1428,23 @@ async fn seed_admin(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| std::io::Error::other(error.to_string()))?
         .to_string();
     insert_bootstrap_admin(pool, name.trim(), &email, &password_hash).await?;
+    // Optional NIP so the bootstrap admin can sign in like everyone else. Only filled when empty.
+    if let Some(nip) = env::var("ADMIN_NIP")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+    {
+        if nip.chars().count() > 40 {
+            return Err("ADMIN_NIP must be at most 40 characters".into());
+        }
+        sqlx::query(
+            "UPDATE admins SET employee_number = $1 WHERE email = $2 AND employee_number IS NULL",
+        )
+        .bind(&nip)
+        .bind(&email)
+        .execute(pool)
+        .await?;
+    }
     tracing::info!("Admin bootstrap account was created if it did not already exist.");
     Ok(())
 }

@@ -42,7 +42,7 @@ export default function AuthDialog({ onClose, onSuccess }) {
         <div className="auth-dialog-content">
           <h2 id="auth-title">Masuk ke akun Anda</h2>
           <p className="login-description">
-            Masukkan NIP dan kata sandi Anda untuk melanjutkan. Akun admin masuk menggunakan email terdaftar.
+            Masukkan NIP dan kata sandi Anda untuk melanjutkan.
           </p>
           <form className="login-form" onSubmit={handleSubmit}>
             <label htmlFor="auth-nip">NIP</label>

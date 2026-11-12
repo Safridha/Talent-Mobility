@@ -65,8 +65,9 @@ pub(super) async fn login(
     }
 
     let admin = sqlx::query_as::<_, AdminRecord>(
-        "SELECT admins.id, admins.name, admins.email, admins.password_hash, COALESCE(admins.locked_until > NOW(), FALSE) AS login_locked, admins.admin_role, admins.division_id, admins.department_id, admins.bureau_id, COALESCE((SELECT array_agg(admin_permissions.permission_key ORDER BY admin_permissions.permission_key) FROM admin_permissions WHERE admin_permissions.admin_id = admins.id), ARRAY[]::TEXT[]) AS permissions FROM admins WHERE admins.email = $1 AND admins.is_active = TRUE",
+        "SELECT admins.id, admins.name, admins.email, admins.password_hash, COALESCE(admins.locked_until > NOW(), FALSE) AS login_locked, admins.admin_role, admins.division_id, admins.department_id, admins.bureau_id, COALESCE((SELECT array_agg(admin_permissions.permission_key ORDER BY admin_permissions.permission_key) FROM admin_permissions WHERE admin_permissions.admin_id = admins.id), ARRAY[]::TEXT[]) AS permissions FROM admins WHERE (admins.employee_number = $1 OR admins.email = $2) AND admins.is_active = TRUE ORDER BY (admins.employee_number = $1) DESC LIMIT 1",
     )
+    .bind(&identifier)
     .bind(&email)
     .fetch_optional(&state.pool)
     .await
@@ -85,7 +86,7 @@ pub(super) async fn login(
         if record_admin_login_failure(&state.pool, admin.id).await? {
             return Err(ApiError::AccountSuspended);
         }
-        return Err(ApiError::BadRequest("Email atau kata sandi tidak sesuai."));
+        return Err(ApiError::BadRequest("NIP atau kata sandi tidak sesuai."));
     }
 
     ensure_admin_login_unlocked(&state.pool, admin.id).await?;
@@ -123,23 +124,29 @@ pub(super) async fn admin_login(
     State(state): State<AppState>,
     Json(credentials): Json<AdminLoginRequest>,
 ) -> Result<(HeaderMap, Json<AdminAuthResponse>), ApiError> {
-    let email = credentials.email.trim().to_ascii_lowercase();
-    if !is_valid_email(&email) || credentials.password.is_empty() {
+    let identifier = credentials.email.trim().to_owned();
+    let email = identifier.to_ascii_lowercase();
+    if identifier.is_empty()
+        || identifier.len() > 254
+        || identifier.chars().any(char::is_whitespace)
+        || credentials.password.is_empty()
+    {
         return Err(ApiError::BadRequest(
-            "Email admin dan kata sandi tidak sesuai.",
+            "NIP admin dan kata sandi tidak sesuai.",
         ));
     }
 
     let admin = sqlx::query_as::<_, AdminRecord>(
-        "SELECT admins.id, admins.name, admins.email, admins.password_hash, COALESCE(admins.locked_until > NOW(), FALSE) AS login_locked, admins.admin_role, admins.division_id, admins.department_id, admins.bureau_id, COALESCE((SELECT array_agg(admin_permissions.permission_key ORDER BY admin_permissions.permission_key) FROM admin_permissions WHERE admin_permissions.admin_id = admins.id), ARRAY[]::TEXT[]) AS permissions FROM admins WHERE admins.email = $1 AND admins.is_active = TRUE",
+        "SELECT admins.id, admins.name, admins.email, admins.password_hash, COALESCE(admins.locked_until > NOW(), FALSE) AS login_locked, admins.admin_role, admins.division_id, admins.department_id, admins.bureau_id, COALESCE((SELECT array_agg(admin_permissions.permission_key ORDER BY admin_permissions.permission_key) FROM admin_permissions WHERE admin_permissions.admin_id = admins.id), ARRAY[]::TEXT[]) AS permissions FROM admins WHERE (admins.employee_number = $1 OR admins.email = $2) AND admins.is_active = TRUE ORDER BY (admins.employee_number = $1) DESC LIMIT 1",
     )
+    .bind(&identifier)
     .bind(&email)
     .fetch_optional(&state.pool)
     .await
     .map_err(internal_error)?;
     let Some(admin) = admin else {
         return Err(ApiError::BadRequest(
-            "Email atau kata sandi admin tidak sesuai.",
+            "NIP atau kata sandi admin tidak sesuai.",
         ));
     };
     if admin.login_locked {
@@ -154,7 +161,7 @@ pub(super) async fn admin_login(
             return Err(ApiError::AccountSuspended);
         }
         return Err(ApiError::BadRequest(
-            "Email atau kata sandi admin tidak sesuai.",
+            "NIP atau kata sandi admin tidak sesuai.",
         ));
     }
 
