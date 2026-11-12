@@ -72,6 +72,17 @@ pub(super) async fn admin_create_account(
     Ok(Json(json!({ "message": "Akun berhasil ditambahkan. Kata sandi awal: pal@123 (wajib diganti saat masuk pertama)." })))
 }
 
+type ExistingRosterRow = (
+    i64,
+    String,
+    String,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+);
+
 pub(super) async fn admin_import_accounts(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -85,32 +96,44 @@ pub(super) async fn admin_import_accounts(
     if request.rows.len() > 5000 {
         return Err(ApiError::BadRequest("Maksimal 5000 baris per impor."));
     }
+    let dry_run = request.dry_run;
     // One shared initial password for the batch: hash once (Argon2 is deliberately slow).
     let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
     let mut cache = load_import_org_cache(&state.pool).await?;
 
     let mut created = 0_i64;
+    let mut updated = 0_i64;
+    let mut unchanged = 0_i64;
     let mut skipped = 0_i64;
+    let mut zero_restored_count = 0_i64;
+    let mut nip_updated = 0_i64;
+    let mut bureau_cleared = 0_i64;
     let mut invalid: Vec<serde_json::Value> = Vec::new();
+    let mut changes: Vec<serde_json::Value> = Vec::new();
+    let mut seen_numbers: Vec<String> = Vec::new();
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     for (index, row) in request.rows.iter().enumerate() {
         let line = index + 2; // header is line 1
         let name = row.name.trim();
         let prepared = (|| -> Result<_, ApiError> {
-            let employee_number = clean_profile_text(&Some(row.employee_number.clone()), 40)?
+            let original = clean_profile_text(&Some(row.employee_number.clone()), 40)?
                 .ok_or(ApiError::BadRequest("NIP kosong."))?;
+            let employee_number = restore_roster_nip(&original);
+            let zero_restored = employee_number != original;
             if name.is_empty() || name.len() > 200 {
                 return Err(ApiError::BadRequest("Nama kosong atau terlalu panjang."));
             }
             Ok((
                 employee_number,
+                original,
+                zero_restored,
                 clean_profile_text(&row.division_name, 200)?,
                 clean_profile_text(&row.department_name, 200)?,
                 clean_profile_text(&row.position_title, 200)?,
                 clean_profile_text(&row.last_education, 80)?,
             ))
         })();
-        let (employee_number, division, department, position_title, last_education) =
+        let (employee_number, original_number, zero_restored, division, department, position_title, last_education) =
             match prepared {
                 Ok(value) => value,
                 Err(error) => {
@@ -122,6 +145,10 @@ pub(super) async fn admin_import_accounts(
                     continue;
                 }
             };
+        if zero_restored {
+            zero_restored_count += 1;
+        }
+        seen_numbers.push(employee_number.clone());
         // A department only makes sense inside a division; without one it is dropped.
         let (division_id, department_id) = ensure_import_org(
             &mut transaction,
@@ -130,47 +157,154 @@ pub(super) async fn admin_import_accounts(
             department.as_deref(),
         )
         .await?;
-        let inserted = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) SELECT $1::TEXT, $2::TEXT, $3::TEXT, TRUE, $4::TEXT, $5::BIGINT, $6::BIGINT, $7::TEXT, $8::TEXT WHERE NOT EXISTS (SELECT 1 FROM admins WHERE employee_number = $4) ON CONFLICT DO NOTHING RETURNING id",
+
+        let existing = sqlx::query_as::<_, ExistingRosterRow>(
+            // Also finds the account saved earlier under the NIP without its leading zero.
+            "SELECT id, employee_number, name, division_id, department_id, bureau_id, position_title, last_education FROM applicants WHERE employee_number = $1 OR employee_number = $2 ORDER BY (employee_number = $1) DESC LIMIT 1 FOR UPDATE",
         )
-        .bind(name)
-        .bind(Option::<String>::None)
-        .bind(&password_hash)
         .bind(&employee_number)
-        .bind(division_id)
-        .bind(department_id)
-        .bind(&position_title)
-        .bind(&last_education)
+        .bind(&original_number)
         .fetch_optional(&mut *transaction)
         .await
         .map_err(internal_error)?;
-        if inserted.is_some() {
-            created += 1;
-        } else {
-            skipped += 1;
+
+        match existing {
+            None => {
+                let inserted = sqlx::query_scalar::<_, i64>(
+                    "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) SELECT $1::TEXT, $2::TEXT, $3::TEXT, TRUE, $4::TEXT, $5::BIGINT, $6::BIGINT, $7::TEXT, $8::TEXT WHERE NOT EXISTS (SELECT 1 FROM admins WHERE employee_number = $4) ON CONFLICT DO NOTHING RETURNING id",
+                )
+                .bind(name)
+                .bind(Option::<String>::None)
+                .bind(&password_hash)
+                .bind(&employee_number)
+                .bind(division_id)
+                .bind(department_id)
+                .bind(&position_title)
+                .bind(&last_education)
+                .fetch_optional(&mut *transaction)
+                .await
+                .map_err(internal_error)?;
+                if inserted.is_some() {
+                    created += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+            Some((id, old_number, old_name, old_division, old_department, old_bureau, old_position, old_education)) => {
+                // Updated Excel: refresh the roster data of the existing account. Blank cells never erase
+                // what the account already has, and email/password/biro are not part of the Excel.
+                let (new_division, new_department) = if division_id.is_some() {
+                    (division_id, department_id)
+                } else {
+                    (old_division, old_department)
+                };
+                let new_position = position_title.clone().or_else(|| old_position.clone());
+                let new_education = last_education.clone().or_else(|| old_education.clone());
+                // A biro belongs to one department: moving to another department clears it.
+                let new_bureau = if new_department == old_department { old_bureau } else { None };
+
+                let mut fields: Vec<&str> = Vec::new();
+                let nip_changed = old_number != employee_number;
+                if nip_changed {
+                    fields.push("NIP");
+                    nip_updated += 1;
+                }
+                if name != old_name {
+                    fields.push("nama");
+                }
+                if new_division != old_division {
+                    fields.push("divisi");
+                }
+                if new_department != old_department {
+                    fields.push("departemen");
+                }
+                if new_bureau != old_bureau {
+                    fields.push("biro dikosongkan");
+                    bureau_cleared += 1;
+                }
+                if new_position != old_position {
+                    fields.push("jabatan");
+                }
+                if new_education != old_education {
+                    fields.push("pendidikan");
+                }
+                if fields.is_empty() {
+                    unchanged += 1;
+                } else {
+                    sqlx::query(
+                        "UPDATE applicants SET name = $1, division_id = $2, department_id = $3, bureau_id = $4, position_title = $5, last_education = $6, employee_number = $8 WHERE id = $7",
+                    )
+                    .bind(name)
+                    .bind(new_division)
+                    .bind(new_department)
+                    .bind(new_bureau)
+                    .bind(&new_position)
+                    .bind(&new_education)
+                    .bind(id)
+                    .bind(&employee_number)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(internal_error)?;
+                    if nip_changed {
+                        // Keep the NIP copied onto this applicant's applications in step.
+                        sqlx::query("UPDATE applications SET employee_number = $1 WHERE applicant_id = $2 AND employee_number = $3")
+                            .bind(&employee_number)
+                            .bind(id)
+                            .bind(&old_number)
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(internal_error)?;
+                    }
+                    updated += 1;
+                    if changes.len() < 50 {
+                        changes.push(json!({ "employee_number": employee_number, "name": name, "fields": fields }));
+                    }
+                }
+            }
         }
     }
-    let invalid_count = invalid.len();
-    record_admin_audit(
-        &mut transaction,
-        admin.id,
-        "create",
-        "applicant_account",
-        "import",
-        json!({ "source": "excel_import", "created": created, "skipped": skipped, "invalid": invalid_count, "new_divisions": cache.created_divisions, "new_departments": cache.created_departments }),
+    // Information only: accounts that are not in this file (e.g. no longer employed). Nothing is deactivated.
+    let not_in_file = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)::BIGINT FROM applicants WHERE employee_number IS NOT NULL AND NOT (employee_number = ANY($1))",
     )
+    .bind(&seen_numbers)
+    .fetch_one(&mut *transaction)
     .await
     .map_err(internal_error)?;
-    transaction.commit().await.map_err(internal_error)?;
+    let invalid_count = invalid.len();
+    if dry_run {
+        transaction.rollback().await.map_err(internal_error)?;
+    } else {
+        record_admin_audit(
+            &mut transaction,
+            admin.id,
+            "create",
+            "applicant_account",
+            "import",
+            json!({ "source": "excel_import", "created": created, "updated": updated, "unchanged": unchanged, "skipped": skipped, "invalid": invalid_count, "new_divisions": cache.created_divisions, "new_departments": cache.created_departments, "nip_zero_restored": zero_restored_count, "nip_updated": nip_updated, "biro_cleared": bureau_cleared, "not_in_file": not_in_file }),
+        )
+        .await
+        .map_err(internal_error)?;
+        transaction.commit().await.map_err(internal_error)?;
+    }
     invalid.truncate(50);
+    let prefix = if dry_run { "Pratinjau: " } else { "" };
     Ok(Json(json!({
+        "dry_run": dry_run,
         "created": created,
+        "updated": updated,
+        "unchanged": unchanged,
         "skipped": skipped,
+        "not_in_file": not_in_file,
         "new_divisions": cache.created_divisions,
         "new_departments": cache.created_departments,
+        "nip_zero_restored": zero_restored_count,
+        "nip_updated": nip_updated,
+        "biro_cleared": bureau_cleared,
         "invalid_count": invalid_count,
         "invalid": invalid,
-        "message": format!("{created} akun dibuat, {skipped} dilewati (NIP/email sudah terdaftar), {invalid_count} baris tidak valid. Master data bertambah {} divisi dan {} departemen.", cache.created_divisions, cache.created_departments),
+        "changes": changes,
+        "message": format!("{prefix}{created} akun baru, {updated} diperbarui, {unchanged} tidak berubah, {skipped} dilewati (NIP dipakai admin), {invalid_count} baris tidak valid."),
     })))
 }
 

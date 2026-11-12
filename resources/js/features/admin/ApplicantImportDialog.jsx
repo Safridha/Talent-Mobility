@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Download, FileSpreadsheet, Upload } from 'lucide-react'
+import { Download, FileSpreadsheet, Upload, Search } from 'lucide-react'
 import { readSheet } from 'read-excel-file/browser'
 import writeExcelFile from 'write-excel-file/browser'
 import { apiRequest } from '../../api'
@@ -23,6 +23,13 @@ function normalizeHeader(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
+// Excel drops the leading zero of NIPs: an 8-digit NIP starting with 20-26 is really 9 digits starting with 0.
+// (The server applies the same rule, so the result is identical either way.)
+function restoreNip(value) {
+  const nip = String(value ?? '').trim()
+  return /^2[0-6]\d{6}$/.test(nip) ? `0${nip}` : nip
+}
+
 function cellText(value) {
   if (value === null || value === undefined) return ''
   return String(value).trim()
@@ -44,6 +51,7 @@ async function parseWorkbook(file) {
   for (const line of sheet.slice(1)) {
     const row = {}
     for (const [field, index] of Object.entries(columnIndex)) row[field] = cellText(line[index])
+    row.employee_number = restoreNip(row.employee_number)
     if (!row.employee_number && !row.name) continue
     rows.push(row)
   }
@@ -58,6 +66,7 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
   const [isParsing, setIsParsing] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [result, setResult] = useState(null)
+  const [preview, setPreview] = useState(null) // dry-run outcome, shown before anything is saved
 
   async function downloadTemplate() {
     await writeExcelFile([TEMPLATE_HEADERS, ...TEMPLATE_EXAMPLE]).toFile('template-import-akun-pelamar.xlsx')
@@ -69,6 +78,7 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
     if (!file) return
     setError('')
     setResult(null)
+    setPreview(null)
     setIsParsing(true)
     try {
       setRows(await parseWorkbook(file))
@@ -82,6 +92,7 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
     }
   }
 
+  // First press: check what the file would change (nothing is saved). Second press: apply it.
   async function submit(event) {
     event.preventDefault()
     setError('')
@@ -89,14 +100,20 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
       setError('Pilih file Excel terlebih dahulu.')
       return
     }
+    const applying = Boolean(preview)
     setIsImporting(true)
     try {
       const response = await apiRequest('/admin/accounts/import', {
         method: 'POST',
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ rows, dry_run: !applying }),
       })
-      setResult(response)
-      onImported?.(response)
+      if (applying) {
+        setResult(response)
+        setPreview(null)
+        onImported?.(response)
+      } else {
+        setPreview(response)
+      }
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -104,12 +121,14 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
     }
   }
 
+  const hasChanges = preview ? preview.created + preview.updated > 0 : false
+
   return (
     <AdminFormDialog className="applicant-import-dialog" onClose={onClose} title="Import akun pelamar dari Excel">
       <form className="organization-form account-manager-form" onSubmit={submit}>
         <p className="organization-help account-form-help">
           Kolom yang dibaca: <strong>nip, Employee Name, Divisi, Unit Kerja (Departemen), Job Title (Jabatan), Last Education</strong>.
-          Kolom lain (TL/TTL, Age) diabaikan. Email dikosongkan (tidak wajib) dan dapat diisi kemudian lewat Edit akun.
+          Kolom lain (TL/TTL, Age) diabaikan. NIP 8 digit berawalan 20-26 otomatis dilengkapi angka 0 di depan (Excel sering menghilangkannya), termasuk untuk akun lama yang NIP-nya sudah tersimpan tanpa 0. Email dikosongkan (tidak wajib) dan dapat diisi kemudian lewat Edit akun.
         </p>
         <div className="import-actions">
           <button className="detail-button" onClick={() => void downloadTemplate()} type="button">
@@ -142,8 +161,41 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
           </div>
         )}
         <p className="organization-help account-form-help">
-          Semua akun dibuat dengan kata sandi awal <strong>pal@123</strong>. Pelamar masuk memakai NIP dan wajib menggantinya saat masuk pertama. NIP yang sudah terdaftar dilewati. Divisi dan Departemen yang belum ada di master data otomatis ditambahkan.
+          Akun baru dibuat dengan kata sandi awal <strong>pal@123</strong> dan wajib diganti saat masuk pertama. Untuk file yang diperbarui: NIP yang sudah terdaftar <strong>diperbarui</strong> (nama, divisi, departemen, jabatan, pendidikan). Sel kosong tidak menghapus data lama; email, kata sandi, dan biro tidak diubah (biro dikosongkan hanya jika departemen berpindah). Divisi dan Departemen baru otomatis ditambahkan ke master data.
         </p>
+        {preview && !result && (
+          <section aria-label="Pratinjau perubahan" className="import-diff">
+            <h4><Search size={15} /> Pratinjau (belum disimpan)</h4>
+            <dl className="import-diff-stats">
+              <div><dt>Akun baru</dt><dd>{preview.created}</dd></div>
+              <div><dt>Diperbarui</dt><dd>{preview.updated}</dd></div>
+              <div><dt>Tidak berubah</dt><dd>{preview.unchanged}</dd></div>
+              <div><dt>Dilewati</dt><dd>{preview.skipped}</dd></div>
+            </dl>
+            <ul className="import-diff-notes">
+              {preview.nip_zero_restored > 0 && <li>{preview.nip_zero_restored} NIP dilengkapi angka 0 di depan{preview.nip_updated > 0 ? `; ${preview.nip_updated} akun lama akan mengganti NIP-nya` : ''}.</li>}
+              {preview.new_divisions + preview.new_departments > 0 && <li>Master data bertambah {preview.new_divisions} divisi dan {preview.new_departments} departemen.</li>}
+              {preview.biro_cleared > 0 && <li>{preview.biro_cleared} akun dikosongkan biro-nya karena berpindah departemen.</li>}
+              {preview.not_in_file > 0 && <li>{preview.not_in_file} akun yang sudah terdaftar tidak ada di file ini (tidak diubah dan tidak dinonaktifkan).</li>}
+              {preview.skipped > 0 && <li>{preview.skipped} baris dilewati karena NIP dipakai akun admin.</li>}
+              {preview.invalid_count > 0 && <li>{preview.invalid_count} baris tidak valid:{' '}{preview.invalid.slice(0, 5).map((item) => `baris ${item.line} (${item.message})`).join(', ')}{preview.invalid_count > 5 ? ', ...' : ''}</li>}
+            </ul>
+            {preview.changes?.length > 0 && (
+              <div className="admin-table-scroll import-preview">
+                <table className="admin-table">
+                  <thead><tr><th>NIP</th><th>NAMA</th><th>YANG BERUBAH</th></tr></thead>
+                  <tbody>
+                    {preview.changes.map((change) => (
+                      <tr key={change.employee_number}><td>{change.employee_number}</td><td>{change.name}</td><td>{change.fields.join(', ')}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+                {preview.updated > preview.changes.length && <p className="admin-table-note">Menampilkan {preview.changes.length} dari {preview.updated} akun yang diperbarui.</p>}
+              </div>
+            )}
+            {!hasChanges && <p className="organization-help">Tidak ada akun baru maupun yang berubah, jadi tidak ada yang perlu diterapkan.</p>}
+          </section>
+        )}
         {error && <p className="admin-alert error" role="alert">{error}</p>}
         {result && (
           <div className="admin-alert success import-result" role="status">
@@ -158,8 +210,12 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
         <div className="organization-form-actions">
           <button className="detail-button" onClick={onClose} type="button">{result ? 'Tutup' : 'Batal'}</button>
           {!result && (
-            <button className="apply-button" disabled={isImporting || !rows.length} type="submit">
-              {isImporting ? 'Mengimpor...' : <><Upload size={16} /> Impor {rows.length || ''} akun</>}
+            <button className="apply-button" disabled={isImporting || !rows.length || (preview && !hasChanges)} type="submit">
+              {isImporting
+                ? (preview ? 'Menerapkan...' : 'Memeriksa...')
+                : preview
+                  ? <><Upload size={16} /> Terapkan {preview.created + preview.updated} perubahan</>
+                  : <><Search size={16} /> Periksa perubahan</>}
             </button>
           )}
         </div>

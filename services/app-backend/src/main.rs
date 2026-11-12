@@ -281,6 +281,9 @@ struct ApplicantImportRow {
 #[derive(Deserialize)]
 struct ApplicantImportRequest {
     rows: Vec<ApplicantImportRow>,
+    /// Preview only: run everything, report the outcome, then roll back.
+    #[serde(default)]
+    dry_run: bool,
 }
 
 #[derive(Deserialize)]
@@ -1248,6 +1251,20 @@ async fn resolve_applicant_profile(
     })
 }
 
+/// The roster is exported through Excel, which drops the leading zero of NIPs. An 8-digit NIP that starts
+/// with 20-26 is a 9-digit NIP starting with 0, so put the zero back. Anything else is left untouched.
+fn restore_roster_nip(value: &str) -> String {
+    let value = value.trim();
+    let is_dropped_zero = value.len() == 8
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && matches!(&value[..2], "20" | "21" | "22" | "23" | "24" | "25" | "26");
+    if is_dropped_zero {
+        format!("0{value}")
+    } else {
+        value.to_owned()
+    }
+}
+
 fn org_name_key(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
@@ -1514,6 +1531,21 @@ mod tests {
         validate_optional_organization_name, validate_organization_description,
     };
     use super::*;
+
+    #[test]
+    fn roster_nip_gets_its_dropped_leading_zero_back() {
+        for prefix in ["20", "21", "22", "23", "24", "25", "26"] {
+            assert_eq!(restore_roster_nip(&format!("{prefix}116996")), format!("0{prefix}116996"));
+        }
+        // Already complete, other prefixes, other lengths and non-numeric values are unchanged.
+        assert_eq!(restore_roster_nip("025116996"), "025116996");
+        assert_eq!(restore_roster_nip("223030017"), "223030017");
+        assert_eq!(restore_roster_nip("103892806"), "103892806");
+        assert_eq!(restore_roster_nip("15012345"), "15012345");
+        assert_eq!(restore_roster_nip("2511699"), "2511699");
+        assert_eq!(restore_roster_nip("25A16996"), "25A16996");
+        assert_eq!(restore_roster_nip(" 25116996 "), "025116996");
+    }
 
     #[test]
     fn session_cookie_is_http_only_and_not_accessible_as_a_bearer_header() {
