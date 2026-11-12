@@ -64,3 +64,7 @@ erDiagram
 ## Kolom lama yang masih ada
 
 `applications.phone_number`, `current_position`, `current_unit` adalah kolom lama (kosong pada lamaran baru). Dipertahankan karena data riwayat lamaran lama mungkin masih memakainya.
+
+## Konkurensi
+
+Aturan idempotensi, kunci baris, dan advisory lock untuk tiap alur dijelaskan di [concurrency.md](concurrency.md). Tabel `idempotency_keys` menyimpan respons yang bisa diulang untuk permintaan pembuatan (kunci dihapus otomatis setelah 48 jam).

@@ -18,7 +18,12 @@ serde_json = "1"
 sha2 = "0.10"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "migrate", "macros", "json"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
-tower-http = { version = "0.6", features = ["fs", "trace"] }
+tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip", "set-header"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
+
+# Debug builds (`cargo run`, `npm run dev`) run dependencies unoptimised: Argon2 password hashing, SHA-256 and
+# the Postgres driver are then 10-20x slower. Optimise dependencies only; the app's own crate stays fast to compile.
+[profile.dev.package."*"]
+opt-level = 3

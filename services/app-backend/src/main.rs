@@ -24,7 +24,12 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPoolOptions, types::Json as SqlJson, FromRow, PgPool};
 use tower_http::{
+    compression::{
+        predicate::{NotForContentType, Predicate, SizeAbove},
+        CompressionLayer,
+    },
     services::{ServeDir, ServeFile},
+    set_header::SetResponseHeader,
     trace::TraceLayer,
 };
 use ulid::Ulid;
@@ -35,6 +40,7 @@ mod admin_audit;
 mod admin_permissions;
 mod applications;
 mod employee_master;
+mod idempotency;
 mod auth;
 mod jobs;
 mod push;
@@ -45,6 +51,7 @@ use admin_audit::*;
 use admin_permissions::*;
 use applications::*;
 use employee_master::*;
+use idempotency::*;
 use auth::*;
 use jobs::*;
 use push::*;
@@ -683,6 +690,10 @@ struct JobStatusRequest {
 struct ApplicationStatusRequest {
     status: String,
     reason: Option<String>,
+    /// The status the admin was looking at. If another admin changed it meanwhile the request is refused
+    /// (optimistic concurrency) instead of silently overriding their decision.
+    #[serde(default)]
+    expected_status: Option<String>,
 }
 
 #[derive(FromRow, Serialize)]
@@ -822,6 +833,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     ensure_application_public_ids(&pool).await?;
     seed_admin(&pool).await?;
+    {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            loop {
+                purge_expired_idempotency_keys(&pool).await;
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            }
+        });
+    }
 
     let app = Router::new()
         .route("/api/login", post(login))
@@ -963,7 +983,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             patch(mark_applicant_notification_read),
         )
         .route_layer(middleware::from_fn(prevent_api_caching))
+        // Vite emits content-hashed file names, so built assets can be cached for a year.
+        .nest_service(
+            "/spa/assets",
+            SetResponseHeader::overriding(
+                ServeDir::new("public/spa/assets"),
+                CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=31536000, immutable"),
+            ),
+        )
         .fallback_service(ServeDir::new("public").fallback(ServeFile::new("public/spa/index.html")))
+        // gzip JSON, JS and CSS (large account/application lists shrink ~10x); PDFs and images are
+        // already compressed, and tiny bodies are not worth it.
+        .layer(CompressionLayer::new().compress_when(
+            SizeAbove::new(1024)
+                .and(NotForContentType::const_new("application/pdf"))
+                .and(NotForContentType::IMAGES),
+        ))
         .layer(TraceLayer::new_for_http())
         .with_state(AppState { pool, push_service });
 

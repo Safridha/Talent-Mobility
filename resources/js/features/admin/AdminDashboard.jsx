@@ -10,7 +10,7 @@ import { useAccountAvatar } from '../account/useAccountAvatar.ts'
 import { AdminTableToolbar } from './AdminPrimitives'
 import { AdminTablePagination } from './AdminPagination'
 import { useAdminPagination } from './useAdminPagination'
-import { downloadTablePdf } from './downloadPdf'
+import { downloadApplicantPdf, downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 import PushNotificationControl from '../../components/PushNotificationControl'
 import { UnitWorkManager } from './OrganizationManagers'
@@ -168,34 +168,9 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     setExportingApplicationId(application.id)
     try {
       const details = await apiRequest(`/admin/applications/${application.id}`)
-      const submittedAt = new Date(details.created_at)
-      const rows = [
-        ['ID lamaran', details.id],
-        ['Nama pelamar', details.applicant_name],
-        ['Email', details.applicant_email],
-        ['Nomor telepon', details.phone_number],
-        ['NIP', details.employee_number],
-        ['Divisi asal', details.origin_division],
-        ['Unit asal', details.origin_unit],
-        ['Posisi saat ini', details.current_position],
-        ['Unit saat ini', details.current_unit],
-        ['Pendidikan terakhir', details.education_level],
-        ['Bidang studi', details.study_field],
-        ['Unit / lowongan tujuan', details.target_label || details.job_title],
-        ...(details.job_id ? [['Jenis lamaran', 'Lowongan']] : []),
-        ['Status', applicationStatusOptions.find((status) => status.value === details.status)?.label || details.status],
-        ['Tanggal lamaran', Number.isNaN(submittedAt.getTime()) ? details.created_at : submittedAt.toLocaleString('id-ID')],
-        ['Deskripsi posisi', details.position_description],
-        ['Motivasi dan rencana kontribusi', details.motivation],
-        ['Dokumen', details.documents.map((document) => document.file_name).join('\n')],
-      ].map(([label, value]) => [label, value || '-'])
-      const safeName = details.applicant_name.toLocaleLowerCase('id').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      await downloadTablePdf(
-        `data-pelamar-${safeName || details.id}`,
-        `Data Pelamar · ${details.applicant_name}`,
-        ['Informasi', 'Data'],
-        rows,
-      )
+      await downloadApplicantPdf(details, {
+        statusLabel: applicationStatusOptions.find((status) => status.value === details.status)?.label,
+      })
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -225,7 +200,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     try {
       await apiRequest(`/admin/applications/${selectedApplication.id}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status, reason }),
+        body: JSON.stringify({ status, reason, expected_status: selectedApplication.status }),
       })
       setNotice('Status lamaran berhasil diperbarui.')
       setError('')

@@ -322,13 +322,53 @@ pub(super) fn validate_application_pdf(
     Ok(file_name.to_owned())
 }
 
+/// Everything that defines the submitted request, so a retry with the same key but different content is
+/// told apart from a genuine retry.
+fn application_fingerprint(
+    fields: &ApplicationSubmissionFields,
+    documents: &[UploadedApplicationDocument],
+) -> String {
+    let job_id = fields.job_id.clone().unwrap_or_default();
+    let department = fields
+        .target_department_id
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    let bureau = fields
+        .target_bureau_id
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    let mut parts: Vec<Vec<u8>> = vec![
+        job_id.into_bytes(),
+        department.into_bytes(),
+        bureau.into_bytes(),
+        fields.employee_number.clone().into_bytes(),
+        fields.applicant_full_name.clone().into_bytes(),
+        fields.origin_division.clone().into_bytes(),
+        fields.origin_unit.clone().into_bytes(),
+        fields.education_level.clone().into_bytes(),
+        fields.study_field.clone().into_bytes(),
+        fields.motivation.clone().into_bytes(),
+    ];
+    for document in documents {
+        parts.push(document.document_type.as_bytes().to_vec());
+        parts.push(document.file_name.clone().into_bytes());
+        parts.push(Sha256::digest(&document.content).to_vec());
+    }
+    let borrowed: Vec<&[u8]> = parts.iter().map(Vec::as_slice).collect();
+    request_fingerprint(&borrowed)
+}
+
 pub(super) async fn create_application(
     State(state): State<AppState>,
     headers: HeaderMap,
     multipart: Multipart,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<(HeaderMap, Json<serde_json::Value>), ApiError> {
     let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
+    let idempotency_key = read_idempotency_key(&headers)?;
     let (fields, documents) = parse_application_submission(multipart).await?;
+    let fingerprint = idempotency_key
+        .as_ref()
+        .map(|_| application_fingerprint(&fields, &documents));
 
     let position_description = if let Some(job_id) = &fields.job_id {
         let is_open: bool = sqlx::query_scalar(
@@ -361,6 +401,16 @@ pub(super) async fn create_application(
     };
 
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    // Idempotency: a retry or double click with the same key replays the first response. A concurrent
+    // duplicate waits here for the first transaction to commit, so the work below runs once.
+    let idempotency_scope = format!("application:{applicant_id}");
+    if let (Some(key), Some(fingerprint)) = (&idempotency_key, &fingerprint) {
+        if let Claim::Replay(response) =
+            claim_idempotency_key(&mut transaction, &idempotency_scope, key, fingerprint).await?
+        {
+            return Ok((replayed_headers(), Json(response)));
+        }
+    }
     let max_applications = sqlx::query_scalar::<_, i32>(
         "SELECT max_applications FROM applicant_application_limit WHERE id = 1",
     )
@@ -435,13 +485,7 @@ pub(super) async fn create_application(
     .await
     .map_err(internal_error)?;
 
-    transaction.commit().await.map_err(internal_error)?;
-    dispatch_admin_application_push(
-        state.pool.clone(),
-        state.push_service.clone(),
-        application_id,
-    );
-    Ok(Json(json!({
+    let response = json!({
         "message": "Lamaran berhasil dikirim.",
         "application_id": public_id,
         "job_id": fields.job_id,
@@ -450,5 +494,15 @@ pub(super) async fn create_application(
         "target_level": if fields.target_bureau_id.is_some() { "bureau" } else if fields.job_id.is_none() { "department" } else { "" },
         "status": "submitted",
         "created_at": created_at,
-    })))
+    });
+    if let Some(key) = &idempotency_key {
+        complete_idempotency_key(&mut transaction, &idempotency_scope, key, &response).await?;
+    }
+    transaction.commit().await.map_err(internal_error)?;
+    dispatch_admin_application_push(
+        state.pool.clone(),
+        state.push_service.clone(),
+        application_id,
+    );
+    Ok((HeaderMap::new(), Json(response)))
 }

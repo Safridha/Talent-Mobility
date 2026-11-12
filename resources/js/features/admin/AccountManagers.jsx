@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Database, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, Shield, Users } from 'lucide-react'
 import { apiRequest } from '../../api'
 import PasswordRequirements from '../../components/PasswordRequirements'
@@ -88,6 +88,8 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   const [statusFilter, setStatusFilter] = useState('all')
   const [editingId, setEditingId] = useState(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  // New key each time the create dialog opens; resent on retries/double clicks of the same submission.
+  const createKey = useRef('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [form, setForm] = useState(emptyAccountForm)
   const [showPassword, setShowPassword] = useState(false)
@@ -185,6 +187,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       await apiRequest(editingId ? `${accountsPath}/${editingId}` : accountsPath, {
         method: editingId ? 'PUT' : 'POST',
         body: JSON.stringify(body),
+        headers: !editingId && !isAdminAccount && createKey.current ? { 'Idempotency-Key': createKey.current } : undefined,
       })
       setNotice(editingId
         ? !isAdminAccount && form.reset_password
@@ -227,6 +230,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   }
 
   function openCreateForm() {
+    createKey.current = crypto.randomUUID()
     resetForm()
     setError('')
     setNotice('')

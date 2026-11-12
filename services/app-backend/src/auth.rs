@@ -565,7 +565,13 @@ pub(super) async fn update_applicant_employee_profile(
     .bind(account.id)
     .execute(&state.pool)
     .await
-    .map_err(internal_error)?;
+    .map_err(|error| {
+        if is_foreign_key_violation(&error) {
+            ApiError::Conflict(MASTER_DATA_CHANGED)
+        } else {
+            internal_error(error)
+        }
+    })?;
     Ok(Json(
         build_applicant_profile_response(&state.pool, account.id).await?,
     ))

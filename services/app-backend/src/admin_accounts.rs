@@ -20,9 +20,10 @@ pub(super) async fn admin_create_account(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(account): Json<AdminApplicantCreateRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<(HeaderMap, Json<serde_json::Value>), ApiError> {
     let admin = authorized_operational_admin(&state.pool, &headers).await?;
     admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    let idempotency_key = read_idempotency_key(&headers)?;
     let name = account.name.trim();
     let email = normalize_optional_email(account.email.as_deref())?;
     if name.is_empty() || name.len() > 200 {
@@ -35,8 +36,27 @@ pub(super) async fn admin_create_account(
     if profile.employee_number.is_none() {
         return Err(ApiError::BadRequest("NIP wajib diisi."));
     }
-    let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    // Idempotency: a double click or retry with the same key replays the first result.
+    let idempotency_scope = format!("applicant-account:{}", admin.id);
+    if let Some(key) = &idempotency_key {
+        let fingerprint = request_fingerprint(&[
+            name.as_bytes(),
+            email.as_deref().unwrap_or("").as_bytes(),
+            profile.employee_number.as_deref().unwrap_or("").as_bytes(),
+            profile.division_id.map(|id| id.to_string()).unwrap_or_default().as_bytes(),
+            profile.department_id.map(|id| id.to_string()).unwrap_or_default().as_bytes(),
+            profile.bureau_id.map(|id| id.to_string()).unwrap_or_default().as_bytes(),
+            profile.position_title.as_deref().unwrap_or("").as_bytes(),
+            profile.last_education.as_deref().unwrap_or("").as_bytes(),
+        ]);
+        if let Claim::Replay(response) =
+            claim_idempotency_key(&mut transaction, &idempotency_scope, key, &fingerprint).await?
+        {
+            return Ok((replayed_headers(), Json(response)));
+        }
+    }
+    let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
     let id = match sqlx::query_scalar::<_, i64>(
         "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education, bureau_id) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8, $9) RETURNING id",
     )
@@ -56,6 +76,9 @@ pub(super) async fn admin_create_account(
         Err(error) if is_unique_violation(&error) => {
             return Err(ApiError::Conflict("Email atau NIP sudah terdaftar."));
         }
+        Err(error) if is_foreign_key_violation(&error) => {
+            return Err(ApiError::Conflict(MASTER_DATA_CHANGED));
+        }
         Err(error) => return Err(internal_error(error)),
     };
     record_admin_audit(
@@ -68,8 +91,12 @@ pub(super) async fn admin_create_account(
     )
     .await
     .map_err(internal_error)?;
+    let response = json!({ "message": "Akun berhasil ditambahkan. Kata sandi awal: pal@123 (wajib diganti saat masuk pertama)." });
+    if let Some(key) = &idempotency_key {
+        complete_idempotency_key(&mut transaction, &idempotency_scope, key, &response).await?;
+    }
     transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(json!({ "message": "Akun berhasil ditambahkan. Kata sandi awal: pal@123 (wajib diganti saat masuk pertama)." })))
+    Ok((HeaderMap::new(), Json(response)))
 }
 
 type ExistingRosterRow = (
@@ -145,7 +172,6 @@ pub(super) async fn admin_import_accounts(
     let dry_run = request.dry_run;
     // One shared initial password for the batch: hash once (Argon2 is deliberately slow).
     let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
-    let mut cache = load_import_org_cache(&state.pool).await?;
 
     let mut created = 0_i64;
     let mut updated = 0_i64;
@@ -173,6 +199,15 @@ pub(super) async fn admin_import_accounts(
         }
     }
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    // Two imports running at once would race on the same NIPs and master rows: run them one at a time
+    // (the lock is released when this transaction ends).
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('employee-roster-import'))")
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_error)?;
+    // Read the master data only now that we hold the lock, so an import that waited sees what the
+    // one before it created (a cache read before the lock would be stale and collide on insert).
+    let mut cache = load_import_org_cache(&state.pool).await?;
     for (index, row) in request.rows.iter().enumerate() {
         let line = index + 2; // header is line 1
         let name = row.name.trim();
@@ -528,6 +563,9 @@ pub(super) async fn admin_update_account(
         Ok(result) => result,
         Err(error) if is_unique_violation(&error) => {
             return Err(ApiError::Conflict("Email atau NIP sudah digunakan akun lain."));
+        }
+        Err(error) if is_foreign_key_violation(&error) => {
+            return Err(ApiError::Conflict(MASTER_DATA_CHANGED));
         }
         Err(error) => return Err(internal_error(error)),
     };

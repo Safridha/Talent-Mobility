@@ -342,6 +342,15 @@ pub(super) async fn admin_set_application_status(
     };
     let status_changed = previous_status != status;
     if status_changed {
+        // Optimistic concurrency: the admin decided looking at `expected_status`; if someone else moved
+        // the application on in the meantime, ask them to review the new state first.
+        if let Some(expected) = request.expected_status.as_deref() {
+            if expected.trim().to_ascii_lowercase() != previous_status {
+                return Err(ApiError::Conflict(
+                    "Status lamaran sudah diubah admin lain. Muat ulang lalu periksa kembali.",
+                ));
+            }
+        }
         if !is_valid_application_status_transition(&previous_status, &status) {
             return Err(ApiError::Conflict(
                 "Perubahan status tidak sesuai tahapan lamaran.",

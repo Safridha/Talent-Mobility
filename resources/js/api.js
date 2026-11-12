@@ -59,3 +59,38 @@ export async function apiDownload(path, options = {}) {
 
   return response.blob()
 }
+
+// fetch cannot report upload progress, so large uploads (several PDFs) use XMLHttpRequest. Same JSON/error
+// contract as apiRequest; `onProgress` receives a number between 0 and 1.
+export function apiUpload(path, { method = 'POST', body, headers = {}, onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open(method, `${API_URL}${path}`)
+    request.setRequestHeader('Accept', 'application/json')
+    for (const [name, value] of Object.entries(headers)) request.setRequestHeader(name, value)
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total)
+    }
+    request.onerror = () => reject(new Error('Koneksi terputus saat mengunggah. Coba lagi; berkas yang sama tidak akan terkirim dua kali.'))
+    request.ontimeout = () => reject(new Error('Pengunggahan terlalu lama. Periksa koneksi lalu coba lagi.'))
+    request.onload = () => {
+      let payload = {}
+      try {
+        payload = JSON.parse(request.responseText || '{}')
+      } catch {
+        reject(new Error('Respons API tidak valid. Silakan coba lagi.'))
+        return
+      }
+      if (request.status === 401 && requiresSession(path)) {
+        window.dispatchEvent(new Event('talent-mobility:session-expired'))
+      }
+      if (request.status >= 200 && request.status < 300) {
+        onProgress?.(1)
+        resolve(payload)
+      } else {
+        reject(new Error(payload.message || 'Permintaan gagal. Silakan coba lagi.'))
+      }
+    }
+    request.send(body)
+  })
+}

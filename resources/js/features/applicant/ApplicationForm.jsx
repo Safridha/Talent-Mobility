@@ -9,7 +9,7 @@ import { getJobTargetLabels } from './jobTargetLabels'
 const MAX_APPLICATION_FILE_BYTES = 5 * 1024 * 1024
 const MAX_APPLICATION_DOCUMENTS = 5
 
-export default function ApplicationForm({ job, directTarget, session, organization, isSubmitting, onClose, onEditProfile, onSubmit }) {
+export default function ApplicationForm({ job, directTarget, session, organization, isSubmitting, uploadProgress, onClose, onEditProfile, onSubmit }) {
   const [form, setForm] = useState({
     employee_number: '',
     applicant_full_name: session.applicant.name,
@@ -19,6 +19,8 @@ export default function ApplicationForm({ job, directTarget, session, organizati
     motivation: '',
   })
   // Data the applicant already keeps in their profile is shown as a summary instead of asked again.
+  // One key per form: every retry of this same submission resends it, so the server never applies it twice.
+  const [idempotencyKey] = useState(() => crypto.randomUUID())
   const [profile, setProfile] = useState(null)
   const [profileError, setProfileError] = useState('')
   const [bureauMaster, setBureauMaster] = useState(null)
@@ -171,7 +173,7 @@ export default function ApplicationForm({ job, directTarget, session, organizati
           }),
         })
       }
-      await onSubmit(body)
+      await onSubmit(body, idempotencyKey)
     } catch (submitError) {
       setError(submitError.message)
     }
@@ -388,10 +390,19 @@ export default function ApplicationForm({ job, directTarget, session, organizati
               {error && <p className="login-error application-form-wide" role="alert">{error}</p>}
             </div>
           </div>
+          {isSubmitting && uploadProgress !== null && uploadProgress !== undefined && (
+            <div aria-label="Progres unggah" aria-valuemax={100} aria-valuemin={0} aria-valuenow={Math.round(uploadProgress * 100)} className="application-upload-progress" role="progressbar">
+              <span style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
+            </div>
+          )}
           <footer className="application-form-footer">
             <button className="application-form-cancel" onClick={onClose} type="button">Batal</button>
             <button className="apply-button" disabled={isSubmitting} type="submit">
-              {isSubmitting ? 'Mengirim...' : 'Kirim Pendaftaran'} <ArrowRight size={16} />
+              {isSubmitting
+                ? (uploadProgress === null || uploadProgress === undefined
+                  ? 'Mengirim...'
+                  : uploadProgress >= 1 ? 'Memproses...' : `Mengunggah ${Math.round(uploadProgress * 100)}%`)
+                : 'Kirim Pendaftaran'} <ArrowRight size={16} />
             </button>
           </footer>
         </form>

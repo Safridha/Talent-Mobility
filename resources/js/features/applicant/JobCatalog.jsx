@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../query/queryKeys'
 import ApplicationForm from './ApplicationForm'
 import { ArrowLeft, Bell, Building2, ChevronLeft, ChevronRight, Eye, FileText, LogIn, Megaphone, RotateCcw, Search, Users, Wrench, X } from 'lucide-react'
-import { apiRequest } from '../../api'
+import { apiRequest, apiUpload } from '../../api'
 import Brand from '../../components/Brand'
 import ModalBackdrop from '../../components/ModalBackdrop'
 import SuccessPopup from '../../components/SuccessPopup'
@@ -70,6 +70,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const [applicationFormOpen, setApplicationFormOpen] = useState(false)
   const [pendingDirectTarget, setPendingDirectTarget] = useState(null)
   const [applyingJobId, setApplyingJobId] = useState('')
+  const [uploadProgress, setUploadProgress] = useState(null)
   const [notificationActionError, setNotificationActionError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [markingNotificationId, setMarkingNotificationId] = useState(null)
@@ -102,9 +103,11 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const applicationsError = applicationActionError || applicationsQuery.error?.message || ''
   const notificationsError = notificationActionError || notificationsQuery.error?.message || ''
   const submitApplicationMutation = useMutation({
-    mutationFn: ({ body }) => apiRequest('/applications', {
+    mutationFn: ({ body, idempotencyKey }) => apiUpload('/applications', {
       method: 'POST',
       body,
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+      onProgress: setUploadProgress,
     }),
     onSuccess: (application, { position }) => {
       queryClient.setQueryData(queryKeys.applicantApplications, (current) => {
@@ -262,17 +265,18 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     setApplicationActionError('')
   }
 
-  async function submitApplication(position, body) {
+  async function submitApplication(position, body, idempotencyKey) {
     setApplicationNotice('')
     setApplicationActionError('')
     setApplyingJobId(position.id || position.key)
     try {
-      await submitApplicationMutation.mutateAsync({ position, body })
+      await submitApplicationMutation.mutateAsync({ position, body, idempotencyKey })
     } catch (requestError) {
       setApplicationActionError(requestError.message)
       throw requestError
     } finally {
       setApplyingJobId('')
+      setUploadProgress(null)
     }
   }
 
@@ -303,10 +307,10 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     }
   }
 
-  async function handleApplicationSubmit(body) {
+  async function handleApplicationSubmit(body, idempotencyKey) {
     const position = pendingDirectTarget
     if (!position || !session) return
-    await submitApplication(position, body)
+    await submitApplication(position, body, idempotencyKey)
     setApplicationFormOpen(false)
     setPendingDirectTarget(null)
   }
@@ -745,6 +749,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
         <ApplicationForm
           directTarget={pendingDirectTarget}
           isSubmitting={applyingJobId === pendingDirectTarget.key}
+          uploadProgress={uploadProgress}
           job={null}
           organization={organization}
           onClose={() => { setApplicationFormOpen(false); setPendingDirectTarget(null) }}
