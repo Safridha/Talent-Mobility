@@ -205,7 +205,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
         ['Deskripsi posisi', details.position_description],
         ['Motivasi dan rencana kontribusi', details.motivation],
         ['Dokumen', details.documents.map((document) => document.file_name).join('\n')],
-      ].map(([label, value]) => [label, value || '—'])
+      ].map(([label, value]) => [label, value || '-'])
       const safeName = details.applicant_name.toLocaleLowerCase('id').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       await downloadTablePdf(
         `data-pelamar-${safeName || details.id}`,
@@ -518,10 +518,10 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                       return (
                         <tr key={application.id}>
                           <td className="position-code">{registrationId}<span className="admin-table-subtext">{createdAt.toLocaleString('id-ID')}</span></td>
-                          <td className="position-name">{application.applicant_name}<span className="admin-table-subtext">NIP: {application.employee_number || '—'} · {application.applicant_email}</span></td>
-                          <td>{application.origin_division || application.current_unit || '—'}<span className="admin-table-subtext">{application.origin_unit || application.current_position || ''}</span></td>
+                          <td className="position-name">{application.applicant_name}<span className="admin-table-subtext">NIP: {application.employee_number || '-'} · {application.applicant_email}</span></td>
+                          <td>{application.origin_division || application.current_unit || '-'}<span className="admin-table-subtext">{application.origin_unit || application.current_position || ''}</span></td>
                           <td className="position-name">{application.target_label || application.job_title}<span className="admin-table-subtext">{application.job_id ? 'Riwayat lowongan lama' : 'Lamar langsung'}</span></td>
-                          <td>{application.education_level || '—'}<span className="admin-table-subtext">{application.study_field || ''}</span></td>
+                          <td>{application.education_level || '-'}<span className="admin-table-subtext">{application.study_field || ''}</span></td>
                           <td>
                             {application.documents_count && canDownloadApplicationDocuments ? (
                               <button

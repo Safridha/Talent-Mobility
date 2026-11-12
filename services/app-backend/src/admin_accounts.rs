@@ -198,11 +198,6 @@ pub(super) async fn admin_reset_account_password(
         .execute(&mut *transaction)
         .await
         .map_err(internal_error)?;
-    sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
     record_admin_audit(
         &mut transaction,
         admin.id,
@@ -299,11 +294,6 @@ pub(super) async fn admin_update_account(
         .execute(&mut *transaction)
         .await
         .map_err(internal_error)?;
-    sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
     record_admin_audit(
         &mut transaction,
         admin.id,
@@ -377,11 +367,6 @@ async fn set_applicant_account_status(
     }
     if !is_active {
         sqlx::query("DELETE FROM applicant_tokens WHERE applicant_id = $1")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
             .bind(id)
             .execute(&mut *transaction)
             .await
@@ -654,11 +639,6 @@ pub(super) async fn admin_update_admin_account(
         .execute(&mut *transaction)
         .await
         .map_err(internal_error)?;
-    sqlx::query("DELETE FROM password_reset_tokens WHERE admin_id = $1")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(
         json!({ "message": "Akun admin diperbarui dan semua sesi aktifnya diakhiri." }),
@@ -730,11 +710,6 @@ async fn set_admin_account_status(
         .map_err(internal_error)?;
     if !is_active {
         sqlx::query("DELETE FROM admin_tokens WHERE admin_id = $1")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE admin_id = $1")
             .bind(id)
             .execute(&mut *transaction)
             .await

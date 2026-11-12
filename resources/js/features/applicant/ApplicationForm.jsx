@@ -171,7 +171,7 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                   }}
                   options={[
                     ...(selectedOriginDivision?.secretariat_name
-                      ? [{ value: 'secretariat', label: `Sekretariat — ${selectedOriginDivision.secretariat_name}` }]
+                      ? [{ value: 'secretariat', label: `Sekretariat - ${selectedOriginDivision.secretariat_name}` }]
                       : []),
                     ...originDepartments.map((department) => ({ value: String(department.id), label: department.name })),
                   ]}
@@ -190,7 +190,7 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                     { value: '', label: 'Tidak ada / tingkat departemen' },
                     ...originBureaus.map((bureau) => ({
                       value: String(bureau.id),
-                      label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+                      label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} - ${bureau.name}`,
                     })),
                   ]}
                   placeholder="Tidak ada / tingkat departemen"

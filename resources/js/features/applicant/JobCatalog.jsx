@@ -155,7 +155,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     })
     .map((bureau) => ({
       key: `bureau:${bureau.id}`,
-      label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+      label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} - ${bureau.name}`,
     })), [departmentId, divisionId, organization.bureaus, organization.departments])
   const directTargets = useMemo(() => {
     const matchedDepartments = organization.departments.filter((department) => (
@@ -182,7 +182,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             target_level: 'bureau',
             division: division?.name || '',
             department: department?.name || '',
-            unit: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+            unit: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} - ${bureau.name}`,
             description: (bureau.description || '').trim(),
           }
         })
@@ -211,7 +211,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
           target_level: 'bureau',
           division: division?.name || '',
           department: department.name,
-          unit: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+          unit: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} - ${bureau.name}`,
           description: (bureau.description || '').trim(),
         }))
       return [departmentTarget, ...bureauTargets]

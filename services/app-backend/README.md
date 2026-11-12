@@ -30,8 +30,6 @@ npm run dev
 
 Open `http://127.0.0.1:8000`. Vite serves the frontend on port 8000 and proxies `/api` to the Rust backend on internal port 8001. SQLx applies the schema and seeds the official organization hierarchy on startup. The Super Admin bootstrap account is created from `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` when that email is not already registered. Press `Ctrl+C` to stop both processes.
 
-To enable forgotten-password emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `APP_PUBLIC_URL` in the server environment. Do not commit SMTP credentials.
-
 PWA assets are built from `pwa-assets/`; the service worker caches the application shell and static assets, but never API responses. Web Push is optional: configure a matching VAPID public/private key pair using `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`, plus an optional `VAPID_SUBJECT` (`mailto:` or HTTPS URL). Browser subscriptions are stored per active account and can be removed from its notification panel. Push is sent to admins in the application scope when a new application arrives and to applicants when their application status changes. Production origins must use HTTPS.
 
 To run the production-style build instead, use `npm run build` followed by `cargo run -p app-backend`; the backend serves the built React app and API on port 8000.
@@ -76,7 +74,6 @@ Use a local or disposable PostgreSQL instance, never production. The regular `ca
 - `GET /api/account/profile` returns the signed-in applicant/admin profile; `PATCH` updates the display name.
 - `GET`, `POST`, and `DELETE /api/account/avatar` view, upload, or remove the signed-in account's JPG, PNG, or WebP profile photo (maximum 2 MB).
 - `POST /api/account/password` changes the signed-in user's password after verifying the current password.
-- `POST /api/password/forgot` sends a one-hour, single-use reset link when SMTP is configured; `POST /api/password/reset` consumes the link and invalidates active sessions.
 
 Admin accounts combine a fixed role/scope with per-account grants. Super Admin always has full access; only Super Admin can manage administrator accounts or the organization structure. Other administrators can be granted `applications.view/change_status/download_documents`; only the unscoped Admin role can also receive `applicant_accounts.manage`. Write and document permissions require application-view permission. Division and department scope is still enforced by backend queries and mutations, regardless of grants. Applicant accounts are created by an authorized admin with an initial password; the applicant must change it before accessing application data. Public applicant registration is disabled. Resetting an applicant password through account management also requires a change at the next login. Stored job-posting, job-type, and employee-directory tables and records are retained for historical references; the application no longer exposes management endpoints for them.
 

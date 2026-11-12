@@ -434,7 +434,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .auth-dialog-content .login-description { max-width: 390px; margin: 0 auto 25px; color: #64748b; font-size: 15px; line-height: 1.55; text-align: center; }
 .auth-dialog .auth-switch { margin: 20px 0 0; color: #64748b; font-size: 13px; text-align: center; }
 .auth-switch button { padding: 0; border: 0; background: transparent; color: var(--blue); font: inherit; font-weight: 700; }
-.auth-forgot-button { display: block; margin: 17px auto 0; padding: 0; border: 0; background: transparent; color: var(--blue); font: inherit; font-size: 13px; font-weight: 700; }
 .account-settings-menu { position: relative; flex: 0 0 auto; }
 .account-settings-menu .account-settings-trigger { display: flex; width: auto; height: auto; max-width: 260px; min-height: 42px; flex: 0 0 auto; align-items: center; gap: 8px; padding: 3px 10px 3px 5px; border: 1px solid #334155; border-radius: 10px; background: transparent; color: #cbd5e1; text-align: left; }
 .account-settings-menu .account-settings-trigger:hover, .account-settings-menu .account-settings-trigger[aria-expanded="true"] { border-color: #64748b; background: #1e293b; }
@@ -475,11 +474,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .account-settings-form input[readonly] { background: #f1f5f9; color: #64748b; }
 .account-settings-form h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 2px; color: #263248; font-size: 15px; }
 .account-settings-form .apply-button { justify-self: start; margin-top: 3px; }
-.password-reset-page { display: grid; min-height: calc(100vh - 180px); place-items: center; }
-.password-reset-card { width: min(500px, 100%); }
-.password-reset-card h1 { margin: 0 0 14px; color: #172033; font-size: 25px; }
-.password-reset-card .account-settings-form { margin-top: 0; padding-top: 0; border-top: 0; }
-.password-reset-card .account-settings-form > p { margin-bottom: 4px; }
+.first-login-page { display: grid; min-height: calc(100vh - 180px); place-items: center; }
+.first-login-card { width: min(500px, 100%); }
+.first-login-card .account-settings-form { margin-top: 0; padding-top: 0; border-top: 0; }
+.first-login-card .account-settings-form > p { margin-bottom: 4px; }
 
 @media (max-width: 700px) {
   .auth-actions { gap: 6px; }
@@ -529,16 +527,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .auth-dialog-content h2 { font-size: 25px; }
   .auth-dialog-content .login-description { margin-bottom: 18px; font-size: 14px; }
   .auth-dialog .login-form > input, .auth-dialog .password-field input { font-size: 16px; }
-  .password-reset-page { min-height: 0; align-items: start; }
-  .password-reset-card { padding: 20px 17px; }
-  .password-reset-card h1 { font-size: 22px; line-height: 1.25; }
-  .password-reset-card > p { color: #64748b; font-size: 13px; line-height: 1.55; }
-  .password-reset-card .account-settings-form { gap: 13px; }
-  .password-reset-card .account-settings-form input:not([type="file"]),
-  .password-reset-card .account-settings-form .password-field { min-height: 44px; }
-  .password-reset-card .account-settings-form .password-field input { font-size: 16px; }
-  .password-reset-card .account-settings-form .apply-button,
-  .password-reset-card .account-settings-form .detail-button { width: 100%; min-height: 46px; justify-self: stretch; }
+  .first-login-page { min-height: 0; align-items: start; }
+  .first-login-card { padding: 20px 17px; }
+  .first-login-card h1 { font-size: 22px; line-height: 1.25; }
+  .first-login-card > p { color: #64748b; font-size: 13px; line-height: 1.55; }
+  .first-login-card .account-settings-form { gap: 13px; }
+  .first-login-card .account-settings-form input:not([type="file"]),
+  .first-login-card .account-settings-form .password-field { min-height: 44px; }
+  .first-login-card .account-settings-form .password-field input { font-size: 16px; }
+  .first-login-card .account-settings-form .apply-button,
+  .first-login-card .account-settings-form .detail-button { width: 100%; min-height: 46px; justify-self: stretch; }
   .account-settings-page .account-settings-form .apply-button { width: 100%; min-height: 46px; justify-self: stretch; }
   .account-settings-page .account-settings-form .password-field input { font-size: 16px; }
   .password-requirements { grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -561,7 +559,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .direct-application-card .card-footer button { padding: 0 6px; font-size: 11px; }
   .job-pagination-control, .job-pagination-page { min-width: 36px; min-height: 40px; padding: 0 9px; }
   .job-pagination-control { padding: 0; }
-  .password-reset-card { padding: 18px 14px; }
+  .first-login-card { padding: 18px 14px; }
   .auth-dialog { padding: 18px 15px; }
 }
 @media (max-height: 760px) {
@@ -1091,3 +1089,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .master-manager { display: grid; gap: 12px; }
 .master-subtabs { width: fit-content; max-width: 100%; box-shadow: none; background: #f8fafc; }
 .admin-small-button.admin-icon-button { display: inline-flex; align-items: center; justify-content: center; padding-right: 9px; padding-left: 9px; }
+
+/* First-login password change */
+.first-login-card { padding: 28px 28px 24px; }
+.first-login-heading { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
+.first-login-icon { display: grid; flex: 0 0 44px; width: 44px; height: 44px; place-items: center; border-radius: 12px; background: #dbeafe; color: #1d4ed8; }
+.first-login-heading h1 { margin: 0 0 4px; color: #172033; font-size: 22px; line-height: 1.25; }
+.first-login-heading p { margin: 0; color: #64748b; font-size: 13px; line-height: 1.55; }
+.first-login-divider { margin: 2px 0; border: 0; border-top: 1px dashed #dbe3ee; }
+.first-login-actions { display: grid; gap: 8px; margin-top: 4px; }
+.first-login-actions .apply-button { width: 100%; min-height: 44px; justify-self: stretch; }
+.first-login-logout { justify-self: center; padding: 8px 12px; border: 0; background: none; color: #64748b; font: inherit; font-size: 13px; font-weight: 600; }
+.first-login-logout:hover:not(:disabled) { color: #1d4ed8; text-decoration: underline; }
+@media (max-width: 700px) {
+  .first-login-card { padding: 20px 16px; }
+  .first-login-heading h1 { font-size: 20px; }
+}

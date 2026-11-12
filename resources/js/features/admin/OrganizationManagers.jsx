@@ -66,7 +66,7 @@ export function OrganizationManager({ level, organization, isLoading, onRefresh 
       const division = organization.divisions.find((entry) => entry.id === department?.division_id)
       return `${division?.name || 'Divisi'} / ${department?.name || 'Departemen'}`
     }
-    return '—'
+    return '-'
   }
 
   function getParentOptionName(parent) {
@@ -333,12 +333,12 @@ export function OrganizationManager({ level, organization, isLoading, onRefresh 
                   {level === 'bureaus' && <td>{item.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'}</td>}
                   {level === 'divisions' ? (
                     <>
-                      <td>{item.description || '—'}</td>
-                      <td className="position-name">{item.secretariat_name || '—'}</td>
-                      <td>{item.secretariat_description || '—'}</td>
+                      <td>{item.description || '-'}</td>
+                      <td className="position-name">{item.secretariat_name || '-'}</td>
+                      <td>{item.secretariat_description || '-'}</td>
                     </>
                   ) : (
-                    <td>{item.description || '—'}</td>
+                    <td>{item.description || '-'}</td>
                   )}
                   {definition.parentField && <td>{getParentName(item)}</td>}
                   <td className="admin-row-actions">

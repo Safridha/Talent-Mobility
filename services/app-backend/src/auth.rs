@@ -12,15 +12,14 @@ pub(super) async fn login(
         || credentials.password.is_empty()
     {
         return Err(ApiError::BadRequest(
-            "NIP/email dan kata sandi tidak sesuai.",
+            "NIP dan kata sandi tidak sesuai.",
         ));
     }
 
     let applicant = sqlx::query_as::<_, ApplicantRecord>(
-        "SELECT id, name, COALESCE(email, '') AS email, COALESCE(employee_number, '') AS employee_number, password_hash, must_change_password, COALESCE(locked_until > NOW(), FALSE) AS login_locked FROM applicants WHERE (employee_number = $1 OR email = $2) AND is_active = TRUE ORDER BY (employee_number = $1) DESC LIMIT 1",
+        "SELECT id, name, COALESCE(email, '') AS email, COALESCE(employee_number, '') AS employee_number, password_hash, must_change_password, COALESCE(locked_until > NOW(), FALSE) AS login_locked FROM applicants WHERE employee_number = $1 AND is_active = TRUE",
     )
     .bind(&identifier)
-    .bind(&email)
     .fetch_optional(&state.pool)
     .await
     .map_err(internal_error)?;
@@ -73,7 +72,7 @@ pub(super) async fn login(
     .await
     .map_err(internal_error)?;
     let Some(admin) = admin else {
-        return Err(ApiError::BadRequest("NIP/email atau kata sandi tidak sesuai."));
+        return Err(ApiError::BadRequest("NIP atau kata sandi tidak sesuai."));
     };
     if admin.login_locked {
         return Err(ApiError::AccountSuspended);
@@ -580,11 +579,6 @@ pub(super) async fn change_account_password(
             .execute(&mut *transaction)
             .await
             .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
-            .bind(account.id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
     } else {
         sqlx::query("UPDATE admins SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL WHERE id = $2")
             .bind(new_hash)
@@ -595,11 +589,6 @@ pub(super) async fn change_account_password(
         sqlx::query("DELETE FROM admin_tokens WHERE admin_id = $1 AND token_hash <> $2")
             .bind(account.id)
             .bind(&account.token_hash)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE admin_id = $1")
-            .bind(account.id)
             .execute(&mut *transaction)
             .await
             .map_err(internal_error)?;
@@ -616,233 +605,4 @@ pub(super) async fn change_account_password(
     }
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(json!({ "message": "Kata sandi berhasil diubah." })))
-}
-
-pub(super) async fn forgot_password(
-    State(state): State<AppState>,
-    Json(request): Json<ForgotPasswordRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let settings = password_reset_mail_settings()?;
-    let email = request.email.trim().to_ascii_lowercase();
-    if !is_valid_email(&email) {
-        return Ok(Json(json!({
-            "message": "Jika email terdaftar, tautan reset kata sandi akan dikirim."
-        })));
-    }
-
-    let applicant_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM applicants WHERE email = $1 AND is_active = TRUE",
-    )
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(internal_error)?;
-    let admin_id =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM admins WHERE email = $1 AND is_active = TRUE")
-            .bind(&email)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal_error)?;
-
-    if let Some(id) = applicant_id {
-        if let Some(token) = create_password_reset_token(&state.pool, "applicant", id).await? {
-            send_password_reset_email(&settings, &email, "pelamar", &token).await?;
-        }
-    }
-    if let Some(id) = admin_id {
-        if let Some(token) = create_password_reset_token(&state.pool, "admin", id).await? {
-            send_password_reset_email(&settings, &email, "admin", &token).await?;
-        }
-    }
-
-    Ok(Json(json!({
-        "message": "Jika email terdaftar, tautan reset kata sandi akan dikirim."
-    })))
-}
-
-pub(super) async fn reset_password(
-    State(state): State<AppState>,
-    Json(request): Json<ResetPasswordRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let token_hash = hash_token(request.token.trim());
-    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-    let account = sqlx::query_as::<_, (Option<i64>, Option<i64>)>(
-            "SELECT applicant_id, admin_id FROM password_reset_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW() FOR UPDATE",
-        )
-        .bind(&token_hash)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(internal_error)?
-        .ok_or(ApiError::BadRequest(
-            "Tautan reset kata sandi tidak valid atau sudah kedaluwarsa.",
-        ))?;
-
-    let (role, account_id) = match account {
-        (Some(id), None) => ("applicant", id),
-        (None, Some(id)) => ("admin", id),
-        _ => return Err(ApiError::Internal),
-    };
-    validate_account_password(role, &request.new_password)?;
-    let new_hash = hash_password(&request.new_password)?;
-    if role == "applicant" {
-        sqlx::query(
-            "UPDATE applicants SET password_hash = $1, must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL WHERE id = $2",
-        )
-        .bind(new_hash)
-        .bind(account_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(internal_error)?;
-        sqlx::query("DELETE FROM applicant_tokens WHERE applicant_id = $1")
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE applicant_id = $1")
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    } else {
-        sqlx::query("UPDATE admins SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL WHERE id = $2")
-            .bind(new_hash)
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM admin_tokens WHERE admin_id = $1")
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query("DELETE FROM password_reset_tokens WHERE admin_id = $1")
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    }
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(json!({
-        "message": "Kata sandi berhasil diatur ulang. Silakan masuk kembali."
-    })))
-}
-
-async fn create_password_reset_token(
-    pool: &PgPool,
-    role: &str,
-    account_id: i64,
-) -> Result<Option<String>, ApiError> {
-    let (token, token_hash) = create_token();
-    let mut transaction = pool.begin().await.map_err(internal_error)?;
-    if role == "applicant" {
-        let recent_request: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM password_reset_tokens WHERE applicant_id = $1 AND created_at > NOW() - INTERVAL '5 minutes')",
-            )
-            .bind(account_id)
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        if recent_request {
-            return Ok(None);
-        }
-        sqlx::query(
-                "UPDATE password_reset_tokens SET used_at = NOW() WHERE applicant_id = $1 AND used_at IS NULL",
-            )
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        sqlx::query(
-                "INSERT INTO password_reset_tokens (token_hash, applicant_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')",
-            )
-            .bind(token_hash)
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    } else {
-        let recent_request: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM password_reset_tokens WHERE admin_id = $1 AND created_at > NOW() - INTERVAL '5 minutes')",
-            )
-            .bind(account_id)
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-        if recent_request {
-            return Ok(None);
-        }
-        sqlx::query(
-                "UPDATE password_reset_tokens SET used_at = NOW() WHERE admin_id = $1 AND used_at IS NULL",
-            )
-                .bind(account_id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(internal_error)?;
-        sqlx::query(
-                "INSERT INTO password_reset_tokens (token_hash, admin_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')",
-            )
-            .bind(token_hash)
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(internal_error)?;
-    }
-    transaction.commit().await.map_err(internal_error)?;
-    Ok(Some(token))
-}
-
-fn password_reset_mail_settings() -> Result<MailSettings, ApiError> {
-    let required = |key: &str| {
-        env::var(key)
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .ok_or(ApiError::Unavailable(
-                "Fitur lupa kata sandi belum dikonfigurasi pada server.",
-            ))
-    };
-    let port = env::var("SMTP_PORT")
-        .unwrap_or_else(|_| "587".to_owned())
-        .parse::<u16>()
-        .map_err(|_| ApiError::Unavailable("Konfigurasi email reset kata sandi tidak valid."))?;
-    Ok(MailSettings {
-        host: required("SMTP_HOST")?,
-        port,
-        username: required("SMTP_USERNAME")?,
-        password: required("SMTP_PASSWORD")?,
-        from: required("SMTP_FROM")?,
-        public_url: env::var("APP_PUBLIC_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:8000".to_owned()),
-    })
-}
-
-async fn send_password_reset_email(
-    settings: &MailSettings,
-    email: &str,
-    account_type: &str,
-    token: &str,
-) -> Result<(), ApiError> {
-    let from = settings.from.parse::<Mailbox>().map_err(internal_error)?;
-    let to = email.parse::<Mailbox>().map_err(internal_error)?;
-    let reset_url = format!(
-        "{}/#reset_token={token}",
-        settings.public_url.trim_end_matches('/')
-    );
-    let message = Message::builder()
-            .from(from)
-            .to(to)
-            .subject("Atur ulang kata sandi Talent Mobility")
-            .body(format!(
-                "Permintaan reset kata sandi untuk akun {account_type} Anda diterima.\n\nBuka tautan berikut dalam satu jam:\n{reset_url}\n\nJika Anda tidak meminta reset, abaikan email ini."
-            ))
-            .map_err(internal_error)?;
-    let mailer = AsyncSmtpTransport::<Tokio1Executor>::relay(&settings.host)
-        .map_err(internal_error)?
-        .port(settings.port)
-        .credentials(Credentials::new(
-            settings.username.clone(),
-            settings.password.clone(),
-        ))
-        .build();
-    mailer.send(message).await.map_err(internal_error)?;
-    Ok(())
 }

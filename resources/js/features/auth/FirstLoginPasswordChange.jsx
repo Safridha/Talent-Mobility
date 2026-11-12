@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { KeyRound } from 'lucide-react'
 import Brand from '../../components/Brand'
 import PasswordInput from '../../components/PasswordInput'
 import PasswordRequirements from '../../components/PasswordRequirements'
@@ -58,14 +59,20 @@ export default function FirstLoginPasswordChange({ onComplete, onLogout }) {
   return (
     <main className="app-shell">
       <header className="site-header"><div className="header-inner"><Brand /></div></header>
-      <div className="page-content password-reset-page">
-        <section className="detail-modal password-reset-card">
-          <h1>Ganti kata sandi awal</h1>
-          <p>Administrator membuat akun Anda. Untuk keamanan, ganti kata sandi awal sebelum melanjutkan.</p>
-          <form className="account-settings-form" onSubmit={(event) => void handleSubmit(event)}>
+      <div className="page-content first-login-page">
+        <section aria-labelledby="first-login-title" className="detail-modal first-login-card">
+          <header className="first-login-heading">
+            <span aria-hidden="true" className="first-login-icon"><KeyRound size={22} /></span>
+            <div>
+              <h1 id="first-login-title">Ganti kata sandi awal</h1>
+              <p>Akun Anda dibuat oleh administrator. Demi keamanan, buat kata sandi baru sebelum melanjutkan.</p>
+            </div>
+          </header>
+          <form className="account-settings-form first-login-form" onSubmit={(event) => void handleSubmit(event)}>
             <label>Kata sandi awal
               <PasswordInput autoComplete="current-password" maxLength={128} onChange={(event) => setCurrentPassword(event.target.value)} required value={currentPassword} />
             </label>
+            <hr className="first-login-divider" />
             <label>Kata sandi baru
               <PasswordInput autoComplete="new-password" maxLength={128} minLength={8} onChange={(event) => setNewPassword(event.target.value)} required value={newPassword} />
             </label>
@@ -74,12 +81,14 @@ export default function FirstLoginPasswordChange({ onComplete, onLogout }) {
             </label>
             <PasswordRequirements confirmation={confirmPassword} password={newPassword} />
             {error && <p className="login-error" role="alert">{error}</p>}
-            <button className="apply-button" disabled={isSubmitting} type="submit">
-              {isSubmitting ? 'Menyimpan...' : 'Simpan kata sandi baru'}
-            </button>
-            <button className="detail-button" disabled={isSubmitting} onClick={() => void handleLogout()} type="button">
-              Keluar
-            </button>
+            <div className="first-login-actions">
+              <button className="apply-button" disabled={isSubmitting} type="submit">
+                {isSubmitting ? 'Menyimpan...' : 'Simpan kata sandi baru'}
+              </button>
+              <button className="first-login-logout" disabled={isSubmitting} onClick={() => void handleLogout()} type="button">
+                Keluar
+              </button>
+            </div>
           </form>
         </section>
       </div>

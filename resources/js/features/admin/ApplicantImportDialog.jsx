@@ -122,7 +122,7 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
         </div>
         {fileName && (
           <p className="organization-help import-summary">
-            <FileSpreadsheet size={15} /> <strong>{fileName}</strong> — {rows.length} baris karyawan siap diimpor.
+            <FileSpreadsheet size={15} /> <strong>{fileName}</strong> - {rows.length} baris karyawan siap diimpor.
           </p>
         )}
         {rows.length > 0 && (
@@ -132,8 +132,8 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
               <tbody>
                 {rows.slice(0, 5).map((row, index) => (
                   <tr key={`${row.employee_number}-${index}`}>
-                    <td>{row.employee_number}</td><td>{row.name}</td><td>{row.division_name || '—'}</td>
-                    <td>{row.department_name || '—'}</td><td>{row.position_title || '—'}</td><td>{row.last_education || '—'}</td>
+                    <td>{row.employee_number}</td><td>{row.name}</td><td>{row.division_name || '-'}</td>
+                    <td>{row.department_name || '-'}</td><td>{row.position_title || '-'}</td><td>{row.last_education || '-'}</td>
                   </tr>
                 ))}
               </tbody>

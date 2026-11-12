@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import JobCatalog from './features/applicant/JobCatalog'
-import PasswordResetPage from './features/auth/PasswordResetPage'
 import FirstLoginPasswordChange from './features/auth/FirstLoginPasswordChange'
 import AdminDashboard from './features/admin/AdminDashboard'
 import { apiRequest } from './api'
@@ -36,10 +35,6 @@ export default function App() {
   const authenticatedDuringRestore = useRef(false)
   const storedSessionExists = useRef(Boolean(session || adminSession))
   const restoreSessionRequest = useRef(null)
-  const resetHash = window.location.hash.slice(1)
-  const resetToken = resetHash.startsWith('reset_token=')
-    ? new URLSearchParams(resetHash).get('reset_token')
-    : null
 
   const handleLogin = useCallback((newSession) => {
     authenticatedDuringRestore.current = true
@@ -139,9 +134,6 @@ export default function App() {
     }
   }
 
-  if (resetToken) {
-    return <PasswordResetPage token={resetToken} />
-  }
 
   if (adminSession) {
     return <AdminDashboard onLogout={handleAdminLogout} onProfileUpdated={handleProfileUpdated} session={adminSession} />

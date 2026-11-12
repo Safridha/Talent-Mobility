@@ -18,10 +18,6 @@ use axum::{
     routing::{any, get, patch, post, put},
     Router,
 };
-use lettre::{
-    message::Mailbox, transport::smtp::authentication::Credentials, AsyncSmtpTransport,
-    AsyncTransport, Message, Tokio1Executor,
-};
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -236,15 +232,6 @@ struct AccountIdentity {
     role: &'static str,
     token_hash: String,
     must_change_password: bool,
-}
-
-struct MailSettings {
-    host: String,
-    port: u16,
-    username: String,
-    password: String,
-    from: String,
-    public_url: String,
 }
 
 #[derive(Deserialize)]
@@ -823,8 +810,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/login", post(login))
         .route("/api/session", get(current_session))
         .route("/api/logout", post(logout))
-        .route("/api/password/forgot", post(forgot_password))
-        .route("/api/password/reset", post(reset_password))
         .route(
             "/api/account/profile",
             get(get_account_profile).patch(update_account_profile),
@@ -1593,7 +1578,7 @@ mod tests {
             push_service: None,
         };
         let password_hash = hash_password("Correct!Password123").unwrap();
-        sqlx::query("INSERT INTO applicants (name, email, password_hash) VALUES ('Applicant', 'lockout-applicant@example.test', $1)")
+        sqlx::query("INSERT INTO applicants (name, employee_number, password_hash) VALUES ('Applicant', '5551234', $1)")
             .bind(&password_hash)
             .execute(&pool)
             .await
@@ -1603,7 +1588,7 @@ mod tests {
             let result = login(
                 State(state.clone()),
                 Json(LoginRequest {
-                    email: "lockout-applicant@example.test".to_owned(),
+                    email: "5551234".to_owned(),
                     password: "wrong-password".to_owned(),
                 }),
             )
@@ -1615,9 +1600,9 @@ mod tests {
             }
         }
         let applicant_is_suspended_for_15_minutes: bool = sqlx::query_scalar(
-            "SELECT locked_until > NOW() AND locked_until <= NOW() + INTERVAL '15 minutes' FROM applicants WHERE email = $1",
+            "SELECT locked_until > NOW() AND locked_until <= NOW() + INTERVAL '15 minutes' FROM applicants WHERE employee_number = $1",
         )
-        .bind("lockout-applicant@example.test")
+        .bind("5551234")
         .fetch_one(&pool)
         .await
         .expect("applicant lock expiry should be queryable");
@@ -1626,7 +1611,7 @@ mod tests {
             login(
                 State(state.clone()),
                 Json(LoginRequest {
-                    email: "lockout-applicant@example.test".to_owned(),
+                    email: "5551234".to_owned(),
                     password: "Correct!Password123".to_owned(),
                 }),
             )
@@ -1635,9 +1620,9 @@ mod tests {
         ));
 
         sqlx::query(
-            "UPDATE applicants SET locked_until = NOW() - INTERVAL '1 second' WHERE email = $1",
+            "UPDATE applicants SET locked_until = NOW() - INTERVAL '1 second' WHERE employee_number = $1",
         )
-        .bind("lockout-applicant@example.test")
+        .bind("5551234")
         .execute(&pool)
         .await
         .expect("applicant lock should be expirable for this test");
@@ -1645,7 +1630,7 @@ mod tests {
             login(
                 State(state.clone()),
                 Json(LoginRequest {
-                    email: "lockout-applicant@example.test".to_owned(),
+                    email: "5551234".to_owned(),
                     password: "wrong-password".to_owned(),
                 }),
             )
@@ -1655,7 +1640,7 @@ mod tests {
         let (headers, _) = login(
             State(state.clone()),
             Json(LoginRequest {
-                email: "lockout-applicant@example.test".to_owned(),
+                email: "5551234".to_owned(),
                 password: "Correct!Password123".to_owned(),
             }),
         )
@@ -1663,8 +1648,8 @@ mod tests {
         .expect("applicant should sign in after the suspension expires");
         assert!(headers.contains_key(SET_COOKIE));
         let applicant_failures: i32 =
-            sqlx::query_scalar("SELECT failed_login_attempts FROM applicants WHERE email = $1")
-                .bind("lockout-applicant@example.test")
+            sqlx::query_scalar("SELECT failed_login_attempts FROM applicants WHERE employee_number = $1")
+                .bind("5551234")
                 .fetch_one(&pool)
                 .await
                 .expect("applicant failure count should be queryable");

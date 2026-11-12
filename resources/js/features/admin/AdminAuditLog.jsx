@@ -106,7 +106,7 @@ export function AdminAuditLog() {
               {pageEvents.map((event) => (
                 <tr key={event.id}>
                   <td>{new Date(event.created_at).toLocaleString('id-ID')}</td>
-                  <td>{event.actor_name || 'Akun tidak tersedia'}<span className="admin-table-subtext">{event.actor_email || `ID ${event.actor_admin_id ?? '—'}`}</span></td>
+                  <td>{event.actor_name || 'Akun tidak tersedia'}<span className="admin-table-subtext">{event.actor_email || `ID ${event.actor_admin_id ?? '-'}`}</span></td>
                   <td>{actionLabels[event.action] || event.action}</td>
                   <td>{entityLabels[event.entity_type] || event.entity_type}<span className="admin-table-subtext">ID {event.entity_id}</span></td>
                   <td><pre className="admin-audit-details">{JSON.stringify(event.details, null, 2)}</pre></td>
