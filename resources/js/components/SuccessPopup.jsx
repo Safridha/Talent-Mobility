@@ -4,7 +4,9 @@ import { CheckCircle2, X } from 'lucide-react'
 export default function SuccessPopup({ message, onClose }) {
   useEffect(() => {
     if (!message) return undefined
-    const timeout = window.setTimeout(() => onClose(''), 4000)
+    // Short confirmations (e.g. "berhasil dihapus") vanish quickly; longer messages stay long enough to read.
+    const duration = Math.min(3500, 1200 + message.length * 25)
+    const timeout = window.setTimeout(() => onClose(''), duration)
     return () => window.clearTimeout(timeout)
   }, [message, onClose])
 

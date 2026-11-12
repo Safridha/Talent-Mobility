@@ -301,7 +301,7 @@ pub(super) fn dispatch_applicant_push(
                         body:
                             "Ada pembaruan pada proses lamaran Anda. Masuk untuk melihat detailnya."
                                 .to_owned(),
-                        url: "/#/lamaran".to_owned(),
+                        url: "/lamaran".to_owned(),
                         tag: "application-status",
                     },
                 )
@@ -336,7 +336,7 @@ pub(super) fn dispatch_admin_application_push(
                     PushPayload {
                         title: "Lamaran baru".to_owned(),
                         body: "Ada lamaran baru untuk lowongan dalam lingkup Anda.".to_owned(),
-                        url: "/#/admin/lamaran".to_owned(),
+                        url: "/admin/lamaran".to_owned(),
                         tag: "new-application",
                     },
                 )

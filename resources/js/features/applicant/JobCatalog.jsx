@@ -15,13 +15,13 @@ import { useAccountAvatar } from '../account/useAccountAvatar.ts'
 import ApplicantApplicationProgress from './ApplicantApplicationProgress'
 import AuthDialog from '../auth/AuthDialog'
 import { applicationStatusOptions, getApplicationStatusDescription } from '../applications/status'
-import { useHashRoute } from '../../useHashRoute'
+import { usePathRoute } from '../../usePathRoute'
 
 const APPLICANT_ROUTES = ['lowongan', 'lamaran', 'akun/profil', 'akun/keamanan']
 
 export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdated, sessionNotice }) {
   const queryClient = useQueryClient()
-  const [route, navigate] = useHashRoute('lowongan', APPLICANT_ROUTES)
+  const [route, navigate] = usePathRoute('lowongan', APPLICANT_ROUTES)
   const accountSection = route === 'akun/profil' ? 'profile' : route === 'akun/keamanan' ? 'security' : null
   const [accountReturnTab, setAccountReturnTab] = useState(route === 'lamaran' ? 'applications' : 'jobs')
   const activeTab = accountSection

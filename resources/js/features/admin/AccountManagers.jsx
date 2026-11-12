@@ -10,7 +10,7 @@ import { useAdminPagination } from './useAdminPagination'
 import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 import ApplicantImportDialog from './ApplicantImportDialog'
-import EmployeeMasterDialog from './EmployeeMasterDialog'
+import EmployeeMasterManager from './EmployeeMasterManager'
 
 const EDUCATION_OPTIONS = ['SMA/SMK/SEDERAJAT', 'D1', 'D2', 'D3', 'D4', 'S1', 'S2', 'S3']
 
@@ -99,7 +99,6 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   const departments = organization?.departments ?? []
   const [employeeMaster, setEmployeeMaster] = useState({ divisions: [], departments: [] })
   const [isImportOpen, setIsImportOpen] = useState(false)
-  const [isMasterOpen, setIsMasterOpen] = useState(false)
 
   function loadEmployeeMaster() {
     if (isAdminAccount) return
@@ -535,7 +534,6 @@ export function AccountListManager({ accountType, currentAdminId, organization }
         <div className="account-heading-actions">
           {!isAdminAccount && (
             <>
-              <button className="detail-button" onClick={() => setIsMasterOpen(true)} type="button"><Database size={16} /> Master data</button>
               <button className="detail-button" onClick={() => setIsImportOpen(true)} type="button"><FileSpreadsheet size={16} /> Import Excel</button>
             </>
           )}
@@ -665,12 +663,6 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           onImported={() => { refreshAccounts(); loadEmployeeMaster() }}
         />
       )}
-      {isMasterOpen && (
-        <EmployeeMasterDialog
-          onChanged={() => { loadEmployeeMaster(); refreshAccounts() }}
-          onClose={() => setIsMasterOpen(false)}
-        />
-      )}
       {isCreateModalOpen && (
         <AdminFormDialog onClose={resetForm} title={`Tambah akun ${accountKind}`}>
           {accountForm}
@@ -697,6 +689,14 @@ export function AccountManager({ session, organization }) {
     <section className="account-management-page">
       <nav aria-label="Jenis akun" className="account-type-tabs">
         <button
+          aria-pressed={accountType === 'master'}
+          className={accountType === 'master' ? 'account-type-tab active' : 'account-type-tab'}
+          onClick={() => setAccountType('master')}
+          type="button"
+        >
+          <Database size={17} /> Master Data
+        </button>
+        <button
           aria-pressed={accountType === 'applicant'}
           className={accountType === 'applicant' ? 'account-type-tab active' : 'account-type-tab'}
           onClick={() => setAccountType('applicant')}
@@ -718,12 +718,16 @@ export function AccountManager({ session, organization }) {
       {canManageAdminAccounts && accountType === 'admin' && (
           <p className="admin-table-note">Buat akun kepala divisi atau kepala departemen di sini, lalu tetapkan email dan kata sandi awal. Kepala divisi mencakup semua unit di divisinya; kepala departemen mencakup biro/bengkel dalam departemennya.</p>
       )}
-      <AccountListManager
-        accountType={accountType}
-        currentAdminId={session.admin.id}
-        key={accountType}
-        organization={organization}
-      />
+      {accountType === 'master' ? (
+        <EmployeeMasterManager />
+      ) : (
+        <AccountListManager
+          accountType={accountType}
+          currentAdminId={session.admin.id}
+          key={accountType}
+          organization={organization}
+        />
+      )}
     </section>
   )
 }

@@ -19,7 +19,7 @@ import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
 import { AdminAuditLog } from './AdminAuditLog'
 import { queryKeys } from '../../query/queryKeys'
-import { useHashRoute } from '../../useHashRoute'
+import { usePathRoute } from '../../usePathRoute'
 
 const ADMIN_VIEW_ROUTES = {
   dashboard: 'dashboard',
@@ -61,7 +61,7 @@ function saveDownload(blob, filename) {
 
 export default function AdminDashboard({ session, onLogout, onProfileUpdated }) {
   const queryClient = useQueryClient()
-  const [route, navigate] = useHashRoute('admin/dashboard', ADMIN_ROUTES)
+  const [route, navigate] = usePathRoute('admin/dashboard', ADMIN_ROUTES)
   const routeView = Object.entries(ADMIN_VIEW_ROUTES)
     .find(([, view]) => route === `admin/${view}`)?.[0]
     || LEGACY_ADMIN_ROUTE_ALIASES[route]
