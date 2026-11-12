@@ -38,6 +38,15 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      default: {}
+      4connectivity-net:
+        aliases:
+          - talent-mobility
 
 volumes:
   postgres-data:
+
+networks:
+  4connectivity-net:
+    external: true
