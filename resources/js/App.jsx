@@ -12,6 +12,13 @@ import '../css/App.css'
 const APPLICANT_SESSION_KEY = 'talent-mobility:applicant-session'
 const ADMIN_SESSION_KEY = 'talent-mobility:admin-session'
 
+function getBuildAssetSignature(documentNode) {
+  return [...documentNode.querySelectorAll('script[type="module"][src], link[rel="stylesheet"][href]')]
+    .map((asset) => asset.getAttribute('src') || asset.getAttribute('href'))
+    .sort()
+    .join('|')
+}
+
 function readStoredSession(key) {
   const stored = localStorage.getItem(key)
   if (!stored) return null
@@ -62,9 +69,46 @@ export default function App() {
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((error) => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).catch((error) => {
       console.error('PWA service worker registration failed.', error)
     })
+  }, [])
+
+  useEffect(() => {
+    const currentBuild = getBuildAssetSignature(document)
+    if (!currentBuild) return undefined
+
+    let isChecking = false
+    async function checkForUpdate() {
+      if (isChecking || document.visibilityState === 'hidden') return
+      isChecking = true
+      try {
+        const response = await fetch(`/?__app_build_check=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { Accept: 'text/html' },
+        })
+        if (!response.ok) throw new Error(`Build check returned HTTP ${response.status}.`)
+        const latestDocument = new DOMParser().parseFromString(await response.text(), 'text/html')
+        const latestBuild = getBuildAssetSignature(latestDocument)
+        if (latestBuild && latestBuild !== currentBuild) window.location.reload()
+      } catch (error) {
+        console.error('App update check failed.', error)
+      } finally {
+        isChecking = false
+      }
+    }
+
+    const intervalId = window.setInterval(checkForUpdate, 60_000)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void checkForUpdate()
+    }
+    window.addEventListener('focus', checkForUpdate)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', checkForUpdate)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   useEffect(() => {
