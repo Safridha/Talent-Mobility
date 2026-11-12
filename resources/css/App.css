@@ -416,8 +416,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .push-notification-copy > svg { flex: 0 0 auto; margin-top: 2px; color: #2563eb; }
 .push-notification-copy > div { display: grid; gap: 3px; }
 .push-notification-copy strong { color: #263248; font-size: 12px; }
-.push-notification-copy span { color: #64748b; font-size: 11px; line-height: 1.4; }
-.push-notification-toggle { min-height: 34px; padding: 0 10px; border: 1px solid #bfdbfe; border-radius: 8px; background: white; color: #1d4ed8; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.push-notification-copy span { color: #64748b; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.push-notification-toggle { display: inline-grid; flex: 0 0 auto; width: 36px; height: 36px; place-items: center; padding: 0; border: 1px solid #bfdbfe; border-radius: 10px; background: white; color: #1d4ed8; }
+.push-notification-toggle.is-active { border-color: #fecaca; color: #b91c1c; }
+.push-notification-toggle.is-active:hover:not(:disabled) { background: #fef2f2; }
+.push-notification-spinner { animation: push-spin .8s linear infinite; }
+@keyframes push-spin { to { transform: rotate(360deg); } }
 .push-notification-toggle:hover:not(:disabled) { background: #eff6ff; }
 .push-notification-toggle:disabled { cursor: wait; opacity: .6; }
 .push-notification-message { grid-column: 1 / -1; margin: 0; color: #047857; font-size: 11px; line-height: 1.4; }
@@ -1075,8 +1079,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .admin-table-pagination > div { justify-content: space-between; gap: 8px; }
   .admin-table-pagination button { padding: 0; }
   .admin-table-pagination > div > span { font-size: 11px; }
-  .push-notification-control { grid-template-columns: minmax(0, 1fr); }
-  .push-notification-toggle { width: 100%; }
 }
 
 /* Applicant account import and employee master data */
@@ -1241,3 +1243,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .import-diff-stats dd { margin: 2px 0 0; color: #1e3a8a; font-size: 20px; font-weight: 800; }
 .import-diff-notes { display: grid; gap: 4px; margin: 0; padding-left: 18px; color: #475569; font-size: 12px; line-height: 1.5; }
 @media (max-width: 520px) { .import-diff-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.applicant-notification-panel > header strong, .admin-notification-panel > header strong { color: #111; font-weight: 700; }

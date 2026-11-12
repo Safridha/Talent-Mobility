@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BellRing, BellOff } from 'lucide-react'
+import { Bell, BellOff, BellPlus, BellRing, LoaderCircle } from 'lucide-react'
 import { apiRequest } from '../api'
 
 function decodeApplicationServerKey(value) {
@@ -119,7 +119,7 @@ export default function PushNotificationControl() {
   return (
     <section aria-label="Pengaturan notifikasi push" className="push-notification-control">
       <div className="push-notification-copy">
-        {subscription ? <BellRing aria-hidden="true" size={18} /> : <BellOff aria-hidden="true" size={18} />}
+        {subscription ? <BellRing aria-hidden="true" size={18} /> : <Bell aria-hidden="true" size={18} />}
         <div>
           <strong>Notifikasi perangkat</strong>
           <span>
@@ -139,12 +139,18 @@ export default function PushNotificationControl() {
       </div>
       {config?.enabled && supported && permission !== 'denied' && (
         <button
-          className="push-notification-toggle"
+          aria-label={subscription ? 'Nonaktifkan notifikasi perangkat' : 'Aktifkan notifikasi perangkat'}
+          className={`push-notification-toggle${subscription ? ' is-active' : ''}`}
           disabled={isLoading || isSaving}
           onClick={() => void (subscription ? disablePush() : enablePush())}
+          title={isSaving ? 'Menyimpan...' : subscription ? 'Nonaktifkan notifikasi' : 'Aktifkan notifikasi'}
           type="button"
         >
-          {isSaving ? 'Menyimpan...' : subscription ? 'Nonaktifkan' : 'Aktifkan'}
+          {isSaving
+            ? <LoaderCircle aria-hidden="true" className="push-notification-spinner" size={16} />
+            : subscription
+              ? <BellOff aria-hidden="true" size={16} />
+              : <BellPlus aria-hidden="true" size={16} />}
         </button>
       )}
       {notice && <p className="push-notification-message" role="status">{notice}</p>}
