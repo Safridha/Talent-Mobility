@@ -77,6 +77,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const [applicationTargetFilter, setApplicationTargetFilter] = useState('all')
   const [selectedApplication, setSelectedApplication] = useState(null)
   const [downloadingApplicationId, setDownloadingApplicationId] = useState(null)
+  const [exportingApplicationId, setExportingApplicationId] = useState(null)
   const [logoutError, setLogoutError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -176,6 +177,46 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       setError(requestError.message)
     } finally {
       setDownloadingApplicationId(null)
+    }
+  }
+
+  async function downloadApplicantData(application) {
+    setError('')
+    setExportingApplicationId(application.id)
+    try {
+      const details = await apiRequest(`/admin/applications/${application.id}`)
+      const submittedAt = new Date(details.created_at)
+      const rows = [
+        ['ID lamaran', details.id],
+        ['Nama pelamar', details.applicant_name],
+        ['Email', details.applicant_email],
+        ['Nomor telepon', details.phone_number],
+        ['NIP', details.employee_number],
+        ['Divisi asal', details.origin_division],
+        ['Unit asal', details.origin_unit],
+        ['Posisi saat ini', details.current_position],
+        ['Unit saat ini', details.current_unit],
+        ['Pendidikan terakhir', details.education_level],
+        ['Bidang studi', details.study_field],
+        ['Unit / lowongan tujuan', details.target_label || details.job_title],
+        ['Jenis lamaran', details.job_id ? 'Lowongan' : 'Lamar langsung'],
+        ['Status', applicationStatusOptions.find((status) => status.value === details.status)?.label || details.status],
+        ['Tanggal lamaran', Number.isNaN(submittedAt.getTime()) ? details.created_at : submittedAt.toLocaleString('id-ID')],
+        ['Deskripsi posisi', details.position_description],
+        ['Motivasi dan rencana kontribusi', details.motivation],
+        ['Dokumen', details.documents.map((document) => document.file_name).join('\n')],
+      ].map(([label, value]) => [label, value || '—'])
+      const safeName = details.applicant_name.toLocaleLowerCase('id').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      await downloadTablePdf(
+        `data-pelamar-${safeName || details.id}`,
+        `Data Pelamar · ${details.applicant_name}`,
+        ['Informasi', 'Data'],
+        rows,
+      )
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setExportingApplicationId(null)
     }
   }
 
@@ -496,7 +537,21 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                             ) : application.documents_count ? `${application.documents_count} berkas` : 'Belum ada'}
                           </td>
                           <td><span className={`status-pill status-${application.status}`}>{applicationStatusOptions.find((status) => status.value === application.status)?.label || application.status}</span></td>
-                          <td><button className="admin-small-button" onClick={() => void openApplication(application.id)} type="button">Tinjau</button></td>
+                          <td>
+                            <div className="application-row-actions">
+                              <button
+                                aria-label={`Unduh data pelamar ${application.applicant_name}`}
+                                className="admin-small-button"
+                                disabled={exportingApplicationId === application.id}
+                                onClick={() => void downloadApplicantData(application)}
+                                type="button"
+                              >
+                                <Download size={14} />
+                                {exportingApplicationId === application.id ? 'Menyiapkan...' : 'Unduh data'}
+                              </button>
+                              <button className="admin-small-button" onClick={() => void openApplication(application.id)} type="button">Tinjau</button>
+                            </div>
+                          </td>
                         </tr>
                       )
                     })}

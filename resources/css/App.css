@@ -38,6 +38,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .hero-copy p { max-width: 850px; margin: 0; color: #cbd5e1; font-size: 16px; line-height: 1.5; }
 .hero-stats { display: flex; min-width: 430px; align-items: center; justify-content: space-around; padding: 16px 10px; border: 1px solid #2b3a54; border-radius: 16px; background: #1e293b; }
 .hero-stats div { display: grid; min-width: 105px; justify-items: center; gap: 3px; }
+.hero-stats div > * { text-align: center; }
 .hero-stats div + div { border-left: 1px solid #344256; }
 .hero-stats strong { color: #60a5fa; font-size: 32px; font-weight: 800; line-height: 1.1; }
 .hero-stats div:nth-child(2) strong { color: #34d399; }
@@ -59,7 +60,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .direct-application-picker-grid > label > span b { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 50%; background: #dbeafe; color: #1d4ed8; font-size: 10px; }
 .direct-application-picker-grid > label > span small { color: #94a3b8; font-size: 10px; font-weight: 500; }
 .direct-application-results { margin-bottom: 22px; }
-.direct-application-results .direct-application-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.direct-application-results .direct-application-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .direct-application-card { min-width: 0; min-height: 270px; border-color: #bfdbfe; }
 .direct-application-card .card-top { align-items: flex-start; }
 .direct-application-card .division-tag { max-width: 100%; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; line-height: 1.35; }
@@ -110,7 +111,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .back-button:active { transform: translateY(0); }
 .back-button svg { flex: 0 0 auto; }
 .application-back-button { width: fit-content; text-align: left; }
-.applications-hero .hero-stats { min-width: 390px; }
+.applications-hero .hero-stats { display: grid; min-width: 390px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.applications-hero .hero-stats div { min-width: 0; }
 .applications-page-state { display: grid; min-height: 220px; justify-items: center; align-content: center; gap: 7px; padding: 24px; border: 1px dashed #cbd5e1; border-radius: 16px; background: white; color: #64748b; text-align: center; }
 .applications-page-state > svg { color: #94a3b8; }
 .applications-page-state h2 { margin: 4px 0 0; color: #263248; font-size: 18px; }
@@ -247,6 +249,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .job-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .public-job-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .direct-application-results .direct-application-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .direct-application-results .direct-application-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-dashboard-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .applications-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .card-top { padding-right: 17px; padding-left: 17px; }
@@ -293,6 +296,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .job-grid { grid-template-columns: 1fr; gap: 13px; }
   .public-job-grid { gap: 16px; }
   .direct-application-results .direct-application-grid { gap: 12px; }
+  .direct-application-results .direct-application-grid { grid-template-columns: 1fr; }
   .job-card { min-height: 300px; border-radius: 16px; }
   .card-top { padding: 18px 17px 0; }
   .division-tag { max-width: 72%; overflow: hidden; padding: 5px 8px; font-size: 11px; text-overflow: ellipsis; }
@@ -628,7 +632,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .admin-dashboard-view { display: grid; gap: 22px; }
 .admin-dashboard-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .admin-summary-card, .admin-table-panel { overflow: hidden; border: 1px solid var(--line); border-top: 3px solid #2563eb; border-radius: 15px; background: white; box-shadow: 0 4px 14px #0f172a0a; }
-.admin-summary-card { display: grid; min-height: 128px; align-content: space-between; gap: 8px; padding: 16px 18px; color: #334155; text-align: left; }
+.admin-summary-card { display: grid; min-height: 128px; align-content: space-between; justify-items: center; gap: 8px; padding: 16px 18px; color: #334155; text-align: center; }
 .admin-summary-total { border-color: #bfdbfe; border-top-color: #2563eb; background: #eff6ff; }
 .admin-summary-total > span, .admin-summary-status > span { font-size: 13px; font-weight: 700; }
 .admin-summary-total > strong, .admin-summary-status > strong { color: #172554; font-size: 30px; line-height: 1; }
@@ -738,17 +742,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .application-review-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 15px; color: #526179; font-size: 12px; }
 .application-review-summary > span:not(.status-pill) { display: inline-flex; align-items: center; gap: 6px; }
 .application-review-summary svg { color: #7b8ba4; }
-.application-review-content { min-height: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; padding: 20px 28px 24px; }
+.application-review-content { display: grid; min-height: 0; flex: 1 1 auto; gap: 12px; overflow: auto; overscroll-behavior: contain; padding: 16px 28px 20px; }
 .application-review-section-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .application-review-section { min-width: 0; padding: 16px; border: 1px solid #e2e8f0; border-radius: 13px; background: #fff; }
+.application-review-section-grid > .application-review-section { box-shadow: 0 2px 8px #0f172a06; }
 .application-review-section > h3, .application-review-section-heading h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 13px; color: #25334a; font-size: 14px; font-weight: 750; line-height: 1.4; }
 .application-review-section > h3 svg, .application-review-section-heading h3 svg { flex: 0 0 auto; color: #3b82f6; }
+.application-review-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 20px; }
+.application-review-details-grid h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 5px; color: #526179; font-size: 11px; font-weight: 750; }
+.application-review-details-grid h4 svg { color: #3b82f6; }
+.application-review-detail-wide { grid-column: 1 / -1; padding-top: 10px; border-top: 1px solid #edf1f6; }
+.application-review-details .application-review-motivation { margin: 0; }
+.application-review-followup-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 18px; }
+.application-review-followup .application-review-documents,
+.application-review-followup .application-review-status { min-width: 0; margin: 0; }
+.application-review-followup .application-review-status { padding-left: 18px; border-left: 1px solid #edf1f6; }
+.application-review-followup .application-review-readonly { align-self: center; margin: 0 !important; }
 .application-review-position-description { margin: 12px 0 0; color: #475569; font-size: 12px; line-height: 1.6; white-space: pre-line; }
-.application-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
-.application-detail-grid > div { min-width: 0; padding: 10px 11px; border-radius: 9px; background: #f8fafc; }
+.application-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; margin: 0; }
+.application-detail-grid > div { min-width: 0; padding: 5px 0; border-bottom: 1px solid #f1f4f8; }
 .application-detail-grid .application-detail-wide { grid-column: 1 / -1; }
-.application-detail-grid dt { margin-bottom: 5px; color: #718096; font-size: 11px; font-weight: 600; }
-.application-detail-grid dd { display: flex; min-width: 0; align-items: flex-start; gap: 6px; margin: 0; color: #243248; font-size: 13px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; }
+.application-detail-grid dt { margin-bottom: 6px; color: #64748b; font-size: 11px; font-weight: 700; letter-spacing: .15px; }
+.application-detail-grid dd { display: flex; min-width: 0; align-items: flex-start; gap: 6px; margin: 0; color: #1e293b; font-size: 13px; font-weight: 650; line-height: 1.6; overflow-wrap: anywhere; }
 .application-detail-grid dd svg { flex: 0 0 auto; margin-top: 2px; color: #8091aa; }
 .application-detail-grid a { display: inline-flex; min-width: 0; align-items: flex-start; gap: 6px; color: #245de8; text-decoration: none; overflow-wrap: anywhere; }
 .application-detail-grid a:hover { text-decoration: underline; }
@@ -992,6 +1007,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .application-review-status textarea { min-height: 88px; resize: vertical; }
 .application-review-readonly { margin: 14px 0 0 !important; padding: 12px 14px; border: 1px solid #dbeafe; border-radius: 10px; background: #f8fbff; color: #526179 !important; font-size: 12px !important; }
 .application-review-actions { flex: 0 0 auto; margin-top: 0; padding: 13px 28px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+.application-row-actions { display: grid; min-width: 112px; gap: 6px; }
+.application-row-actions .admin-small-button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; }
+.application-row-actions .admin-small-button:disabled { cursor: wait; opacity: .65; }
 
 @media (max-width: 700px) {
   .application-form-header { padding: 22px 20px 21px; }
@@ -1005,8 +1023,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .application-form-footer { min-height: 72px; padding: 10px 16px; }
   .application-form-footer .apply-button { min-height: 45px; padding: 0 14px; font-size: 13px; }
   .application-review-header { padding: 19px 20px 16px; }
-  .application-review-content { padding: 16px 20px 20px; }
-  .application-review-section-grid { grid-template-columns: minmax(0, 1fr); gap: 11px; }
+  .application-review-content { gap: 10px; padding: 13px 20px 16px; }
+  .application-review-details-grid { grid-template-columns: minmax(0, 1fr); gap: 11px; }
+  .application-review-followup-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .application-review-followup .application-review-status { padding: 12px 0 0; border-top: 1px solid #edf1f6; border-left: 0; }
   .application-review-actions { padding: 11px 20px; }
   .application-document-row { align-items: flex-start; }
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Building2, CalendarDays, Download, FileText, GraduationCap, Mail, MapPin, Paperclip, Phone, Save, UserRound, X } from 'lucide-react'
+import { Building2, CalendarDays, Download, FileText, Mail, MapPin, Paperclip, Phone, Save, UserRound, X } from 'lucide-react'
 import { apiDownload } from '../../api'
 import ModalBackdrop from '../../components/ModalBackdrop'
 import SearchableSelect from '../../components/SearchableSelect'
@@ -82,8 +82,8 @@ export function ApplicationReview({
             <span className="division-tag"><FileText size={14} /> Detail lamaran</span>
             <button aria-label="Tutup detail lamaran" className="icon-button" onClick={onClose} type="button"><X size={20} /></button>
           </div>
-          <h2 id="application-review-title">{application.job_title}</h2>
-          <p>Ringkasan informasi pelamar dan proses seleksi untuk posisi ini.</p>
+          <h2 id="application-review-title">{application.applicant_name}</h2>
+          <p>Lamaran untuk <strong>{application.target_label || application.job_title}</strong> · {application.applicant_email}</p>
           <div className="application-review-summary">
             <span className={`status-pill status-${application.status}`}>{statusLabel}</span>
             <span><CalendarDays aria-hidden="true" size={15} /> {submittedAtLabel}</span>
@@ -92,121 +92,115 @@ export function ApplicationReview({
         </header>
 
         <div className="application-review-content">
-          <div className="application-review-section-grid">
-            <section className="application-review-section">
-              <h3><UserRound aria-hidden="true" size={17} /> Informasi pelamar</h3>
-              <dl className="application-detail-grid">
-                <div><dt>Nama sesuai ID</dt><dd>{application.applicant_name}</dd></div>
-                <div><dt>Email</dt><dd><a href={`mailto:${application.applicant_email}`}><Mail aria-hidden="true" size={14} /> {application.applicant_email}</a></dd></div>
-                {application.employee_number ? (
-                  <div><dt>NIP</dt><dd>{application.employee_number}</dd></div>
-                ) : (
-                  <div><dt>Nomor HP</dt><dd>{application.phone_number ? <a href={`tel:${application.phone_number}`}><Phone aria-hidden="true" size={14} /> {application.phone_number}</a> : 'Belum diisi'}</dd></div>
-                )}
-              </dl>
-            </section>
-
-            <section className="application-review-section">
-              <h3><Building2 aria-hidden="true" size={17} /> {application.employee_number ? 'Organisasi asal' : 'Pekerjaan saat ini'}</h3>
-              <dl className="application-detail-grid">
-                {application.employee_number ? (
-                  <>
-                    <div><dt>Divisi</dt><dd>{application.origin_division || 'Belum diisi'}</dd></div>
-                    <div className="application-detail-wide"><dt>Departemen / unit</dt><dd><MapPin aria-hidden="true" size={14} /> {application.origin_unit || 'Belum diisi'}</dd></div>
-                  </>
-                ) : (
-                  <>
-                    <div><dt>Posisi</dt><dd>{application.current_position || 'Belum diisi'}</dd></div>
-                    <div><dt>Unit / divisi</dt><dd>{application.current_unit || 'Belum diisi'}</dd></div>
-                  </>
-                )}
-              </dl>
-            </section>
-
-            {application.employee_number && (
-              <section className="application-review-section">
-                <h3><GraduationCap aria-hidden="true" size={18} /> Pendidikan</h3>
+          <section className="application-review-section application-review-details">
+            <h3><UserRound aria-hidden="true" size={17} /> Informasi pelamar &amp; lamaran</h3>
+            <div className="application-review-details-grid">
+              <div>
+                <h4>Kontak pelamar</h4>
                 <dl className="application-detail-grid">
-                  <div><dt>Pendidikan terakhir</dt><dd>{application.education_level || 'Belum diisi'}</dd></div>
-                  <div><dt>Jurusan</dt><dd>{application.study_field || 'Belum diisi'}</dd></div>
+                  <div><dt>Nama</dt><dd>{application.applicant_name}</dd></div>
+                  <div><dt>Email</dt><dd><a href={`mailto:${application.applicant_email}`}><Mail aria-hidden="true" size={14} /> {application.applicant_email}</a></dd></div>
+                  {application.employee_number && <div><dt>NIP</dt><dd>{application.employee_number}</dd></div>}
+                  <div><dt>Nomor HP</dt><dd>{application.phone_number ? <a href={`tel:${application.phone_number}`}><Phone aria-hidden="true" size={14} /> {application.phone_number}</a> : 'Belum diisi'}</dd></div>
                 </dl>
-              </section>
-            )}
-
-            <section className="application-review-section">
-              <h3><FileText aria-hidden="true" size={17} /> Posisi yang dilamar</h3>
-              <dl className="application-detail-grid">
-                <div><dt>Jenis lamaran</dt><dd>{application.job_id ? 'Lowongan' : 'Lamar langsung'}</dd></div>
-                {application.job_id ? (
-                  <div><dt>Kode posisi</dt><dd>{application.job_id}</dd></div>
-                ) : (
-                  <div className="application-detail-wide"><dt>Unit tujuan</dt><dd>{application.target_label || application.job_title}</dd></div>
-                )}
-                <div><dt>ID lamaran</dt><dd>{application.id}</dd></div>
-              </dl>
-              {!application.job_id && application.position_description && (
-                <p className="application-review-position-description">{application.position_description}</p>
-              )}
-            </section>
-          </div>
-
-          <section className="application-review-section application-review-motivation">
-            <h3>Motivasi &amp; rencana kontribusi</h3>
-            <p>{application.motivation || 'Pelamar belum mengisi motivasi atau rencana kontribusi.'}</p>
-          </section>
-
-          <section className="application-review-section application-review-documents">
-            <div className="application-review-section-heading">
-              <h3><Paperclip aria-hidden="true" size={17} /> Dokumen pendukung</h3>
-              <span>{documents.length} berkas</span>
-            </div>
-            {documents.length ? documents.map((file) => (
-              <div className="application-document-row" key={file.id}>
-                <span>{({
-                  cv: 'CV',
-                  cover_letter: 'Surat pengantar',
-                  certificate: 'Sertifikat pendukung',
-                  supporting_document: 'Berkas pendukung',
-                })[file.document_type] || 'Dokumen'} <small>{file.file_name}{formatFileSize(file.file_size) && ` · ${formatFileSize(file.file_size)}`}</small></span>
-                {canDownloadDocuments && <button
-                  className="admin-small-button"
-                  disabled={downloadingDocumentId === file.id}
-                  onClick={() => void downloadDocument(file)}
-                  type="button"
-                >
-                  <Download size={15} /> {downloadingDocumentId === file.id ? 'Mengunduh...' : 'Unduh'}
-                </button>}
               </div>
-            )) : <p className="application-document-empty">Belum ada dokumen pendukung.</p>}
+              <div>
+                <h4><Building2 aria-hidden="true" size={15} /> {application.employee_number ? 'Latar belakang kerja' : 'Pekerjaan saat ini'}</h4>
+                <dl className="application-detail-grid">
+                  {application.employee_number ? (
+                    <>
+                      <div><dt>Divisi</dt><dd>{application.origin_division || 'Belum diisi'}</dd></div>
+                      <div className="application-detail-wide"><dt>Departemen / unit</dt><dd><MapPin aria-hidden="true" size={14} /> {application.origin_unit || 'Belum diisi'}</dd></div>
+                    </>
+                  ) : (
+                    <>
+                      <div><dt>Posisi</dt><dd>{application.current_position || 'Belum diisi'}</dd></div>
+                      <div><dt>Unit / divisi</dt><dd>{application.current_unit || 'Belum diisi'}</dd></div>
+                    </>
+                  )}
+                  {application.employee_number && (
+                    <>
+                      <div><dt>Pendidikan terakhir</dt><dd>{application.education_level || 'Belum diisi'}</dd></div>
+                      <div><dt>Jurusan</dt><dd>{application.study_field || 'Belum diisi'}</dd></div>
+                    </>
+                  )}
+                </dl>
+              </div>
+              <div className="application-review-detail-wide">
+                <h4><FileText aria-hidden="true" size={15} /> Posisi yang dilamar</h4>
+                <dl className="application-detail-grid">
+                  <div><dt>Jenis lamaran</dt><dd>{application.job_id ? 'Lowongan' : 'Lamar langsung'}</dd></div>
+                  <div><dt>ID lamaran</dt><dd>{application.id}</dd></div>
+                  {application.job_id && <div><dt>Kode posisi</dt><dd>{application.job_id}</dd></div>}
+                  {!application.job_id && <div><dt>Unit tujuan</dt><dd>{application.target_label || application.job_title}</dd></div>}
+                </dl>
+                {!application.job_id && application.position_description && (
+                  <p className="application-review-position-description">{application.position_description}</p>
+                )}
+              </div>
+              <div className="application-review-detail-wide application-review-motivation">
+                <h4>Motivasi &amp; rencana kontribusi</h4>
+                <p>{application.motivation || 'Belum diisi.'}</p>
+              </div>
+            </div>
           </section>
 
-          {canChangeStatus ? (
-            <section className="application-review-section application-review-status">
-              <h3>Perbarui tahap seleksi</h3>
-              <p className="application-review-help">Alur seleksi berurutan: Masuk, lalu Seleksi, Wawancara, dan Diterima. Lamaran dapat ditolak di setiap tahap; Diterima dan Ditolak adalah status akhir. Perubahan status akan diberitahukan kepada pelamar.</p>
-              <label className="application-status-select">Status proses
-                <SearchableSelect
-                  onChange={setStatus}
-                  options={getAvailableApplicationStatuses(application.status)}
-                  value={status}
-                />
-              </label>
-              {status !== application.status && (
-                <label className="application-status-select">Catatan untuk pelamar{status === 'rejected' ? ' (wajib)' : ' (opsional)'}
-                  <textarea
-                    maxLength={1000}
-                    onChange={(event) => setReason(event.target.value)}
-                    placeholder="Jelaskan alasan atau informasi untuk pelamar"
-                    required={status === 'rejected'}
-                    rows={3}
-                    value={reason}
-                  />
-                </label>
+          <section className="application-review-section application-review-followup">
+            <div className="application-review-followup-grid">
+              <div className="application-review-documents">
+                <div className="application-review-section-heading">
+                  <h3><Paperclip aria-hidden="true" size={17} /> Dokumen pendukung</h3>
+                  <span>{documents.length} berkas</span>
+                </div>
+                {documents.length ? documents.map((file) => (
+                  <div className="application-document-row" key={file.id}>
+                    <span>{({
+                      cv: 'CV',
+                      cover_letter: 'Surat pengantar',
+                      certificate: 'Sertifikat pendukung',
+                      supporting_document: 'Berkas pendukung',
+                    })[file.document_type] || 'Dokumen'} <small>{file.file_name}{formatFileSize(file.file_size) && ` · ${formatFileSize(file.file_size)}`}</small></span>
+                    {canDownloadDocuments && <button
+                      className="admin-small-button"
+                      disabled={downloadingDocumentId === file.id}
+                      onClick={() => void downloadDocument(file)}
+                      type="button"
+                    >
+                      <Download size={15} /> {downloadingDocumentId === file.id ? 'Mengunduh...' : 'Unduh'}
+                    </button>}
+                  </div>
+                )) : <p className="application-document-empty">Belum ada dokumen pendukung.</p>}
+              </div>
+
+              {canChangeStatus ? (
+                <div className="application-review-status">
+                  <h3>Perbarui tahap seleksi</h3>
+                  <p className="application-review-help">Perubahan status akan diberitahukan kepada pelamar. Penolakan wajib disertai alasan.</p>
+                  <label className="application-status-select">Status proses
+                    <SearchableSelect
+                      onChange={setStatus}
+                      options={getAvailableApplicationStatuses(application.status)}
+                      value={status}
+                    />
+                  </label>
+                  {status !== application.status && (
+                    <label className="application-status-select">Catatan untuk pelamar{status === 'rejected' ? ' (wajib)' : ' (opsional)'}
+                      <textarea
+                        maxLength={1000}
+                        onChange={(event) => setReason(event.target.value)}
+                        placeholder="Jelaskan alasan atau informasi untuk pelamar"
+                        required={status === 'rejected'}
+                        rows={3}
+                        value={reason}
+                      />
+                    </label>
+                  )}
+                </div>
+              ) : (
+                <p className="application-review-readonly">Akun ini memiliki akses lihat saja; perubahan tahap seleksi tidak tersedia.</p>
               )}
-            </section>
-          ) : (
-            <p className="application-review-readonly">Akun ini memiliki akses lihat saja; perubahan tahap seleksi tidak tersedia.</p>
-          )}
+            </div>
+          </section>
           {error && <p className="login-error" role="alert">{error}</p>}
         </div>
 

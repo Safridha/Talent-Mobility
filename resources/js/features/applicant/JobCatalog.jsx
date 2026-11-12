@@ -150,37 +150,60 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const units = useMemo(() => organization.bureaus
     .filter((bureau) => {
       const department = organization.departments.find((item) => String(item.id) === String(bureau.department_id))
-      return Boolean(departmentId)
-        && String(department?.division_id) === divisionId
-        && String(bureau.department_id) === departmentId
+      return (!divisionId || String(department?.division_id) === divisionId)
+        && (!departmentId || String(bureau.department_id) === departmentId)
     })
     .map((bureau) => ({
       key: `bureau:${bureau.id}`,
       label: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
     })), [departmentId, divisionId, organization.bureaus, organization.departments])
   const directTargets = useMemo(() => {
-    if (!divisionId || !departmentId) return []
-    const department = organization.departments.find((item) => String(item.id) === departmentId)
-    if (!department || String(department.division_id) !== divisionId) return []
-    const division = organization.divisions.find((item) => String(item.id) === divisionId)
-    const targets = [{
-      key: `direct:${department.id}:`,
-      title: department.name,
-      target_department_id: department.id,
-      target_bureau_id: null,
-      target_level: 'department',
-      division: division?.name || '',
-      department: department.name,
-      unit: '',
-      description: (department.description || '').trim(),
-    }]
+    const matchedDepartments = organization.departments.filter((department) => (
+      (!divisionId || String(department.division_id) === divisionId)
+      && (!departmentId || String(department.id) === departmentId)
+    ))
+    const matchedDepartmentIds = new Set(matchedDepartments.map((department) => String(department.id)))
+    const matchedBureaus = organization.bureaus.filter((bureau) => (
+      matchedDepartmentIds.has(String(bureau.department_id))
+    ))
+
     if (unitTarget.startsWith('bureau:')) {
       const bureauId = unitTarget.slice('bureau:'.length)
-      const bureau = organization.bureaus.find(
-        (item) => String(item.id) === bureauId && String(item.department_id) === departmentId,
-      )
-      if (bureau) {
-        targets.push({
+      return matchedBureaus
+        .filter((bureau) => String(bureau.id) === bureauId)
+        .map((bureau) => {
+          const department = matchedDepartments.find((item) => String(item.id) === String(bureau.department_id))
+          const division = organization.divisions.find((item) => String(item.id) === String(department?.division_id))
+          return {
+            key: `direct:${bureau.department_id}:${bureau.id}`,
+            title: bureau.name,
+            target_department_id: bureau.department_id,
+            target_bureau_id: bureau.id,
+            target_level: 'bureau',
+            division: division?.name || '',
+            department: department?.name || '',
+            unit: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
+            description: (bureau.description || '').trim(),
+          }
+        })
+    }
+
+    return matchedDepartments.flatMap((department) => {
+      const division = organization.divisions.find((item) => String(item.id) === String(department.division_id))
+      const departmentTarget = {
+        key: `direct:${department.id}:`,
+        title: department.name,
+        target_department_id: department.id,
+        target_bureau_id: null,
+        target_level: 'department',
+        division: division?.name || '',
+        department: department.name,
+        unit: '',
+        description: (department.description || '').trim(),
+      }
+      const bureauTargets = matchedBureaus
+        .filter((bureau) => String(bureau.department_id) === String(department.id))
+        .map((bureau) => ({
           key: `direct:${department.id}:${bureau.id}`,
           title: bureau.name,
           target_department_id: department.id,
@@ -190,10 +213,9 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
           department: department.name,
           unit: `${bureau.unit_type === 'bengkel' ? 'Bengkel' : 'Biro'} — ${bureau.name}`,
           description: (bureau.description || '').trim(),
-        })
-      }
-    }
-    return targets
+        }))
+      return [departmentTarget, ...bureauTargets]
+    })
   }, [departmentId, divisionId, organization.bureaus, organization.departments, organization.divisions, unitTarget])
   const appliedDirectTargetKeys = new Set(currentUserApplications
     .filter((application) => !application.job_id && application.status !== 'rejected')
@@ -415,7 +437,6 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 <label>
                   <span><b>1</b> Divisi</span>
                   <SearchableSelect
-                    menuPlacement="below"
                     onChange={(value) => {
                       setDivisionId(value)
                       setDepartmentId('')
@@ -423,7 +444,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                       setApplicationActionError('')
                     }}
                     options={[
-                      { value: '', label: 'Pilih divisi' },
+                      { value: '', label: 'Semua divisi' },
                       ...divisions.map((item) => ({ value: String(item.id), label: item.name })),
                     ]}
                     value={divisionId}
@@ -433,14 +454,13 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                   <span><b>2</b> Departemen</span>
                   <SearchableSelect
                     disabled={!divisionId}
-                    menuPlacement="below"
                     onChange={(value) => {
                       setDepartmentId(value)
                       setUnitTarget('')
                       setApplicationActionError('')
                     }}
                     options={[
-                      { value: '', label: divisionId ? 'Pilih departemen' : 'Pilih divisi dahulu' },
+                      { value: '', label: 'Semua departemen' },
                       ...departments.map((item) => ({ value: String(item.id), label: item.name })),
                     ]}
                     value={departmentId}
@@ -449,14 +469,13 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 <label>
                   <span><b>3</b> Biro / Bengkel <small>(opsional)</small></span>
                   <SearchableSelect
-                    disabled={!departmentId}
-                    menuPlacement="below"
+                    disabled={!divisionId}
                     onChange={(value) => {
                       setUnitTarget(value)
                       setApplicationActionError('')
                     }}
                     options={[
-                      { value: '', label: departmentId ? 'Semua departemen' : 'Pilih departemen dahulu' },
+                      { value: '', label: 'Semua biro / bengkel' },
                       ...units.map((item) => ({ value: item.key, label: item.label })),
                     ]}
                     value={unitTarget}
@@ -519,10 +538,8 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             ) : (
               <section className="empty-state">
                 <Search size={24} />
-                <h2>{departmentId ? 'Belum ada pilihan untuk unit ini' : 'Tentukan unit tujuan terlebih dahulu'}</h2>
-                <p>{departmentId
-                  ? 'Periksa kembali pilihan Departemen atau Biro/Bengkel yang tersedia.'
-                  : 'Pilih Divisi dan Departemen untuk melihat kartu tujuan lamaran langsung.'}</p>
+                <h2>Tidak ada unit yang sesuai</h2>
+                <p>Periksa kembali pilihan Divisi, Departemen, atau Biro/Bengkel yang tersedia.</p>
               </section>
             )}
           </>
