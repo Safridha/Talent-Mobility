@@ -16,8 +16,8 @@ import ApplicantApplicationProgress from './ApplicantApplicationProgress'
 import AuthDialog from '../auth/AuthDialog'
 import { applicationStatusOptions, getApplicationStatusDescription } from '../applications/status'
 import { usePathRoute } from '../../usePathRoute'
+import { APPLICANT_ROUTES } from '../../routes'
 
-const APPLICANT_ROUTES = ['lowongan', 'lamaran', 'akun/profil', 'akun/keamanan']
 
 export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdated, sessionNotice }) {
   const queryClient = useQueryClient()

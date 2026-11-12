@@ -2,6 +2,14 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Search } from 'lucide-react'
 
+// iOS Safari does not give buttons focus on tap and zooms/scrolls the page when a small input is focused,
+// which breaks the floating search menu. iOS therefore gets the native picker, which always works there.
+function isIOSDevice() {
+  if (typeof navigator === 'undefined') return false
+  return /iP(hone|ad|od)/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
 export default function SearchableSelect({
   disabled = false,
   id,
@@ -14,7 +22,9 @@ export default function SearchableSelect({
   searchPlaceholder = 'Ketik untuk mencari...',
   value,
 }) {
+  const [useNativePicker] = useState(isIOSDevice)
   const [isOpen, setIsOpen] = useState(false)
+  const menuInteractionRef = useRef(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const containerRef = useRef(null)
@@ -108,6 +118,7 @@ export default function SearchableSelect({
   }
 
   function chooseOption(option) {
+    menuInteractionRef.current = false
     onChange(option.value)
     inputRef.current?.setCustomValidity('')
     setQuery('')
@@ -142,10 +153,40 @@ export default function SearchableSelect({
     }
   }
 
+  if (useNativePicker) {
+    const hasEmptyOption = options.some((option) => String(option.value) === '')
+    return (
+      <div className={`searchable-select is-native${disabled ? ' is-disabled' : ''}`}>
+        <div className="searchable-select-control">
+          <Search aria-hidden="true" className="searchable-select-search-icon" size={16} />
+          <select
+            className="searchable-select-native"
+            disabled={disabled}
+            id={id}
+            name={name}
+            onChange={(event) => {
+              const chosen = options.find((option) => String(option.value) === event.target.value)
+              if (chosen) onChange(chosen.value)
+            }}
+            required={required}
+            value={String(value ?? '')}
+          >
+            {!hasEmptyOption && <option value="">{placeholder}</option>}
+            {options.map((option) => (
+              <option key={option.value} value={String(option.value)}>{option.label}</option>
+            ))}
+          </select>
+          <ChevronDown aria-hidden="true" className="searchable-select-chevron" size={16} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className={`searchable-select${isOpen ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}
       onBlur={(event) => {
+        if (menuInteractionRef.current) return
         if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false)
       }}
       ref={containerRef}
@@ -190,6 +231,9 @@ export default function SearchableSelect({
         <div
           className="searchable-select-menu"
           id={listId}
+          onPointerDown={() => { menuInteractionRef.current = true }}
+          onPointerUp={() => { window.setTimeout(() => { menuInteractionRef.current = false }, 300) }}
+          onTouchStart={() => { menuInteractionRef.current = true }}
           ref={menuRef}
           role="listbox"
           style={{

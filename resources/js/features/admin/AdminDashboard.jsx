@@ -19,16 +19,10 @@ import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
 import { AdminAuditLog } from './AdminAuditLog'
 import { queryKeys } from '../../query/queryKeys'
-import { usePathRoute } from '../../usePathRoute'
+import { usePathRoute, readPath } from '../../usePathRoute'
+import NotFoundPage from '../../components/NotFoundPage'
+import { ADMIN_ROUTES, ADMIN_VIEW_ROUTES, LEGACY_ADMIN_ROUTE_ALIASES } from '../../routes'
 
-const ADMIN_VIEW_ROUTES = {
-  dashboard: 'dashboard',
-  applications: 'lamaran',
-  accounts: 'manajemen-akun',
-  units: 'unit-kerja',
-  'application-limit': 'batas-lamaran',
-  audit: 'audit-log',
-}
 const ADMIN_VIEW_PRESENTATION = {
   dashboard: { label: 'Dashboard', icon: Database },
   applications: { label: 'Lamaran Masuk', icon: FileText },
@@ -37,17 +31,6 @@ const ADMIN_VIEW_PRESENTATION = {
   'application-limit': { label: 'Batas Lamaran', icon: Users },
   audit: { label: 'Riwayat Audit', icon: Shield },
 }
-const LEGACY_ADMIN_ROUTE_ALIASES = {
-  'admin/divisi': 'units',
-  'admin/departemen': 'units',
-  'admin/biro': 'units',
-}
-const ADMIN_ROUTES = [
-  ...Object.values(ADMIN_VIEW_ROUTES).map((view) => `admin/${view}`),
-  ...Object.keys(LEGACY_ADMIN_ROUTE_ALIASES),
-  'admin/account/profile', 'admin/account/security',
-]
-
 function saveDownload(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -295,11 +278,14 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     const { label, icon: Icon } = ADMIN_VIEW_PRESENTATION[id]
     return { id, label, icon: <Icon size={17} /> }
   })
+  // A view the account may not open: redirect from the bare "/" (default route), otherwise show "not found".
+  const isViewUnavailable = Boolean(availableViews.length) && !accountSection && !availableViews.includes(activeView)
+  const isForbiddenView = isViewUnavailable && readPath() !== ''
   useEffect(() => {
-    if (availableViews.length && !availableViews.includes(activeView) && !accountSection) {
+    if (isViewUnavailable && readPath() === '') {
       navigate(`admin/${ADMIN_VIEW_ROUTES[availableViews[0]] || 'dashboard'}`)
     }
-  }, [activeView, accountSection, availableViews, navigate])
+  }, [isViewUnavailable, availableViews, navigate])
 
   function navigateView(view) {
     setAccountReturnView(view)
@@ -423,7 +409,9 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                 </div>
               </nav>
               <div className="admin-main-content">
-        {!availableViews.length ? (
+        {isForbiddenView ? (
+          <NotFoundPage embedded />
+        ) : !availableViews.length ? (
           <section aria-live="polite" className="admin-loading">
             Akun ini belum memiliki izin untuk fitur admin yang aktif. Hubungi Super Admin untuk memperbarui akses.
           </section>

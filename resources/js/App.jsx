@@ -4,6 +4,9 @@ import JobCatalog from './features/applicant/JobCatalog'
 import FirstLoginPasswordChange from './features/auth/FirstLoginPasswordChange'
 import AdminDashboard from './features/admin/AdminDashboard'
 import { apiRequest } from './api'
+import NotFoundPage from './components/NotFoundPage'
+import { ADMIN_ROUTES, APPLICANT_ROUTES, GUEST_ROUTES } from './routes'
+import { goTo, usePathname } from './usePathRoute'
 import '../css/App.css'
 
 const APPLICANT_SESSION_KEY = 'talent-mobility:applicant-session'
@@ -33,6 +36,8 @@ export default function App() {
   const [adminSession, setAdminSession] = useState(() => readStoredSession(ADMIN_SESSION_KEY))
   const [sessionNotice, setSessionNotice] = useState('')
   const authenticatedDuringRestore = useRef(false)
+  const pathname = usePathname()
+  const previousAudience = useRef(adminSession ? 'admin' : session ? 'applicant' : 'guest')
   const storedSessionExists = useRef(Boolean(session || adminSession))
   const restoreSessionRequest = useRef(null)
 
@@ -134,6 +139,22 @@ export default function App() {
     }
   }
 
+
+  const audience = adminSession ? 'admin' : session ? 'applicant' : 'guest'
+  const allowedRoutes = audience === 'admin' ? ADMIN_ROUTES : audience === 'applicant' ? APPLICANT_ROUTES : GUEST_ROUTES
+  const isKnownPath = pathname === '' || allowedRoutes.includes(pathname)
+
+  // Signing in or out changes what the visitor may open: leave a page that no longer applies.
+  useEffect(() => {
+    if (previousAudience.current !== audience) {
+      previousAudience.current = audience
+      if (!isKnownPath) goTo('/', { replace: true })
+    }
+  }, [audience, isKnownPath])
+
+  if (!isKnownPath && !session?.applicant?.must_change_password && previousAudience.current === audience) {
+    return <NotFoundPage />
+  }
 
   if (adminSession) {
     return <AdminDashboard onLogout={handleAdminLogout} onProfileUpdated={handleProfileUpdated} session={adminSession} />
