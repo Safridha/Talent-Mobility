@@ -182,7 +182,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
         ['Pendidikan terakhir', details.education_level],
         ['Bidang studi', details.study_field],
         ['Unit / lowongan tujuan', details.target_label || details.job_title],
-        ['Jenis lamaran', details.job_id ? 'Lowongan' : 'Lamar langsung'],
+        ...(details.job_id ? [['Jenis lamaran', 'Lowongan']] : []),
         ['Status', applicationStatusOptions.find((status) => status.value === details.status)?.label || details.status],
         ['Tanggal lamaran', Number.isNaN(submittedAt.getTime()) ? details.created_at : submittedAt.toLocaleString('id-ID')],
         ['Deskripsi posisi', details.position_description],
@@ -299,14 +299,14 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   }
 
   const activeViewDescription = {
-    dashboard: 'Pantau lamaran langsung dan tindak lanjuti proses seleksi pada unit kerja Anda.',
-    applications: 'Tinjau lamaran langsung, unduh dokumen, dan perbarui tahapan seleksi.',
+    dashboard: 'Pantau lamaran dan tindak lanjuti proses seleksi pada unit kerja Anda.',
+    applications: 'Tinjau lamaran, unduh dokumen, dan perbarui tahapan seleksi.',
     accounts: 'Kelola akun pelamar dan akses portal.',
     units: 'Kelola hierarki Divisi, Departemen, dan Biro/Bengkel beserta deskripsinya.',
     'application-limit': 'Atur jumlah maksimal lamaran yang dapat dikirim setiap pelamar.',
     audit: 'Tinjau perubahan akun, izin akses, dan data master.',
   }[activeView]
-  const activeViewLabel = views.find((view) => view.id === activeView)?.label || 'Dashboard Lamar Langsung'
+  const activeViewLabel = views.find((view) => view.id === activeView)?.label || 'Dashboard'
 
   return (
     <main className="admin-shell">
@@ -328,7 +328,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               {isNotificationsOpen && (
                 <section aria-label="Notifikasi lamaran baru" className="admin-notification-panel" role="dialog">
                   <div className="admin-notification-heading">
-                    <div><strong>Lamaran baru</strong><span>Lamaran langsung untuk unit dalam lingkup Anda · {unreadNotificationCount} belum dibaca</span></div>
+                    <div><strong>Lamaran baru</strong><span>Lamaran untuk unit dalam lingkup Anda · {unreadNotificationCount} belum dibaca</span></div>
                     <button aria-label="Tutup notifikasi" className="admin-notification-close" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                   </div>
                   <PushNotificationControl />
@@ -382,7 +382,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
             <div className="admin-page-heading">
               <div>
                 <span className="admin-heading-kicker">PANEL ADMINISTRATOR · {adminRoleLabel.toLocaleUpperCase('id')}</span>
-                <h1>{activeView === 'dashboard' ? 'Dashboard Lamar Langsung' : activeViewLabel}</h1>
+                <h1>{activeView === 'dashboard' ? 'Dashboard' : activeViewLabel}</h1>
                 <p>{activeViewDescription}</p>
               </div>
               <span aria-hidden="true" className="admin-heading-mark"><Shield size={30} /></span>
@@ -423,8 +423,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               <div className="admin-dashboard-summary">
                 {canViewApplications && (
                   <>
-                    <section aria-label="Total lamaran langsung" className="admin-summary-card admin-summary-total">
-                      <span>Total lamaran langsung</span>
+                    <section aria-label="Total lamaran" className="admin-summary-card admin-summary-total">
+                      <span>Total lamaran</span>
                       <strong>{metrics.applications_total}</strong>
                       <small>Semua tahap seleksi</small>
                     </section>
@@ -508,7 +508,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                           <td className="position-code">{registrationId}<span className="admin-table-subtext">{createdAt.toLocaleString('id-ID')}</span></td>
                           <td className="position-name">{application.applicant_name}<span className="admin-table-subtext">NIP: {application.employee_number || '-'} · {application.applicant_email}</span></td>
                           <td>{application.origin_division || application.current_unit || '-'}<span className="admin-table-subtext">{application.origin_unit || application.current_position || ''}</span></td>
-                          <td className="position-name">{application.target_label || application.job_title}<span className="admin-table-subtext">{application.job_id ? 'Riwayat lowongan lama' : 'Lamar langsung'}</span></td>
+                          <td className="position-name">{application.target_label || application.job_title}{application.job_id && <span className="admin-table-subtext">Riwayat lowongan lama</span>}</td>
                           <td>{application.education_level || '-'}<span className="admin-table-subtext">{application.study_field || ''}</span></td>
                           <td>
                             {application.documents_count && canDownloadApplicationDocuments ? (

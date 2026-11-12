@@ -243,7 +243,7 @@ async fn parse_application_submission(
             .any(|document| document.document_type == "cv")
     {
         return Err(ApiError::BadRequest(
-            "CV wajib diunggah untuk lamaran langsung.",
+            "CV wajib diunggah.",
         ));
     }
     if documents.is_empty() {

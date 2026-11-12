@@ -129,7 +129,7 @@ export function ApplicationReview({
               <div className="application-review-detail-wide">
                 <h4><FileText aria-hidden="true" size={15} /> Posisi yang dilamar</h4>
                 <dl className="application-detail-grid">
-                  <div><dt>Jenis lamaran</dt><dd>{application.job_id ? 'Lowongan' : 'Lamar langsung'}</dd></div>
+                  {application.job_id && <div><dt>Jenis lamaran</dt><dd>Lowongan</dd></div>}
                   <div><dt>ID lamaran</dt><dd>{application.id}</dd></div>
                   {application.job_id && <div><dt>Kode posisi</dt><dd>{application.job_id}</dd></div>}
                   {!application.job_id && <div><dt>Unit tujuan</dt><dd>{application.target_label || application.job_title}</dd></div>}
