@@ -621,7 +621,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
               <div className="hero-copy">
                 <span className="hero-badge"><FileText size={14} /> Perkembangan proses</span>
                 <h1 id="my-applications-title">Lamaran Saya</h1>
-                <p>Pantau status dan informasi terbaru dari tim Human Capital untuk setiap posisi yang Anda lamar.</p>
+                <p>Pantau status dan informasi terbaru untuk setiap posisi yang Anda lamar.</p>
               </div>
               <div className="hero-stats">
                 <div><strong>{currentUserApplications.length}</strong><span>Total lamaran</span></div>

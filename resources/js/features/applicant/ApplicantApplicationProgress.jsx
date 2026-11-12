@@ -39,7 +39,7 @@ export default function ApplicantApplicationProgress({ application, job, onClose
       ? 'Lamaran Anda diterima.'
       : currentStatus === 'rejected'
         ? 'Lamaran belum dapat dilanjutkan untuk posisi ini.'
-        : 'Menunggu keputusan akhir dari tim Human Capital.',
+        : 'Menunggu keputusan akhir',
   }
   const progressStages = [...stages, decisionStage]
 
