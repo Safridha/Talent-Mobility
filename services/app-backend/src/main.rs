@@ -1265,6 +1265,16 @@ fn restore_roster_nip(value: &str) -> String {
     }
 }
 
+/// The reverse of `restore_roster_nip`: for a complete 9-digit NIP that starts with 0 and then 20-26, the NIP
+/// as an Excel export without the zero would have written it (an older import may have saved that one).
+fn strip_roster_nip_zero(value: &str) -> Option<String> {
+    let rest = value.trim().strip_prefix('0')?;
+    let is_full = rest.len() == 8
+        && rest.bytes().all(|byte| byte.is_ascii_digit())
+        && matches!(&rest[..2], "20" | "21" | "22" | "23" | "24" | "25" | "26");
+    is_full.then(|| rest.to_owned())
+}
+
 fn org_name_key(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
@@ -1545,6 +1555,16 @@ mod tests {
         assert_eq!(restore_roster_nip("2511699"), "2511699");
         assert_eq!(restore_roster_nip("25A16996"), "25A16996");
         assert_eq!(restore_roster_nip(" 25116996 "), "025116996");
+    }
+
+    #[test]
+    fn stripped_roster_nip_is_the_inverse_of_the_restored_one() {
+        assert_eq!(strip_roster_nip_zero("025116996").as_deref(), Some("25116996"));
+        assert_eq!(strip_roster_nip_zero("026027029").as_deref(), Some("26027029"));
+        assert_eq!(strip_roster_nip_zero("103892806"), None);
+        assert_eq!(strip_roster_nip_zero("015116996"), None);
+        assert_eq!(strip_roster_nip_zero("25116996"), None);
+        assert_eq!(strip_roster_nip_zero("02511699"), None);
     }
 
     #[test]

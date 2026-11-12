@@ -83,6 +83,52 @@ type ExistingRosterRow = (
     Option<String>,
 );
 
+/// When an Excel row's NIP matches no account (the NIP changed, or was entered differently), look for the
+/// same person by name and use the other columns as verifiers: division, department, position and
+/// education must agree on at least two of the four, and exactly one account may fit best. Accounts whose
+/// NIP appears elsewhere in the file, or that another row already took, are never candidates.
+async fn find_roster_match_by_verifiers(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    name: &str,
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    position: &Option<String>,
+    education: &Option<String>,
+    file_numbers: &std::collections::HashSet<String>,
+    claimed: &std::collections::HashSet<i64>,
+) -> Result<Option<ExistingRosterRow>, ApiError> {
+    let rows = sqlx::query_as::<_, ExistingRosterRow>(
+        "SELECT id, employee_number, name, division_id, department_id, bureau_id, position_title, last_education FROM applicants WHERE employee_number IS NOT NULL AND lower(regexp_replace(btrim(name), '\\s+', ' ', 'g')) = $1 FOR UPDATE",
+    )
+    .bind(org_name_key(name))
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(internal_error)?;
+    let same_text = |left: &Option<String>, right: &Option<String>| match (left, right) {
+        (Some(left), Some(right)) => org_name_key(left) == org_name_key(right),
+        _ => false,
+    };
+    let mut best: Vec<(u8, ExistingRosterRow)> = Vec::new();
+    for row in rows {
+        if file_numbers.contains(&row.1) || claimed.contains(&row.0) {
+            continue;
+        }
+        let score = u8::from(division_id.is_some() && row.3 == division_id)
+            + u8::from(department_id.is_some() && row.4 == department_id)
+            + u8::from(same_text(position, &row.6))
+            + u8::from(same_text(education, &row.7));
+        if score >= 2 {
+            best.push((score, row));
+        }
+    }
+    let top = best.iter().map(|(score, _)| *score).max();
+    let mut top_rows = best.into_iter().filter(|(score, _)| Some(*score) == top);
+    match (top_rows.next(), top_rows.next()) {
+        (Some((_, row)), None) => Ok(Some(row)),
+        _ => Ok(None),
+    }
+}
+
 pub(super) async fn admin_import_accounts(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -111,6 +157,21 @@ pub(super) async fn admin_import_accounts(
     let mut invalid: Vec<serde_json::Value> = Vec::new();
     let mut changes: Vec<serde_json::Value> = Vec::new();
     let mut seen_numbers: Vec<String> = Vec::new();
+    let mut verifier_matched = 0_i64;
+    let mut claimed: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    // Every NIP the file mentions (with and without the dropped zero), so a "match by name" never steals
+    // an account that another row of the same file owns.
+    let mut file_numbers: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for row in &request.rows {
+        if let Ok(Some(original)) = clean_profile_text(&Some(row.employee_number.clone()), 40) {
+            let restored = restore_roster_nip(&original);
+            if let Some(stripped) = strip_roster_nip_zero(&restored) {
+                file_numbers.insert(stripped);
+            }
+            file_numbers.insert(restored);
+            file_numbers.insert(original);
+        }
+    }
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     for (index, row) in request.rows.iter().enumerate() {
         let line = index + 2; // header is line 1
@@ -158,15 +219,39 @@ pub(super) async fn admin_import_accounts(
         )
         .await?;
 
-        let existing = sqlx::query_as::<_, ExistingRosterRow>(
-            // Also finds the account saved earlier under the NIP without its leading zero.
-            "SELECT id, employee_number, name, division_id, department_id, bureau_id, position_title, last_education FROM applicants WHERE employee_number = $1 OR employee_number = $2 ORDER BY (employee_number = $1) DESC LIMIT 1 FOR UPDATE",
+        // Also finds the account saved earlier under the NIP written the other way (with/without the zero).
+        let mut lookup = vec![employee_number.clone(), original_number.clone()];
+        if let Some(stripped) = strip_roster_nip_zero(&employee_number) {
+            lookup.push(stripped);
+        }
+        let mut existing = sqlx::query_as::<_, ExistingRosterRow>(
+            "SELECT id, employee_number, name, division_id, department_id, bureau_id, position_title, last_education FROM applicants WHERE employee_number = ANY($2) ORDER BY (employee_number = $1) DESC LIMIT 1 FOR UPDATE",
         )
         .bind(&employee_number)
-        .bind(&original_number)
+        .bind(&lookup)
         .fetch_optional(&mut *transaction)
         .await
         .map_err(internal_error)?;
+        let mut matched_by_verifiers = false;
+        if existing.is_none() {
+            existing = find_roster_match_by_verifiers(
+                &mut transaction,
+                name,
+                division_id,
+                department_id,
+                &position_title,
+                &last_education,
+                &file_numbers,
+                &claimed,
+            )
+            .await?;
+            if existing.is_some() {
+                matched_by_verifiers = true;
+            }
+        }
+        if let Some(row) = &existing {
+            claimed.insert(row.0);
+        }
 
         match existing {
             None => {
@@ -206,8 +291,22 @@ pub(super) async fn admin_import_accounts(
                 let mut fields: Vec<&str> = Vec::new();
                 let nip_changed = old_number != employee_number;
                 if nip_changed {
+                    let owned_by_admin = sqlx::query_scalar::<_, bool>(
+                        "SELECT EXISTS(SELECT 1 FROM admins WHERE employee_number = $1)",
+                    )
+                    .bind(&employee_number)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(internal_error)?;
+                    if owned_by_admin {
+                        skipped += 1;
+                        continue;
+                    }
                     fields.push("NIP");
                     nip_updated += 1;
+                    if matched_by_verifiers {
+                        verifier_matched += 1;
+                    }
                 }
                 if name != old_name {
                     fields.push("nama");
@@ -257,7 +356,7 @@ pub(super) async fn admin_import_accounts(
                     }
                     updated += 1;
                     if changes.len() < 50 {
-                        changes.push(json!({ "employee_number": employee_number, "name": name, "fields": fields }));
+                        changes.push(json!({ "employee_number": employee_number, "name": name, "fields": fields, "matched_by_verifiers": matched_by_verifiers, "old_employee_number": old_number }));
                     }
                 }
             }
@@ -271,6 +370,14 @@ pub(super) async fn admin_import_accounts(
     .fetch_one(&mut *transaction)
     .await
     .map_err(internal_error)?;
+    // Accounts whose NIP is not in the (latest) file even after matching: shown so they can be reviewed.
+    let missing_accounts = sqlx::query_as::<_, (String, String, Option<String>, Option<String>)>(
+        "SELECT applicants.employee_number, applicants.name, employee_divisions.name, employee_departments.name FROM applicants LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id WHERE applicants.employee_number IS NOT NULL AND NOT (applicants.employee_number = ANY($1)) ORDER BY lower(applicants.name) LIMIT 50",
+    )
+    .bind(&seen_numbers)
+    .fetch_all(&mut *transaction)
+    .await
+    .map_err(internal_error)?;
     let invalid_count = invalid.len();
     if dry_run {
         transaction.rollback().await.map_err(internal_error)?;
@@ -281,7 +388,7 @@ pub(super) async fn admin_import_accounts(
             "create",
             "applicant_account",
             "import",
-            json!({ "source": "excel_import", "created": created, "updated": updated, "unchanged": unchanged, "skipped": skipped, "invalid": invalid_count, "new_divisions": cache.created_divisions, "new_departments": cache.created_departments, "nip_zero_restored": zero_restored_count, "nip_updated": nip_updated, "biro_cleared": bureau_cleared, "not_in_file": not_in_file }),
+            json!({ "source": "excel_import", "created": created, "updated": updated, "unchanged": unchanged, "skipped": skipped, "invalid": invalid_count, "new_divisions": cache.created_divisions, "new_departments": cache.created_departments, "nip_zero_restored": zero_restored_count, "nip_updated": nip_updated, "matched_by_verifiers": verifier_matched, "biro_cleared": bureau_cleared, "not_in_file": not_in_file }),
         )
         .await
         .map_err(internal_error)?;
@@ -300,10 +407,12 @@ pub(super) async fn admin_import_accounts(
         "new_departments": cache.created_departments,
         "nip_zero_restored": zero_restored_count,
         "nip_updated": nip_updated,
+        "matched_by_verifiers": verifier_matched,
         "biro_cleared": bureau_cleared,
         "invalid_count": invalid_count,
         "invalid": invalid,
         "changes": changes,
+        "not_in_file_accounts": missing_accounts.iter().map(|(number, name, division, department)| json!({ "employee_number": number, "name": name, "division": division, "department": department })).collect::<Vec<_>>(),
         "message": format!("{prefix}{created} akun baru, {updated} diperbarui, {unchanged} tidak berubah, {skipped} dilewati (NIP dipakai admin), {invalid_count} baris tidak valid."),
     })))
 }

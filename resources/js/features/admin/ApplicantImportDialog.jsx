@@ -174,6 +174,7 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
             </dl>
             <ul className="import-diff-notes">
               {preview.nip_zero_restored > 0 && <li>{preview.nip_zero_restored} NIP dilengkapi angka 0 di depan{preview.nip_updated > 0 ? `; ${preview.nip_updated} akun lama akan mengganti NIP-nya` : ''}.</li>}
+              {preview.matched_by_verifiers > 0 && <li>{preview.matched_by_verifiers} akun dicocokkan lewat nama dan kolom lain (divisi, departemen, jabatan, pendidikan) karena NIP-nya tidak ditemukan; NIP akunnya akan diganti sesuai Excel.</li>}
               {preview.new_divisions + preview.new_departments > 0 && <li>Master data bertambah {preview.new_divisions} divisi dan {preview.new_departments} departemen.</li>}
               {preview.biro_cleared > 0 && <li>{preview.biro_cleared} akun dikosongkan biro-nya karena berpindah departemen.</li>}
               {preview.not_in_file > 0 && <li>{preview.not_in_file} akun yang sudah terdaftar tidak ada di file ini (tidak diubah dan tidak dinonaktifkan).</li>}
@@ -186,12 +187,35 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
                   <thead><tr><th>NIP</th><th>NAMA</th><th>YANG BERUBAH</th></tr></thead>
                   <tbody>
                     {preview.changes.map((change) => (
-                      <tr key={change.employee_number}><td>{change.employee_number}</td><td>{change.name}</td><td>{change.fields.join(', ')}</td></tr>
+                      <tr key={change.employee_number}><td>{change.employee_number}</td><td>{change.name}</td><td>{change.fields.join(', ')}{change.matched_by_verifiers ? ` (dicocokkan lewat nama; NIP lama ${change.old_employee_number})` : ''}</td></tr>
                     ))}
                   </tbody>
                 </table>
                 {preview.updated > preview.changes.length && <p className="admin-table-note">Menampilkan {preview.changes.length} dari {preview.updated} akun yang diperbarui.</p>}
               </div>
+            )}
+            {preview.not_in_file_accounts?.length > 0 && (
+              <details className="import-missing">
+                <summary>{preview.not_in_file} akun yang NIP-nya tidak ditemukan di Excel terbaru</summary>
+                <p className="organization-help">
+                  Datanya sudah ada di sistem tetapi tidak ada baris yang cocok di file ini, baik lewat NIP maupun lewat nama dan kolom lain. Akun ini tidak diubah dan tidak dinonaktifkan. Jika seharusnya ada barisnya, samakan nama, divisi, departemen, jabatan, atau pendidikan di Excel lalu periksa lagi.
+                </p>
+                <div className="admin-table-scroll import-preview">
+                  <table className="admin-table">
+                    <thead><tr><th>NIP</th><th>NAMA</th><th>DIVISI / DEPARTEMEN</th></tr></thead>
+                    <tbody>
+                      {preview.not_in_file_accounts.map((account) => (
+                        <tr key={account.employee_number}>
+                          <td>{account.employee_number}</td>
+                          <td>{account.name}</td>
+                          <td>{[account.division, account.department].filter(Boolean).join(' / ') || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {preview.not_in_file > preview.not_in_file_accounts.length && <p className="admin-table-note">Menampilkan {preview.not_in_file_accounts.length} dari {preview.not_in_file} akun.</p>}
+                </div>
+              </details>
             )}
             {!hasChanges && <p className="organization-help">Tidak ada akun baru maupun yang berubah, jadi tidak ada yang perlu diterapkan.</p>}
           </section>
