@@ -83,7 +83,7 @@ export function ApplicationReview({
             <button aria-label="Tutup detail lamaran" className="icon-button" onClick={onClose} type="button"><X size={20} /></button>
           </div>
           <h2 id="application-review-title">{application.applicant_name}</h2>
-          <p>Lamaran untuk <strong>{application.target_label || application.job_title}</strong> · {application.applicant_email}</p>
+          <p>Lamaran untuk <strong>{application.target_label || application.job_title}</strong>{application.applicant_email ? ` · ${application.applicant_email}` : ''}</p>
           <div className="application-review-summary">
             <span className={`status-pill status-${application.status}`}>{statusLabel}</span>
             <span><CalendarDays aria-hidden="true" size={15} /> {submittedAtLabel}</span>
@@ -99,7 +99,7 @@ export function ApplicationReview({
                 <h4>Kontak pelamar</h4>
                 <dl className="application-detail-grid">
                   <div><dt>Nama</dt><dd>{application.applicant_name}</dd></div>
-                  <div><dt>Email</dt><dd><a href={`mailto:${application.applicant_email}`}><Mail aria-hidden="true" size={14} /> {application.applicant_email}</a></dd></div>
+                  <div><dt>Email</dt><dd>{application.applicant_email ? <a href={`mailto:${application.applicant_email}`}><Mail aria-hidden="true" size={14} /> {application.applicant_email}</a> : 'Belum diisi'}</dd></div>
                   {application.employee_number && <div><dt>NIP</dt><dd>{application.employee_number}</dd></div>}
                   <div><dt>Nomor HP</dt><dd>{application.phone_number ? <a href={`tel:${application.phone_number}`}><Phone aria-hidden="true" size={14} /> {application.phone_number}</a> : 'Belum diisi'}</dd></div>
                 </dl>

@@ -17,7 +17,8 @@ export function AccountSettingsPage({
   session,
 }) {
   const [name, setName] = useState(session.user.name)
-  const [email, setEmail] = useState(session.user.email)
+  const [email, setEmail] = useState(session.user.email || '')
+  const [employeeNumber, setEmployeeNumber] = useState(session.user.employee_number || '')
   const [selectedPhoto, setSelectedPhoto] = useState(null)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -36,7 +37,8 @@ export function AccountSettingsPage({
       .then((profile) => {
         if (!active) return
         setName(profile.name)
-        setEmail(profile.email)
+        setEmail(profile.email || '')
+        setEmployeeNumber(profile.employee_number || '')
       })
       .catch((requestError) => {
         if (active) setError(requestError.message)
@@ -58,7 +60,8 @@ export function AccountSettingsPage({
         body: JSON.stringify({ name: name.trim() }),
       })
       setName(profile.name)
-      setEmail(profile.email)
+      setEmail(profile.email || '')
+      setEmployeeNumber(profile.employee_number || '')
       onProfileUpdated(profile)
       setNotice('Profil berhasil diperbarui.')
     } catch (requestError) {
@@ -190,9 +193,16 @@ export function AccountSettingsPage({
               <label>Nama
                 <input autoComplete="name" maxLength={200} onChange={(event) => setName(event.target.value)} required value={name} />
               </label>
-              <label>Email akun
-                <input autoComplete="email" readOnly value={email} />
-              </label>
+              {employeeNumber && (
+                <label>NIP
+                  <input readOnly value={employeeNumber} />
+                </label>
+              )}
+              {(email || !employeeNumber) && (
+                <label>Email akun
+                  <input autoComplete="email" readOnly value={email} />
+                </label>
+              )}
               <button className="apply-button" disabled={isSavingProfile} type="submit">
                 {isSavingProfile ? 'Menyimpan...' : 'Simpan profil'}
               </button>

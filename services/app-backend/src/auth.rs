@@ -4,14 +4,22 @@ pub(super) async fn login(
     State(state): State<AppState>,
     Json(credentials): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<LoginResponse>), ApiError> {
-    let email = credentials.email.trim().to_ascii_lowercase();
-    if !is_valid_email(&email) || credentials.password.is_empty() {
-        return Err(ApiError::BadRequest("Email dan kata sandi tidak sesuai."));
+    let identifier = credentials.email.trim().to_owned();
+    let email = identifier.to_ascii_lowercase();
+    if identifier.is_empty()
+        || identifier.len() > 254
+        || identifier.chars().any(char::is_whitespace)
+        || credentials.password.is_empty()
+    {
+        return Err(ApiError::BadRequest(
+            "NIP/email dan kata sandi tidak sesuai.",
+        ));
     }
 
     let applicant = sqlx::query_as::<_, ApplicantRecord>(
-        "SELECT id, name, email, password_hash, must_change_password, COALESCE(locked_until > NOW(), FALSE) AS login_locked FROM applicants WHERE email = $1 AND is_active = TRUE",
+        "SELECT id, name, COALESCE(email, '') AS email, COALESCE(employee_number, '') AS employee_number, password_hash, must_change_password, COALESCE(locked_until > NOW(), FALSE) AS login_locked FROM applicants WHERE (employee_number = $1 OR email = $2) AND is_active = TRUE ORDER BY (employee_number = $1) DESC LIMIT 1",
     )
+    .bind(&identifier)
     .bind(&email)
     .fetch_optional(&state.pool)
     .await
@@ -46,6 +54,7 @@ pub(super) async fn login(
                     applicant: Applicant {
                         name: applicant.name,
                         email: applicant.email,
+                        employee_number: applicant.employee_number,
                         must_change_password: applicant.must_change_password,
                     },
                 })),
@@ -64,7 +73,7 @@ pub(super) async fn login(
     .await
     .map_err(internal_error)?;
     let Some(admin) = admin else {
-        return Err(ApiError::BadRequest("Email atau kata sandi tidak sesuai."));
+        return Err(ApiError::BadRequest("NIP/email atau kata sandi tidak sesuai."));
     };
     if admin.login_locked {
         return Err(ApiError::AccountSuspended);
@@ -244,8 +253,8 @@ pub(super) async fn current_session(
 ) -> Result<Json<LoginResponse>, ApiError> {
     let account = authorized_account_identity(&state.pool, &headers).await?;
     if account.role == "applicant" {
-        let applicant = sqlx::query_as::<_, (String, String)>(
-            "SELECT name, email FROM applicants WHERE id = $1 AND is_active = TRUE",
+        let applicant = sqlx::query_as::<_, (String, String, String)>(
+            "SELECT name, COALESCE(email, ''), COALESCE(employee_number, '') FROM applicants WHERE id = $1 AND is_active = TRUE",
         )
         .bind(account.id)
         .fetch_optional(&state.pool)
@@ -257,6 +266,7 @@ pub(super) async fn current_session(
             applicant: Applicant {
                 name: applicant.0,
                 email: applicant.1,
+                employee_number: applicant.2,
                 must_change_password: account.must_change_password,
             },
         })));
@@ -330,13 +340,13 @@ pub(super) async fn get_account_profile(
 ) -> Result<Json<AccountProfileResponse>, ApiError> {
     let account = authorized_account(&state.pool, &headers).await?;
     let profile = if account.role == "applicant" {
-        sqlx::query_as::<_, (String, String)>("SELECT name, email FROM applicants WHERE id = $1")
+        sqlx::query_as::<_, (String, String, String)>("SELECT name, COALESCE(email, ''), COALESCE(employee_number, '') FROM applicants WHERE id = $1")
             .bind(account.id)
             .fetch_optional(&state.pool)
             .await
             .map_err(internal_error)?
     } else {
-        sqlx::query_as::<_, (String, String)>("SELECT name, email FROM admins WHERE id = $1")
+        sqlx::query_as::<_, (String, String, String)>("SELECT name, email, ''::TEXT FROM admins WHERE id = $1")
             .bind(account.id)
             .fetch_optional(&state.pool)
             .await
@@ -348,6 +358,7 @@ pub(super) async fn get_account_profile(
         role: account.role.to_owned(),
         name: profile.0,
         email: profile.1,
+        employee_number: profile.2,
     }))
 }
 
@@ -364,8 +375,8 @@ pub(super) async fn update_account_profile(
         ));
     }
     let profile = if account.role == "applicant" {
-        sqlx::query_as::<_, (String, String)>(
-            "UPDATE applicants SET name = $1 WHERE id = $2 RETURNING name, email",
+        sqlx::query_as::<_, (String, String, String)>(
+            "UPDATE applicants SET name = $1 WHERE id = $2 RETURNING name, COALESCE(email, ''), COALESCE(employee_number, '')",
         )
         .bind(name)
         .bind(account.id)
@@ -381,8 +392,8 @@ pub(super) async fn update_account_profile(
                 .await
                 .map_err(internal_error)?
                 .ok_or(ApiError::Unauthorized)?;
-        let profile = sqlx::query_as::<_, (String, String)>(
-            "UPDATE admins SET name = $1 WHERE id = $2 RETURNING name, email",
+        let profile = sqlx::query_as::<_, (String, String, String)>(
+            "UPDATE admins SET name = $1 WHERE id = $2 RETURNING name, email, ''::TEXT",
         )
         .bind(name)
         .bind(account.id)
@@ -413,6 +424,7 @@ pub(super) async fn update_account_profile(
         role: account.role.to_owned(),
         name: profile.0,
         email: profile.1,
+        employee_number: profile.2,
     }))
 }
 

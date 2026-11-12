@@ -36,7 +36,7 @@ export default function AuthDialog({ initialMode, onClose, onSuccess }) {
       }
       const session = await apiRequest('/login', {
         method: 'POST',
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ identifier: email.trim(), password }),
       })
       onSuccess(session)
     } catch (requestError) {
@@ -62,12 +62,21 @@ export default function AuthDialog({ initialMode, onClose, onSuccess }) {
           <h2 id="auth-title">{mode === 'forgot' ? 'Lupa kata sandi?' : 'Masuk ke akun Anda'}</h2>
           <p className="login-description">
             {mode === 'forgot'
-              ? 'Masukkan email akun Anda. Jika terdaftar, tautan reset akan dikirim.'
-              : 'Gunakan email dan kata sandi yang diberikan administrator.'}
+              ? 'Masukkan email akun Anda. Jika terdaftar, tautan reset akan dikirim. Akun tanpa email: hubungi administrator.'
+              : 'Masuk dengan NIP dan kata sandi Anda. Administrator dan akun ber-email dapat memakai email.'}
           </p>
           <form className="login-form" onSubmit={handleSubmit}>
-            <label htmlFor="auth-email">Email</label>
-            <input autoComplete="email" id="auth-email" onChange={(event) => setEmail(event.target.value)} placeholder="nama@email.com" required type="email" value={email} />
+            <label htmlFor="auth-email">{mode === 'forgot' ? 'Email' : 'NIP / Email'}</label>
+            <input
+              autoComplete={mode === 'forgot' ? 'email' : 'username'}
+              id="auth-email"
+              maxLength={254}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder={mode === 'forgot' ? 'nama@email.com' : 'Masukkan NIP'}
+              required
+              type={mode === 'forgot' ? 'email' : 'text'}
+              value={email}
+            />
             {mode !== 'forgot' && (
               <>
                 <label htmlFor="auth-password">Kata sandi</label>

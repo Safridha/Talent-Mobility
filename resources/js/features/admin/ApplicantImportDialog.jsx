@@ -3,8 +3,6 @@ import { Download, FileSpreadsheet, Upload } from 'lucide-react'
 import { readSheet } from 'read-excel-file/browser'
 import writeExcelFile from 'write-excel-file/browser'
 import { apiRequest } from '../../api'
-import PasswordRequirements from '../../components/PasswordRequirements'
-import { meetsPasswordRequirements } from '../../components/passwordValidation'
 import { AdminFormDialog } from './AdminPrimitives'
 
 // Header names follow the PT PAL employee roster (daftar Karyawan PT PAL.xlsx).
@@ -19,7 +17,6 @@ const COLUMN_ALIASES = {
   department_name: ['unitkerja', 'departemen', 'department'],
   position_title: ['jobtitle', 'jabatan', 'position'],
   last_education: ['lasteducation', 'pendidikanterakhir', 'pendidikan'],
-  email: ['email', 'emailkaryawan'],
 }
 
 function normalizeHeader(value) {
@@ -57,7 +54,6 @@ async function parseWorkbook(file) {
 export default function ApplicantImportDialog({ onClose, onImported }) {
   const [rows, setRows] = useState([])
   const [fileName, setFileName] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isParsing, setIsParsing] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
@@ -93,15 +89,11 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
       setError('Pilih file Excel terlebih dahulu.')
       return
     }
-    if (!meetsPasswordRequirements(password)) {
-      setError('Kata sandi awal belum memenuhi semua persyaratan.')
-      return
-    }
     setIsImporting(true)
     try {
       const response = await apiRequest('/admin/accounts/import', {
         method: 'POST',
-        body: JSON.stringify({ default_password: password, rows }),
+        body: JSON.stringify({ rows }),
       })
       setResult(response)
       onImported?.(response)
@@ -117,7 +109,7 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
       <form className="organization-form account-manager-form" onSubmit={submit}>
         <p className="organization-help account-form-help">
           Kolom yang dibaca: <strong>nip, Employee Name, Divisi, Unit Kerja (Departemen), Job Title (Jabatan), Last Education</strong>.
-          Kolom lain (TL/TTL, Age) diabaikan. Kolom <em>Email</em> opsional; jika kosong, email dibuat otomatis dari NIP (<code>nip@karyawan.local</code>) dan dapat diubah kemudian.
+          Kolom lain (TL/TTL, Age) diabaikan. Email dikosongkan (tidak wajib) dan dapat diisi kemudian lewat Edit akun.
         </p>
         <div className="import-actions">
           <button className="detail-button" onClick={() => void downloadTemplate()} type="button">
@@ -149,19 +141,8 @@ export default function ApplicantImportDialog({ onClose, onImported }) {
             {rows.length > 5 && <p className="admin-table-note">Menampilkan 5 dari {rows.length} baris.</p>}
           </div>
         )}
-        <label><span>Kata sandi awal untuk semua akun <em>*</em></span>
-          <input
-            autoComplete="new-password"
-            maxLength={128}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Min. 8 karakter, huruf besar/kecil, angka, simbol"
-            type="password"
-            value={password}
-          />
-        </label>
-        <PasswordRequirements confirmation={password} password={password} />
         <p className="organization-help account-form-help">
-          Setiap akun wajib mengganti kata sandi ini saat masuk pertama. NIP atau email yang sudah terdaftar dilewati. Divisi dan Departemen yang belum ada di master data otomatis ditambahkan.
+          Semua akun dibuat dengan kata sandi awal <strong>pal@123</strong>. Pelamar masuk memakai NIP dan wajib menggantinya saat masuk pertama. NIP yang sudah terdaftar dilewati. Divisi dan Departemen yang belum ada di master data otomatis ditambahkan.
         </p>
         {error && <p className="admin-alert error" role="alert">{error}</p>}
         {result && (

@@ -189,6 +189,8 @@ fn session_cookie(token: Option<&str>) -> Result<HeaderValue, ApiError> {
 
 #[derive(Deserialize)]
 struct LoginRequest {
+    /// NIP (applicants) or email (admins / applicants that have one).
+    #[serde(alias = "identifier")]
     email: String,
     password: String,
 }
@@ -226,6 +228,7 @@ struct AccountProfileResponse {
     role: String,
     name: String,
     email: String,
+    employee_number: String,
 }
 
 struct AccountIdentity {
@@ -247,8 +250,8 @@ struct MailSettings {
 #[derive(Deserialize)]
 struct AdminApplicantCreateRequest {
     name: String,
-    email: String,
-    password: String,
+    #[serde(default)]
+    email: Option<String>,
     #[serde(flatten)]
     profile: ApplicantProfileInput,
 }
@@ -272,8 +275,6 @@ struct ApplicantImportRow {
     employee_number: String,
     name: String,
     #[serde(default)]
-    email: Option<String>,
-    #[serde(default)]
     division_name: Option<String>,
     #[serde(default)]
     department_name: Option<String>,
@@ -285,7 +286,6 @@ struct ApplicantImportRow {
 
 #[derive(Deserialize)]
 struct ApplicantImportRequest {
-    default_password: String,
     rows: Vec<ApplicantImportRow>,
 }
 
@@ -294,7 +294,10 @@ struct AdminApplicantUpdateRequest {
     #[serde(flatten)]
     profile: ApplicantProfileInput,
     name: String,
-    email: String,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    reset_password: bool,
     password: Option<String>,
 }
 
@@ -336,6 +339,7 @@ struct AdminAccountStatusRequest {
 struct Applicant {
     name: String,
     email: String,
+    employee_number: String,
     must_change_password: bool,
 }
 
@@ -375,6 +379,7 @@ struct ApplicantRecord {
     id: i64,
     name: String,
     email: String,
+    employee_number: String,
     password_hash: String,
     must_change_password: bool,
     login_locked: bool,
@@ -1138,11 +1143,6 @@ fn validate_account_password(role: &str, password: &str) -> Result<(), ApiError>
     }
 }
 
-fn validate_applicant_account(name: &str, email: &str, password: &str) -> Result<(), ApiError> {
-    validate_applicant_name_and_email(name, email)?;
-    validate_applicant_password(password)
-}
-
 fn validate_applicant_name_and_email(name: &str, email: &str) -> Result<(), ApiError> {
     if name.is_empty() || name.len() > 200 {
         return Err(ApiError::BadRequest(
@@ -1298,6 +1298,22 @@ async fn ensure_import_org(
         }
     };
     Ok((Some(division_id), Some(department_id)))
+}
+
+/// Initial password for accounts created by an admin or imported from Excel.
+/// It intentionally does not meet the normal strength policy: it is only usable once,
+/// because accounts are created with `must_change_password` and the replacement must pass the policy.
+const DEFAULT_APPLICANT_PASSWORD: &str = "pal@123";
+
+fn normalize_optional_email(email: Option<&str>) -> Result<Option<String>, ApiError> {
+    let email = email.unwrap_or("").trim().to_ascii_lowercase();
+    if email.is_empty() {
+        return Ok(None);
+    }
+    if !is_valid_email(&email) {
+        return Err(ApiError::BadRequest("Format email tidak valid."));
+    }
+    Ok(Some(email))
 }
 
 fn validate_applicant_password(password: &str) -> Result<(), ApiError> {

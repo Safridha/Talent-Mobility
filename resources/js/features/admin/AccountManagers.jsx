@@ -64,6 +64,7 @@ function emptyAccountForm() {
     position_title: '',
     last_education: '',
     email: '',
+    reset_password: false,
     password: '',
     passwordConfirmation: '',
     admin_role: '',
@@ -162,6 +163,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
     }
     setIsSaving(true)
     const body = { name: form.name.trim(), email: form.email.trim() }
+    if (!isAdminAccount) body.reset_password = form.reset_password
     if (form.password) body.password = form.password
     if (!isAdminAccount) {
       body.employee_number = form.employee_number.trim()
@@ -183,11 +185,11 @@ export function AccountListManager({ accountType, currentAdminId, organization }
         body: JSON.stringify(body),
       })
       setNotice(editingId
-        ? !isAdminAccount && form.password
-          ? 'Kata sandi pelamar direset. Pelamar wajib menggantinya saat masuk berikutnya.'
+        ? !isAdminAccount && form.reset_password
+          ? 'Kata sandi pelamar direset ke pal@123. Pelamar wajib menggantinya saat masuk berikutnya.'
           : `Perubahan akun ${accountKind} berhasil disimpan. Sesi aktifnya telah diakhiri.`
         : !isAdminAccount
-          ? 'Akun pelamar dibuat. Sampaikan kata sandi awal secara aman; pelamar wajib menggantinya saat masuk pertama.'
+          ? 'Akun pelamar dibuat. Pelamar masuk dengan NIP dan kata sandi awal pal@123, lalu wajib menggantinya saat masuk pertama.'
           : `Akun ${accountKind} berhasil ditambahkan.`)
       resetForm()
       refreshAccounts()
@@ -211,7 +213,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       employee_number: account.employee_number || '',
       position_title: account.position_title || '',
       last_education: account.last_education || '',
-      email: account.email,
+      email: account.email || '',
       admin_role: role,
       division_id: account.division_id ? String(account.division_id) : '',
       department_id: account.department_id ? String(account.department_id) : '',
@@ -298,8 +300,10 @@ export function AccountListManager({ accountType, currentAdminId, organization }
     <form className="organization-form account-manager-form" onSubmit={submitAccount}>
       <p className="organization-help account-form-help">
         {!isAdminAccount && !editingId
-          ? 'Tentukan kata sandi awal dan sampaikan secara aman kepada pelamar. Pelamar wajib menggantinya saat masuk pertama.'
-          : <><em>*</em> Wajib diisi. Saat edit, kata sandi boleh dikosongkan jika tidak ingin menggantinya.</>}
+          ? <>Akun dibuat dengan kata sandi awal <strong>pal@123</strong>. Pelamar masuk memakai NIP dan wajib menggantinya saat masuk pertama. Email tidak wajib.</>
+          : isAdminAccount
+            ? <><em>*</em> Wajib diisi. Saat edit, kata sandi boleh dikosongkan jika tidak ingin menggantinya.</>
+            : <><em>*</em> Wajib diisi. Pelamar masuk memakai NIP.</>}
       </p>
       <label><span>Nama lengkap <em>*</em></span>
         <input autoComplete="name" maxLength={200} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} />
@@ -348,9 +352,11 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           </label>
         </>
       )}
-      <label><span>Email <em>*</em></span>
-        <input autoComplete="email" maxLength={254} onChange={(event) => setForm({ ...form, email: event.target.value })} required type="email" value={form.email} />
+      <label><span>Email {isAdminAccount ? <em>*</em> : '(opsional)'}</span>
+        <input autoComplete="email" maxLength={254} onChange={(event) => setForm({ ...form, email: event.target.value })} required={isAdminAccount} type="email" value={form.email} />
       </label>
+      {isAdminAccount ? (
+        <>
       <label><span>Kata sandi {editingId ? '(opsional untuk reset)' : 'awal'} {!editingId && <em>*</em>}</span>
         <div className="password-field account-password-field">
           <input
@@ -400,6 +406,13 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       {(!editingId || form.password) && (
         <PasswordRequirements confirmation={form.passwordConfirmation} password={form.password} />
       )}
+        </>
+      ) : editingId ? (
+        <label className="account-permission-option">
+          <input checked={form.reset_password} onChange={(event) => setForm({ ...form, reset_password: event.target.checked })} type="checkbox" />
+          <span>Reset kata sandi ke default (pal@123). Pelamar wajib menggantinya saat masuk berikutnya.</span>
+        </label>
+      ) : null}
       {isAdminAccount && (
         <>
           {editingId && form.admin_role === 'super_admin' ? (
@@ -500,7 +513,9 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       <p className="organization-help account-form-help">
         {editingId
           ? 'Menyimpan perubahan akan mengakhiri semua sesi aktif akun.'
-          : `Gunakan minimal ${minimumPasswordLength} karakter, dengan huruf besar, huruf kecil, dan angka. Sampaikan melalui jalur privat. Akun baru langsung Aktif setelah disimpan.`}
+          : isAdminAccount
+            ? `Gunakan minimal ${minimumPasswordLength} karakter, dengan huruf besar, huruf kecil, dan angka. Sampaikan melalui jalur privat. Akun baru langsung Aktif setelah disimpan.`
+            : 'Akun baru langsung Aktif setelah disimpan.'}
       </p>
       {error && <p className="admin-alert error" role="alert">{error}</p>}
       <div className="organization-form-actions">
@@ -566,7 +581,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                 account.department_name || '-',
                 account.position_title || '-',
                 account.last_education || '-',
-                account.email,
+                account.email || '-',
                 account.applications_count,
                 account.is_active ? 'Aktif' : 'Nonaktif',
               ]),
@@ -590,7 +605,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                 const isLastActiveAdmin = isAdminAccount && account.is_active && account.admin_role === 'super_admin' && activeSuperAdminCount <= 1
                 return (
                 <tr key={account.id}>
-                  <td className="position-name">{account.name}<span className="admin-table-subtext">{account.email}</span></td>
+                  <td className="position-name">{account.name}<span className="admin-table-subtext">{account.email || 'Tanpa email'}</span></td>
                   {isAdminAccount && <td>
                     {adminRoles.find((role) => role.value === account.admin_role)?.label || account.admin_role}
                     <span className="admin-table-subtext">{account.scope_label}</span>
@@ -609,7 +624,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                       <span className={account.is_active ? 'account-status active' : 'account-status inactive'}>{account.is_active ? 'Aktif' : 'Nonaktif'}</span>
                       <button
                         aria-checked={account.is_active}
-                        aria-label={`${account.is_active ? 'Nonaktifkan' : 'Aktifkan'} akun ${account.email}`}
+                        aria-label={`${account.is_active ? 'Nonaktifkan' : 'Aktifkan'} akun ${account.email || account.employee_number || account.name}`}
                         className={`admin-job-toggle account-status-toggle${account.is_active ? ' active' : ''}`}
                         disabled={updatingStatusId === account.id || isCurrentAdmin || isLastActiveAdmin}
                         onClick={() => void setAccountActive(account, !account.is_active)}
@@ -665,7 +680,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
         <ConfirmDialog
           error={error}
           isBusy={isDeleting}
-          message={`Akun ${pendingDelete.email} akan dinonaktifkan. Riwayat lamaran dan dokumen tetap tersimpan.`}
+          message={`Akun ${pendingDelete.email || pendingDelete.employee_number || pendingDelete.name} akan dinonaktifkan. Riwayat lamaran dan dokumen tetap tersimpan.`}
           onCancel={() => { setPendingDelete(null); setError('') }}
           onConfirm={() => void deleteAccount()}
           title={`Nonaktifkan akun ${accountKind}?`}

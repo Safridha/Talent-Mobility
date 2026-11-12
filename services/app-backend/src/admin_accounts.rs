@@ -8,7 +8,7 @@ pub(super) async fn admin_list_accounts(
         .await?
         .require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let data = sqlx::query_as::<_, AdminApplicantAccount>(
-        "SELECT applicants.id, applicants.name, applicants.email, applicants.employee_number, applicants.division_id, applicants.department_id, employee_divisions.name AS division_name, employee_departments.name AS department_name, applicants.position_title, applicants.last_education, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active, applicants.must_change_password FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id GROUP BY applicants.id, employee_divisions.id, employee_departments.id ORDER BY applicants.created_at DESC, applicants.id DESC",
+        "SELECT applicants.id, applicants.name, COALESCE(applicants.email, '') AS email, applicants.employee_number, applicants.division_id, applicants.department_id, employee_divisions.name AS division_name, employee_departments.name AS department_name, applicants.position_title, applicants.last_education, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active, applicants.must_change_password FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id GROUP BY applicants.id, employee_divisions.id, employee_departments.id ORDER BY applicants.created_at DESC, applicants.id DESC",
     )
     .fetch_all(&state.pool)
     .await
@@ -24,14 +24,18 @@ pub(super) async fn admin_create_account(
     let admin = authorized_operational_admin(&state.pool, &headers).await?;
     admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let name = account.name.trim();
-    let email = account.email.trim().to_ascii_lowercase();
-    validate_applicant_account(name, &email, &account.password)?;
+    let email = normalize_optional_email(account.email.as_deref())?;
+    if name.is_empty() || name.len() > 200 {
+        return Err(ApiError::BadRequest(
+            "Nama wajib diisi dan maksimal 200 karakter.",
+        ));
+    }
 
     let profile = resolve_applicant_profile(&state.pool, &account.profile).await?;
     if profile.employee_number.is_none() {
         return Err(ApiError::BadRequest("NIP wajib diisi."));
     }
-    let password_hash = hash_password(&account.password)?;
+    let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let id = match sqlx::query_scalar::<_, i64>(
         "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8) RETURNING id",
@@ -64,7 +68,7 @@ pub(super) async fn admin_create_account(
     .await
     .map_err(internal_error)?;
     transaction.commit().await.map_err(internal_error)?;
-    Ok(Json(json!({ "message": "Akun berhasil ditambahkan." })))
+    Ok(Json(json!({ "message": "Akun berhasil ditambahkan. Kata sandi awal: pal@123 (wajib diganti saat masuk pertama)." })))
 }
 
 pub(super) async fn admin_import_accounts(
@@ -80,9 +84,8 @@ pub(super) async fn admin_import_accounts(
     if request.rows.len() > 5000 {
         return Err(ApiError::BadRequest("Maksimal 5000 baris per impor."));
     }
-    validate_applicant_password(&request.default_password)?;
     // One shared initial password for the batch: hash once (Argon2 is deliberately slow).
-    let password_hash = hash_password(&request.default_password)?;
+    let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
     let mut cache = load_import_org_cache(&state.pool).await?;
 
     let mut created = 0_i64;
@@ -95,26 +98,18 @@ pub(super) async fn admin_import_accounts(
         let prepared = (|| -> Result<_, ApiError> {
             let employee_number = clean_profile_text(&Some(row.employee_number.clone()), 40)?
                 .ok_or(ApiError::BadRequest("NIP kosong."))?;
-            let email = match row
-                .email
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                Some(email) => email.to_ascii_lowercase(),
-                None => format!("{}@karyawan.local", employee_number.to_ascii_lowercase()),
-            };
-            validate_applicant_name_and_email(name, &email)?;
+            if name.is_empty() || name.len() > 200 {
+                return Err(ApiError::BadRequest("Nama kosong atau terlalu panjang."));
+            }
             Ok((
                 employee_number,
-                email,
                 clean_profile_text(&row.division_name, 200)?,
                 clean_profile_text(&row.department_name, 200)?,
                 clean_profile_text(&row.position_title, 200)?,
                 clean_profile_text(&row.last_education, 80)?,
             ))
         })();
-        let (employee_number, email, division, department, position_title, last_education) =
+        let (employee_number, division, department, position_title, last_education) =
             match prepared {
                 Ok(value) => value,
                 Err(error) => {
@@ -138,7 +133,7 @@ pub(super) async fn admin_import_accounts(
             "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING RETURNING id",
         )
         .bind(name)
-        .bind(&email)
+        .bind(Option::<String>::None)
         .bind(&password_hash)
         .bind(&employee_number)
         .bind(division_id)
@@ -187,8 +182,12 @@ pub(super) async fn admin_update_account(
     let admin = authorized_operational_admin(&state.pool, &headers).await?;
     admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let name = account.name.trim();
-    let email = account.email.trim().to_ascii_lowercase();
-    validate_applicant_name_and_email(name, &email)?;
+    let email = normalize_optional_email(account.email.as_deref())?;
+    if name.is_empty() || name.len() > 200 {
+        return Err(ApiError::BadRequest(
+            "Nama wajib diisi dan maksimal 200 karakter.",
+        ));
+    }
     let profile = resolve_applicant_profile(&state.pool, &account.profile).await?;
     if profile.employee_number.is_none() {
         return Err(ApiError::BadRequest("NIP wajib diisi."));
@@ -199,14 +198,19 @@ pub(super) async fn admin_update_account(
 
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let previous = sqlx::query_as::<_, (String, String)>(
-        "SELECT name, email FROM applicants WHERE id = $1 FOR UPDATE",
+        "SELECT name, COALESCE(email, '') FROM applicants WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
     .fetch_optional(&mut *transaction)
     .await
     .map_err(internal_error)?
     .ok_or(ApiError::NotFound("Akun tidak ditemukan."))?;
-    let result = if let Some(password) = account.password.as_deref() {
+    let new_password = match account.password.as_deref() {
+        Some(password) => Some(password),
+        None if account.reset_password => Some(DEFAULT_APPLICANT_PASSWORD),
+        None => None,
+    };
+    let result = if let Some(password) = new_password {
         let password_hash = hash_password(password)?;
         sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3, must_change_password = TRUE, failed_login_attempts = 0, locked_until = NULL, employee_number = $5, division_id = $6, department_id = $7, position_title = $8, last_education = $9 WHERE id = $4")
             .bind(name)
