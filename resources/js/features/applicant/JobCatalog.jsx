@@ -374,7 +374,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 <AccountSettingsMenu
                   applicationCount={currentUserApplications.length}
                   avatarUrl={avatarUrl}
-                  email={session.applicant.email}
+                  email={session.applicant.email || session.applicant.employee_number || ''}
                   name={session.applicant.name}
                   onApplications={() => navigateTab('applications')}
                   onLogout={handleLogout}
@@ -680,6 +680,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
           job={null}
           organization={organization}
           onClose={() => { setApplicationFormOpen(false); setPendingDirectTarget(null) }}
+          onEditProfile={() => { setApplicationFormOpen(false); setPendingDirectTarget(null); navigateAccountSection('profile') }}
           onSubmit={handleApplicationSubmit}
           session={session}
         />

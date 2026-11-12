@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowRight, UploadCloud, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
 import SearchableSelect from '../../components/SearchableSelect'
+import { apiRequest } from '../../api'
+import { toApplicationEducation } from '../account/employeeOptions'
 import { getJobTargetLabels } from './jobTargetLabels'
 
 const MAX_APPLICATION_FILE_BYTES = 5 * 1024 * 1024
 const MAX_APPLICATION_DOCUMENTS = 5
 
-export default function ApplicationForm({ job, directTarget, session, organization, isSubmitting, onClose, onSubmit }) {
+export default function ApplicationForm({ job, directTarget, session, organization, isSubmitting, onClose, onEditProfile, onSubmit }) {
   const [form, setForm] = useState({
     employee_number: '',
     applicant_full_name: session.applicant.name,
@@ -16,10 +18,27 @@ export default function ApplicationForm({ job, directTarget, session, organizati
     study_field: '',
     motivation: '',
   })
+  // Data the applicant already keeps in their profile is shown as a summary instead of asked again.
+  const [profile, setProfile] = useState(null)
+  const [profileError, setProfileError] = useState('')
   const [originDepartmentId, setOriginDepartmentId] = useState('')
   const [originBureauId, setOriginBureauId] = useState('')
   const [supportingFiles, setSupportingFiles] = useState([])
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    apiRequest('/account/profile')
+      .then((response) => { if (active) setProfile(response) })
+      .catch((requestError) => { if (active) setProfileError(requestError.message) })
+    return () => { active = false }
+  }, [])
+
+  const hasNip = Boolean(profile?.employee_number)
+  const hasDivision = Boolean(profile?.division_name)
+  const hasUnit = Boolean(profile?.department_name)
+  const hasEducation = Boolean(profile?.last_education)
+  const needsOrigin = !hasDivision || !hasUnit
 
   function updateField(event) {
     const { name, value } = event.target
@@ -73,7 +92,8 @@ export default function ApplicationForm({ job, directTarget, session, organizati
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
-    if (!selectedOriginUnit) {
+    if (!profile) return
+    if (needsOrigin && !selectedOriginUnit) {
       setError('Pilih departemen atau unit asal dari data master organisasi.')
       return
     }
@@ -84,11 +104,11 @@ export default function ApplicationForm({ job, directTarget, session, organizati
     } else {
       body.set('job_id', job.id)
     }
-    body.set('employee_number', form.employee_number)
-    body.set('applicant_full_name', form.applicant_full_name)
-    body.set('origin_division', form.origin_division)
-    body.set('origin_unit', selectedOriginUnit)
-    body.set('education_level', form.education_level)
+    body.set('employee_number', hasNip ? profile.employee_number : form.employee_number)
+    body.set('applicant_full_name', profile.name || form.applicant_full_name)
+    body.set('origin_division', needsOrigin ? form.origin_division : profile.division_name)
+    body.set('origin_unit', needsOrigin ? selectedOriginUnit : profile.department_name)
+    body.set('education_level', hasEducation ? toApplicationEducation(profile.last_education) : form.education_level)
     body.set('study_field', form.study_field)
     body.set('motivation', form.motivation)
     if (supportingFiles.length === 0) {
@@ -134,15 +154,37 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                 ? [directTarget.division, directTarget.department, directTarget.unit].filter(Boolean).join(' › ')
                 : getJobTargetLabels(job).join(' › ')}</span>
             </div>
+            {profileError && <p className="login-error" role="alert">{profileError}</p>}
+            {!profile && !profileError && <p className="application-profile-loading">Memuat data profil...</p>}
+            {profile && (
+              <section aria-label="Ringkasan data Anda" className="application-profile-summary">
+                <header>
+                  <strong>Data Anda dari profil</strong>
+                  {onEditProfile && <button onClick={onEditProfile} type="button">Ubah di profil</button>}
+                </header>
+                <dl>
+                  <div><dt>Nama</dt><dd>{profile.name}</dd></div>
+                  {hasNip && <div><dt>NIP</dt><dd>{profile.employee_number}</dd></div>}
+                  {hasDivision && <div><dt>Divisi</dt><dd>{profile.division_name}</dd></div>}
+                  {hasUnit && <div><dt>Departemen</dt><dd>{profile.department_name}</dd></div>}
+                  {profile.position_title && <div><dt>Jabatan</dt><dd>{profile.position_title}</dd></div>}
+                  {hasEducation && <div><dt>Pendidikan</dt><dd>{profile.last_education}</dd></div>}
+                </dl>
+                {(!hasNip || needsOrigin || !hasEducation) && (
+                  <p>Lengkapi data yang belum ada di profil pada formulir di bawah.</p>
+                )}
+              </section>
+            )}
             <div className="application-form-grid">
+              {!hasNip && (
               <label htmlFor="application-employee-number">
                 <span className="application-form-label">Nomor Induk Pegawai (NIP) <em>*</em></span>
                 <input autoComplete="off" id="application-employee-number" maxLength={40} name="employee_number" onChange={updateField} placeholder="Contoh: 19890412201" required value={form.employee_number} />
               </label>
-              <label htmlFor="application-full-name">
-                <span className="application-form-label">Nama Lengkap Sesuai ID <em>*</em></span>
-                <input autoComplete="name" id="application-full-name" maxLength={200} name="applicant_full_name" onChange={updateField} placeholder="Contoh: Budi Santoso, S.T." required value={form.applicant_full_name} />
-              </label>
+              )}
+
+              {needsOrigin && (
+                <>
               <label htmlFor="application-origin-division">
                 <span className="application-form-label">Divisi Asal Saat Ini <em>*</em></span>
                 <SearchableSelect
@@ -197,6 +239,9 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                   value={originBureauId}
                 />
               </label>
+                </>
+              )}
+              {!hasEducation && (
               <label htmlFor="application-education-level">
                 <span className="application-form-label">Jenjang Pendidikan <em>*</em></span>
                 <SearchableSelect
@@ -209,6 +254,7 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                   value={form.education_level}
                 />
               </label>
+              )}
               <label htmlFor="application-study-field">
                 <span className="application-form-label">Jurusan / Bidang Studi <em>*</em></span>
                 <input id="application-study-field" maxLength={160} name="study_field" onChange={updateField} placeholder="Contoh: Teknik Perkapalan / Teknik Mesin" required value={form.study_field} />

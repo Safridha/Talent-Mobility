@@ -202,11 +202,16 @@ struct AdminLoginRequest {
 #[derive(Deserialize)]
 struct ProfileUpdateRequest {
     name: String,
+    /// Absent: unchanged. Applicants may clear it with a blank value; admins must keep a valid email.
+    #[serde(default)]
+    email: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct ChangePasswordRequest {
-    current_password: String,
+    /// Not needed while the account still has its initial password (the user just signed in with it).
+    #[serde(default)]
+    current_password: Option<String>,
     new_password: String,
 }
 
@@ -216,6 +221,13 @@ struct AccountProfileResponse {
     name: String,
     email: String,
     employee_number: String,
+    // Applicant roster details (null for admins).
+    division_id: Option<i64>,
+    department_id: Option<i64>,
+    division_name: Option<String>,
+    department_name: Option<String>,
+    position_title: Option<String>,
+    last_education: Option<String>,
 }
 
 struct AccountIdentity {
@@ -810,6 +822,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/account/profile",
             get(get_account_profile).patch(update_account_profile),
         )
+        .route(
+            "/api/account/employee-profile",
+            put(update_applicant_employee_profile),
+        )
+        .route("/api/account/employee-master", get(account_list_employee_master))
         .route(
             "/api/account/avatar",
             get(download_account_avatar)

@@ -360,11 +360,22 @@ pub(super) async fn get_account_profile(
     }
     .ok_or(ApiError::Unauthorized)?;
 
+    if account.role == "applicant" {
+        return Ok(Json(
+            build_applicant_profile_response(&state.pool, account.id).await?,
+        ));
+    }
     Ok(Json(AccountProfileResponse {
         role: account.role.to_owned(),
         name: profile.0,
         email: profile.1,
         employee_number: profile.2,
+        division_id: None,
+        department_id: None,
+        division_name: None,
+        department_name: None,
+        position_title: None,
+        last_education: None,
     }))
 }
 
@@ -381,32 +392,74 @@ pub(super) async fn update_account_profile(
         ));
     }
     let profile = if account.role == "applicant" {
-        sqlx::query_as::<_, (String, String, String)>(
-            "UPDATE applicants SET name = $1 WHERE id = $2 RETURNING name, COALESCE(email, ''), COALESCE(employee_number, '')",
-        )
-        .bind(name)
-        .bind(account.id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(internal_error)?
+        // Email is optional for applicants: absent keeps it, blank removes it.
+        let new_email = match request.email.as_deref() {
+            Some(value) => Some(normalize_optional_email(Some(value))?),
+            None => None,
+        };
+        let result = match new_email {
+            Some(email) => sqlx::query_as::<_, (String, String, String)>(
+                "UPDATE applicants SET name = $1, email = $2 WHERE id = $3 RETURNING name, COALESCE(email, ''), COALESCE(employee_number, '')",
+            )
+            .bind(name)
+            .bind(email)
+            .bind(account.id)
+            .fetch_optional(&state.pool)
+            .await,
+            None => sqlx::query_as::<_, (String, String, String)>(
+                "UPDATE applicants SET name = $1 WHERE id = $2 RETURNING name, COALESCE(email, ''), COALESCE(employee_number, '')",
+            )
+            .bind(name)
+            .bind(account.id)
+            .fetch_optional(&state.pool)
+            .await,
+        };
+        match result {
+            Ok(Some(profile)) => profile,
+            Ok(None) => return Err(ApiError::Unauthorized),
+            Err(error) if is_unique_violation(&error) => {
+                return Err(ApiError::Conflict("Email sudah digunakan akun lain."));
+            }
+            Err(error) => return Err(internal_error(error)),
+        }
     } else {
         let mut transaction = state.pool.begin().await.map_err(internal_error)?;
-        let previous_name =
-            sqlx::query_scalar::<_, String>("SELECT name FROM admins WHERE id = $1 FOR UPDATE")
-                .bind(account.id)
-                .fetch_optional(&mut *transaction)
-                .await
-                .map_err(internal_error)?
-                .ok_or(ApiError::Unauthorized)?;
-        let profile = sqlx::query_as::<_, (String, String, String)>(
-            "UPDATE admins SET name = $1 WHERE id = $2 RETURNING name, email, ''::TEXT",
+        let previous = sqlx::query_as::<_, (String, String, String)>(
+            "SELECT name, email, admin_role FROM admins WHERE id = $1 FOR UPDATE",
         )
-        .bind(name)
         .bind(account.id)
         .fetch_optional(&mut *transaction)
         .await
         .map_err(internal_error)?
         .ok_or(ApiError::Unauthorized)?;
+        let email = match request.email.as_deref() {
+            None => previous.1.clone(),
+            Some(value) => {
+                let email = normalize_optional_email(Some(value))?
+                    .ok_or(ApiError::BadRequest("Email wajib diisi."))?;
+                // Only the Super Admin may change the sign-in email of an admin account.
+                if email != previous.1 && previous.2 != "super_admin" {
+                    return Err(ApiError::Forbidden);
+                }
+                email
+            }
+        };
+        let profile = match sqlx::query_as::<_, (String, String, String)>(
+            "UPDATE admins SET name = $1, email = $2 WHERE id = $3 RETURNING name, email, ''::TEXT",
+        )
+        .bind(name)
+        .bind(&email)
+        .bind(account.id)
+        .fetch_optional(&mut *transaction)
+        .await
+        {
+            Ok(Some(profile)) => profile,
+            Ok(None) => return Err(ApiError::Unauthorized),
+            Err(error) if is_unique_violation(&error) => {
+                return Err(ApiError::Conflict("Email sudah digunakan akun lain."));
+            }
+            Err(error) => return Err(internal_error(error)),
+        };
         record_admin_audit(
             &mut transaction,
             account.id,
@@ -414,24 +467,99 @@ pub(super) async fn update_account_profile(
             "admin_account",
             &account.id.to_string(),
             json!({
-                "before": { "name": previous_name },
-                "after": { "name": name },
+                "before": { "name": previous.0, "email": previous.1 },
+                "after": { "name": name, "email": email },
                 "source": "self_service",
             }),
         )
         .await
         .map_err(internal_error)?;
         transaction.commit().await.map_err(internal_error)?;
-        Some(profile)
-    }
-    .ok_or(ApiError::Unauthorized)?;
+        profile
+    };
 
+    if account.role == "applicant" {
+        return Ok(Json(
+            build_applicant_profile_response(&state.pool, account.id).await?,
+        ));
+    }
     Ok(Json(AccountProfileResponse {
         role: account.role.to_owned(),
         name: profile.0,
         email: profile.1,
         employee_number: profile.2,
+        division_id: None,
+        department_id: None,
+        division_name: None,
+        department_name: None,
+        position_title: None,
+        last_education: None,
     }))
+}
+
+type ApplicantProfileRow = (
+    String,
+    String,
+    String,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+async fn build_applicant_profile_response(
+    pool: &PgPool,
+    applicant_id: i64,
+) -> Result<AccountProfileResponse, ApiError> {
+    let row = sqlx::query_as::<_, ApplicantProfileRow>(
+        "SELECT applicants.name, COALESCE(applicants.email, ''), COALESCE(applicants.employee_number, ''), applicants.division_id, applicants.department_id, employee_divisions.name, employee_departments.name, applicants.position_title, applicants.last_education FROM applicants LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id WHERE applicants.id = $1",
+    )
+    .bind(applicant_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::Unauthorized)?;
+    Ok(AccountProfileResponse {
+        role: "applicant".to_owned(),
+        name: row.0,
+        email: row.1,
+        employee_number: row.2,
+        division_id: row.3,
+        department_id: row.4,
+        division_name: row.5,
+        department_name: row.6,
+        position_title: row.7,
+        last_education: row.8,
+    })
+}
+
+/// Applicants maintain their own roster details (everything except the NIP).
+pub(super) async fn update_applicant_employee_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<ApplicantProfileInput>,
+) -> Result<Json<AccountProfileResponse>, ApiError> {
+    let account = authorized_account(&state.pool, &headers).await?;
+    if account.role != "applicant" {
+        return Err(ApiError::Forbidden);
+    }
+    let profile = resolve_applicant_profile(&state.pool, &input).await?;
+    sqlx::query(
+        "UPDATE applicants SET division_id = $1, department_id = $2, position_title = $3, last_education = $4 WHERE id = $5",
+    )
+    .bind(profile.division_id)
+    .bind(profile.department_id)
+    .bind(&profile.position_title)
+    .bind(&profile.last_education)
+    .bind(account.id)
+    .execute(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(
+        build_applicant_profile_response(&state.pool, account.id).await?,
+    ))
 }
 
 pub(super) async fn download_account_avatar(
@@ -557,16 +685,27 @@ pub(super) async fn change_account_password(
     }
     .ok_or(ApiError::Unauthorized)?;
     let parsed_hash = PasswordHash::new(&password_hash).map_err(internal_error)?;
-    if Argon2::default()
-        .verify_password(request.current_password.as_bytes(), &parsed_hash)
-        .is_err()
-    {
-        return Err(ApiError::BadRequest("Kata sandi saat ini tidak sesuai."));
-    }
-    if account.must_change_password && request.current_password == request.new_password {
-        return Err(ApiError::BadRequest(
-            "Kata sandi baru harus berbeda dari kata sandi awal.",
-        ));
+    let matches_stored_password = |candidate: &str| {
+        Argon2::default()
+            .verify_password(candidate.as_bytes(), &parsed_hash)
+            .is_ok()
+    };
+    if account.must_change_password {
+        // The user just signed in with the initial password, so it is not asked for again.
+        if matches_stored_password(&request.new_password) {
+            return Err(ApiError::BadRequest(
+                "Kata sandi baru harus berbeda dari kata sandi awal.",
+            ));
+        }
+    } else {
+        let current = request
+            .current_password
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .ok_or(ApiError::BadRequest("Kata sandi saat ini wajib diisi."))?;
+        if !matches_stored_password(current) {
+            return Err(ApiError::BadRequest("Kata sandi saat ini tidak sesuai."));
+        }
     }
     validate_account_password(account.role, &request.new_password)?;
     let new_hash = hash_password(&request.new_password)?;

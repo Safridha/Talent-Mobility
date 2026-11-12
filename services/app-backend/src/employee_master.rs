@@ -205,3 +205,30 @@ pub(super) async fn admin_delete_employee_department(
     transaction.commit().await.map_err(internal_error)?;
     Ok(Json(json!({ "message": "Departemen dihapus." })))
 }
+
+/// Divisi/Departemen choices for an applicant editing their own roster details.
+pub(super) async fn account_list_employee_master(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let account = authorized_account(&state.pool, &headers).await?;
+    if account.role != "applicant" {
+        return Err(ApiError::Forbidden);
+    }
+    let divisions = sqlx::query_as::<_, (i64, String)>(
+        "SELECT id, name FROM employee_divisions ORDER BY lower(name)",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    let departments = sqlx::query_as::<_, (i64, i64, String)>(
+        "SELECT id, division_id, name FROM employee_departments ORDER BY lower(name)",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(json!({
+        "divisions": divisions.iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>(),
+        "departments": departments.iter().map(|(id, division_id, name)| json!({ "id": id, "division_id": division_id, "name": name })).collect::<Vec<_>>(),
+    })))
+}

@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Camera, KeyRound, UserRound } from 'lucide-react'
+import { ArrowLeft, Camera, KeyRound, Trash2, UserRound, X } from 'lucide-react'
 import { apiRequest } from '../../api'
 import { AccountAvatar } from '../../components/account/AccountSettingsMenu'
 import PasswordInput from '../../components/PasswordInput'
 import PasswordRequirements from '../../components/PasswordRequirements'
 import { meetsPasswordRequirements } from '../../components/passwordValidation'
 import SuccessPopup from '../../components/SuccessPopup'
+import { prepareAvatar } from './prepareAvatar'
+import { EDUCATION_OPTIONS } from './employeeOptions'
+import SearchableSelect from '../../components/SearchableSelect'
 
 export function AccountSettingsPage({
   avatarUrl,
@@ -19,7 +22,17 @@ export function AccountSettingsPage({
   const [name, setName] = useState(session.user.name)
   const [email, setEmail] = useState(session.user.email || '')
   const [employeeNumber, setEmployeeNumber] = useState(session.user.employee_number || '')
+  const isApplicant = session.role === 'applicant'
+  const [master, setMaster] = useState({ divisions: [], departments: [] })
+  const [divisionId, setDivisionId] = useState('')
+  const [departmentId, setDepartmentId] = useState('')
+  const [positionTitle, setPositionTitle] = useState('')
+  const [lastEducation, setLastEducation] = useState('')
   const [selectedPhoto, setSelectedPhoto] = useState(null)
+  const [photoPreview, setPhotoPreview] = useState('')
+  const [isPreparingPhoto, setIsPreparingPhoto] = useState(false)
+  // Applicants may add/remove an optional email; only the Super Admin may change an admin's email.
+  const canEditEmail = session.role === 'applicant' || session.user.admin_role === 'super_admin'
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -31,6 +44,22 @@ export function AccountSettingsPage({
   const [isSavingPassword, setIsSavingPassword] = useState(false)
   const photoInput = useRef(null)
 
+  function applyEmployeeProfile(profile) {
+    setDivisionId(profile.division_id ? String(profile.division_id) : '')
+    setDepartmentId(profile.department_id ? String(profile.department_id) : '')
+    setPositionTitle(profile.position_title || '')
+    setLastEducation(profile.last_education || '')
+  }
+
+  useEffect(() => {
+    if (!isApplicant) return undefined
+    let active = true
+    apiRequest('/account/employee-master')
+      .then((response) => { if (active) setMaster(response) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [isApplicant])
+
   useEffect(() => {
     let active = true
     apiRequest('/account/profile')
@@ -39,6 +68,7 @@ export function AccountSettingsPage({
         setName(profile.name)
         setEmail(profile.email || '')
         setEmployeeNumber(profile.employee_number || '')
+        applyEmployeeProfile(profile)
       })
       .catch((requestError) => {
         if (active) setError(requestError.message)
@@ -49,6 +79,37 @@ export function AccountSettingsPage({
     return () => { active = false }
   }, [session.role])
 
+  useEffect(() => {
+    if (!selectedPhoto) {
+      setPhotoPreview('')
+      return undefined
+    }
+    const url = URL.createObjectURL(selectedPhoto)
+    setPhotoPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [selectedPhoto])
+
+  async function choosePhoto(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setError('')
+    setIsPreparingPhoto(true)
+    try {
+      setSelectedPhoto(await prepareAvatar(file))
+    } catch (photoError) {
+      setSelectedPhoto(null)
+      setError(photoError.message)
+    } finally {
+      setIsPreparingPhoto(false)
+    }
+  }
+
+  function cancelPhoto() {
+    setSelectedPhoto(null)
+    setError('')
+  }
+
   async function saveProfile(event) {
     event.preventDefault()
     setError('')
@@ -57,12 +118,25 @@ export function AccountSettingsPage({
     try {
       const profile = await apiRequest('/account/profile', {
         method: 'PATCH',
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify(canEditEmail ? { name: name.trim(), email: email.trim() } : { name: name.trim() }),
       })
-      setName(profile.name)
-      setEmail(profile.email || '')
-      setEmployeeNumber(profile.employee_number || '')
-      onProfileUpdated(profile)
+      let saved = profile
+      if (isApplicant) {
+        saved = await apiRequest('/account/employee-profile', {
+          method: 'PUT',
+          body: JSON.stringify({
+            division_id: divisionId ? Number(divisionId) : null,
+            department_id: departmentId ? Number(departmentId) : null,
+            position_title: positionTitle.trim(),
+            last_education: lastEducation,
+          }),
+        })
+        applyEmployeeProfile(saved)
+      }
+      setName(saved.name)
+      setEmail(saved.email || '')
+      setEmployeeNumber(saved.employee_number || '')
+      onProfileUpdated(saved)
       setNotice('Profil berhasil diperbarui.')
     } catch (requestError) {
       setError(requestError.message)
@@ -84,7 +158,6 @@ export function AccountSettingsPage({
         body: formData,
       })
       setSelectedPhoto(null)
-      if (photoInput.current) photoInput.current.value = ''
       onAvatarChanged()
       setNotice('Foto profil berhasil diperbarui.')
     } catch (requestError) {
@@ -167,25 +240,42 @@ export function AccountSettingsPage({
           {section === 'profile' && (
             <>
             <section className="account-settings-photo">
-              <AccountAvatar alt="Foto profil" avatarUrl={avatarUrl} className="account-settings-avatar" iconSize={40} />
+              {photoPreview
+                ? <img alt="Pratinjau foto profil" className="account-avatar account-settings-avatar" src={photoPreview} />
+                : <AccountAvatar alt="Foto profil" avatarUrl={avatarUrl} className="account-settings-avatar" iconSize={40} />}
               <div>
                 <strong>Foto profil</strong>
-                <span>JPG, PNG, atau WebP · maksimal 2 MB</span>
+                <span>JPG, PNG, atau WebP. Ukuran foto disesuaikan otomatis.</span>
                 <input
                   accept="image/jpeg,image/png,image/webp"
                   aria-label="Pilih foto profil"
-                  onChange={(event) => {
-                    setError('')
-                    setSelectedPhoto(event.target.files?.[0] || null)
-                  }}
+                  className="account-photo-input"
+                  onChange={(event) => void choosePhoto(event)}
                   ref={photoInput}
                   type="file"
                 />
                 <div className="account-settings-actions">
-                  <button className="admin-small-button" disabled={!selectedPhoto || isSavingPhoto} onClick={() => void savePhoto()} type="button">
-                    <Camera size={15} /> {isSavingPhoto ? 'Menyimpan...' : 'Pasang foto'}
-                  </button>
-                  {avatarUrl && <button className="detail-button" disabled={isSavingPhoto} onClick={() => void removePhoto()} type="button">Hapus foto</button>}
+                  {selectedPhoto ? (
+                    <>
+                      <button className="admin-small-button primary" disabled={isSavingPhoto} onClick={() => void savePhoto()} type="button">
+                        <Camera size={15} /> {isSavingPhoto ? 'Menyimpan...' : 'Simpan foto'}
+                      </button>
+                      <button className="admin-small-button" disabled={isSavingPhoto} onClick={cancelPhoto} type="button">
+                        <X size={15} /> Batal
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="admin-small-button" disabled={isPreparingPhoto || isSavingPhoto} onClick={() => photoInput.current?.click()} type="button">
+                        <Camera size={15} /> {isPreparingPhoto ? 'Memproses...' : avatarUrl ? 'Ganti foto' : 'Pilih foto'}
+                      </button>
+                      {avatarUrl && (
+                        <button className="admin-small-button danger" disabled={isSavingPhoto} onClick={() => void removePhoto()} type="button">
+                          <Trash2 size={15} /> Hapus foto
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </section>
@@ -198,7 +288,60 @@ export function AccountSettingsPage({
                   <input readOnly value={employeeNumber} />
                 </label>
               )}
-              {(email || !employeeNumber) && (
+              {isApplicant && (
+                <>
+                  <label>Divisi
+                    <SearchableSelect
+                      onChange={(value) => { setDivisionId(value); setDepartmentId('') }}
+                      options={[{ value: '', label: 'Belum diisi' }, ...master.divisions.map((item) => ({ value: String(item.id), label: item.name }))]}
+                      placeholder="Pilih divisi"
+                      value={divisionId}
+                    />
+                  </label>
+                  {divisionId && (
+                    <label>Departemen (Unit Kerja)
+                      <SearchableSelect
+                        onChange={setDepartmentId}
+                        options={[
+                          { value: '', label: 'Belum diisi' },
+                          ...master.departments
+                            .filter((item) => String(item.division_id) === divisionId)
+                            .map((item) => ({ value: String(item.id), label: item.name })),
+                        ]}
+                        placeholder="Pilih departemen"
+                        value={departmentId}
+                      />
+                    </label>
+                  )}
+                  <label>Jabatan
+                    <input maxLength={200} onChange={(event) => setPositionTitle(event.target.value)} value={positionTitle} />
+                  </label>
+                  <label>Pendidikan terakhir
+                    <SearchableSelect
+                      onChange={setLastEducation}
+                      options={[
+                        { value: '', label: 'Belum diisi' },
+                        ...[...new Set([...EDUCATION_OPTIONS, lastEducation].filter(Boolean))].map((item) => ({ value: item, label: item })),
+                      ]}
+                      placeholder="Pilih pendidikan"
+                      value={lastEducation}
+                    />
+                  </label>
+                </>
+              )}
+              {canEditEmail ? (
+                <label>{session.role === 'applicant' ? 'Email (opsional)' : 'Email akun'}
+                  <input
+                    autoComplete="email"
+                    maxLength={254}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder={session.role === 'applicant' ? 'nama@email.com (boleh dikosongkan)' : 'nama@email.com'}
+                    required={session.role !== 'applicant'}
+                    type="email"
+                    value={email}
+                  />
+                </label>
+              ) : (email || !employeeNumber) && (
                 <label>Email akun
                   <input autoComplete="email" readOnly value={email} />
                 </label>

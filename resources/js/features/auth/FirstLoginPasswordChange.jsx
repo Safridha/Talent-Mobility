@@ -7,7 +7,6 @@ import { meetsPasswordRequirements } from '../../components/passwordValidation'
 import { apiRequest } from '../../api'
 
 export default function FirstLoginPasswordChange({ onComplete, onLogout }) {
-  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
@@ -16,10 +15,6 @@ export default function FirstLoginPasswordChange({ onComplete, onLogout }) {
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
-    if (newPassword === currentPassword) {
-      setError('Kata sandi baru harus berbeda dari kata sandi awal.')
-      return
-    }
     if (newPassword !== confirmPassword) {
       setError('Konfirmasi kata sandi tidak sama.')
       return
@@ -33,7 +28,7 @@ export default function FirstLoginPasswordChange({ onComplete, onLogout }) {
     try {
       await apiRequest('/account/password', {
         method: 'POST',
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        body: JSON.stringify({ new_password: newPassword }),
       })
       const session = await apiRequest('/session')
       if (!session || session.applicant?.must_change_password) {
@@ -65,14 +60,10 @@ export default function FirstLoginPasswordChange({ onComplete, onLogout }) {
             <span aria-hidden="true" className="first-login-icon"><KeyRound size={22} /></span>
             <div>
               <h1 id="first-login-title">Ganti kata sandi awal</h1>
-              <p>Akun Anda dibuat oleh administrator. Demi keamanan, buat kata sandi baru sebelum melanjutkan.</p>
+              <p>Anda masuk dengan kata sandi awal dari administrator. Demi keamanan, buat kata sandi baru sebelum melanjutkan.</p>
             </div>
           </header>
           <form className="account-settings-form first-login-form" onSubmit={(event) => void handleSubmit(event)}>
-            <label>Kata sandi awal
-              <PasswordInput autoComplete="current-password" maxLength={128} onChange={(event) => setCurrentPassword(event.target.value)} required value={currentPassword} />
-            </label>
-            <hr className="first-login-divider" />
             <label>Kata sandi baru
               <PasswordInput autoComplete="new-password" maxLength={128} minLength={8} onChange={(event) => setNewPassword(event.target.value)} required value={newPassword} />
             </label>

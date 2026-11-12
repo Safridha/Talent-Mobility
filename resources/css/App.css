@@ -1136,3 +1136,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 700px) {
   .header-inner, .page-content { width: calc(100% - 24px); }
 }
+
+/* Profile photo */
+.account-photo-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.account-settings-photo .account-settings-actions .apply-button, .account-settings-photo .account-settings-actions .detail-button, .account-settings-photo .account-settings-actions .admin-small-button { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 520px) {
+  .account-settings-photo { align-items: flex-start; }
+}
+
+/* Application form: profile summary */
+.application-profile-summary { display: grid; gap: 10px; margin-bottom: 14px; padding: 14px 16px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; }
+.application-profile-summary header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.application-profile-summary header strong { color: #1e3a8a; font-size: 13px; }
+.application-profile-summary header button { padding: 5px 10px; border: 1px solid #93c5fd; border-radius: 8px; background: white; color: #1d4ed8; font: inherit; font-size: 12px; font-weight: 700; }
+.application-profile-summary dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin: 0; }
+.application-profile-summary dl div { min-width: 0; }
+.application-profile-summary dt { color: #64748b; font-size: 11px; font-weight: 600; }
+.application-profile-summary dd { margin: 1px 0 0; color: #1e293b; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.application-profile-summary > p, .application-profile-loading { margin: 0; color: #475569; font-size: 12px; }
+@media (max-width: 520px) {
+  .application-profile-summary dl { grid-template-columns: 1fr; }
+}
+.admin-small-button.primary { border-color: #2563eb; background: #2563eb; color: white; }
+.admin-small-button.primary:hover:not(:disabled) { background: #1d4ed8; }

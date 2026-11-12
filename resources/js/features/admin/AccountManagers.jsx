@@ -11,8 +11,8 @@ import { downloadTablePdf } from './downloadPdf'
 import SuccessPopup from '../../components/SuccessPopup'
 import ApplicantImportDialog from './ApplicantImportDialog'
 import EmployeeMasterManager from './EmployeeMasterManager'
+import { EDUCATION_OPTIONS } from '../account/employeeOptions'
 
-const EDUCATION_OPTIONS = ['SMA/SMK/SEDERAJAT', 'D1', 'D2', 'D3', 'D4', 'S1', 'S2', 'S3']
 
 const adminRoles = [
   { value: 'admin', label: 'Admin Operasional' },
