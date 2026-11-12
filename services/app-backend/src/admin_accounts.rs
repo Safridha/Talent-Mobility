@@ -8,7 +8,7 @@ pub(super) async fn admin_list_accounts(
         .await?
         .require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     let data = sqlx::query_as::<_, AdminApplicantAccount>(
-        "SELECT applicants.id, applicants.name, COALESCE(applicants.email, '') AS email, applicants.employee_number, applicants.division_id, applicants.department_id, employee_divisions.name AS division_name, employee_departments.name AS department_name, applicants.position_title, applicants.last_education, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active, applicants.must_change_password FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id GROUP BY applicants.id, employee_divisions.id, employee_departments.id ORDER BY applicants.created_at DESC, applicants.id DESC",
+        "SELECT applicants.id, applicants.name, COALESCE(applicants.email, '') AS email, applicants.employee_number, applicants.division_id, applicants.department_id, employee_divisions.name AS division_name, employee_departments.name AS department_name, applicants.bureau_id, employee_bureaus.name AS bureau_name, applicants.position_title, applicants.last_education, applicants.created_at::text AS created_at, COUNT(applications.id)::BIGINT AS applications_count, applicants.is_active, applicants.must_change_password FROM applicants LEFT JOIN applications ON applications.applicant_id = applicants.id LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id LEFT JOIN employee_bureaus ON employee_bureaus.id = applicants.bureau_id GROUP BY applicants.id, employee_divisions.id, employee_departments.id, employee_bureaus.id ORDER BY applicants.created_at DESC, applicants.id DESC",
     )
     .fetch_all(&state.pool)
     .await
@@ -38,7 +38,7 @@ pub(super) async fn admin_create_account(
     let password_hash = hash_password(DEFAULT_APPLICANT_PASSWORD)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let id = match sqlx::query_scalar::<_, i64>(
-        "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8) RETURNING id",
+        "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education, bureau_id) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8, $9) RETURNING id",
     )
     .bind(name)
     .bind(&email)
@@ -48,6 +48,7 @@ pub(super) async fn admin_create_account(
     .bind(profile.department_id)
     .bind(&profile.position_title)
     .bind(&profile.last_education)
+    .bind(profile.bureau_id)
     .fetch_one(&mut *transaction)
     .await
     {
@@ -130,7 +131,7 @@ pub(super) async fn admin_import_accounts(
         )
         .await?;
         let inserted = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING RETURNING id",
+            "INSERT INTO applicants (name, email, password_hash, must_change_password, employee_number, division_id, department_id, position_title, last_education) SELECT $1::TEXT, $2::TEXT, $3::TEXT, TRUE, $4::TEXT, $5::BIGINT, $6::BIGINT, $7::TEXT, $8::TEXT WHERE NOT EXISTS (SELECT 1 FROM admins WHERE employee_number = $4) ON CONFLICT DO NOTHING RETURNING id",
         )
         .bind(name)
         .bind(Option::<String>::None)
@@ -253,7 +254,7 @@ pub(super) async fn admin_update_account(
     };
     let result = if let Some(password) = new_password {
         let password_hash = hash_password(password)?;
-        sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3, must_change_password = TRUE, failed_login_attempts = 0, locked_until = NULL, employee_number = $5, division_id = $6, department_id = $7, position_title = $8, last_education = $9 WHERE id = $4")
+        sqlx::query("UPDATE applicants SET name = $1, email = $2, password_hash = $3, must_change_password = TRUE, failed_login_attempts = 0, locked_until = NULL, employee_number = $5, division_id = $6, department_id = $7, position_title = $8, last_education = $9, bureau_id = $10 WHERE id = $4")
             .bind(name)
             .bind(&email)
             .bind(password_hash)
@@ -263,10 +264,11 @@ pub(super) async fn admin_update_account(
             .bind(profile.department_id)
             .bind(&profile.position_title)
             .bind(&profile.last_education)
+            .bind(profile.bureau_id)
             .execute(&mut *transaction)
             .await
     } else {
-        sqlx::query("UPDATE applicants SET name = $1, email = $2, employee_number = $4, division_id = $5, department_id = $6, position_title = $7, last_education = $8 WHERE id = $3")
+        sqlx::query("UPDATE applicants SET name = $1, email = $2, employee_number = $4, division_id = $5, department_id = $6, position_title = $7, last_education = $8, bureau_id = $9 WHERE id = $3")
             .bind(name)
             .bind(&email)
             .bind(id)
@@ -275,6 +277,7 @@ pub(super) async fn admin_update_account(
             .bind(profile.department_id)
             .bind(&profile.position_title)
             .bind(&profile.last_education)
+            .bind(profile.bureau_id)
             .execute(&mut *transaction)
             .await
     };

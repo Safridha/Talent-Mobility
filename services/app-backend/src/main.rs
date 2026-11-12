@@ -226,6 +226,8 @@ struct AccountProfileResponse {
     department_id: Option<i64>,
     division_name: Option<String>,
     department_name: Option<String>,
+    bureau_id: Option<i64>,
+    bureau_name: Option<String>,
     position_title: Option<String>,
     last_education: Option<String>,
 }
@@ -254,6 +256,8 @@ struct ApplicantProfileInput {
     division_id: Option<i64>,
     #[serde(default)]
     department_id: Option<i64>,
+    #[serde(default)]
+    bureau_id: Option<i64>,
     #[serde(default)]
     position_title: Option<String>,
     #[serde(default)]
@@ -496,6 +500,8 @@ struct AdminApplicantAccount {
     department_id: Option<i64>,
     division_name: Option<String>,
     department_name: Option<String>,
+    bureau_id: Option<i64>,
+    bureau_name: Option<String>,
     position_title: Option<String>,
     last_education: Option<String>,
     created_at: String,
@@ -864,6 +870,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             put(admin_update_employee_division).delete(admin_delete_employee_division),
         )
         .route(
+            "/api/admin/employee-master/bureaus",
+            post(admin_create_employee_bureau),
+        )
+        .route(
+            "/api/admin/employee-master/bureaus/{id}",
+            put(admin_update_employee_bureau).delete(admin_delete_employee_bureau),
+        )
+        .route(
             "/api/admin/employee-master/departments",
             post(admin_create_employee_department),
         )
@@ -1161,6 +1175,7 @@ struct CleanApplicantProfile {
     employee_number: Option<String>,
     division_id: Option<i64>,
     department_id: Option<i64>,
+    bureau_id: Option<i64>,
     position_title: Option<String>,
     last_education: Option<String>,
 }
@@ -1207,10 +1222,27 @@ async fn resolve_applicant_profile(
             return Err(ApiError::BadRequest("Divisi tidak ditemukan di master data."));
         }
     }
+    // Biro/Bengkel must belong to the chosen department.
+    if let Some(bureau_id) = input.bureau_id {
+        let owner = sqlx::query_scalar::<_, i64>(
+            "SELECT department_id FROM employee_bureaus WHERE id = $1",
+        )
+        .bind(bureau_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(internal_error)?
+        .ok_or(ApiError::BadRequest("Biro tidak ditemukan di master data."))?;
+        if input.department_id != Some(owner) {
+            return Err(ApiError::BadRequest(
+                "Biro tidak termasuk departemen yang dipilih.",
+            ));
+        }
+    }
     Ok(CleanApplicantProfile {
         employee_number: clean_profile_text(&input.employee_number, 40)?,
         division_id,
         department_id: input.department_id,
+        bureau_id: input.bureau_id,
         position_title: clean_profile_text(&input.position_title, 200)?,
         last_education: clean_profile_text(&input.last_education, 80)?,
     })

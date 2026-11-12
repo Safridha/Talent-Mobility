@@ -1090,8 +1090,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 700px) {
   .account-heading-actions { justify-content: flex-start; }
 }
-.master-manager { display: grid; gap: 12px; }
-.master-subtabs { width: fit-content; max-width: 100%; box-shadow: none; background: #f8fafc; }
+.master-manager { display: block; }
+.master-subtabs { width: fit-content; max-width: calc(100% - 40px); margin: 16px 20px; box-shadow: none; background: #f8fafc; }
+@media (max-width: 700px) { .master-subtabs { max-width: calc(100% - 28px); margin: 12px 14px; } }
 .admin-small-button.admin-icon-button { display: inline-flex; align-items: center; justify-content: center; padding-right: 9px; padding-left: 9px; }
 
 /* First-login password change */
@@ -1159,3 +1160,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .admin-small-button.primary { border-color: #2563eb; background: #2563eb; color: white; }
 .admin-small-button.primary:hover:not(:disabled) { background: #1d4ed8; }
+
+.account-settings-hint { color: #64748b; font-size: 11px; font-weight: 500; }
+.account-settings-hint.error { color: #b91c1c; }
+.application-form-hint { color: #64748b; font-size: 11px; font-weight: 500; }

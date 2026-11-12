@@ -23,9 +23,11 @@ export function AccountSettingsPage({
   const [email, setEmail] = useState(session.user.email || '')
   const [employeeNumber, setEmployeeNumber] = useState(session.user.employee_number || '')
   const isApplicant = session.role === 'applicant'
-  const [master, setMaster] = useState({ divisions: [], departments: [] })
+  const [master, setMaster] = useState({ divisions: [], departments: [], bureaus: [] })
+  const [masterError, setMasterError] = useState('')
   const [divisionId, setDivisionId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
+  const [bureauId, setBureauId] = useState('')
   const [positionTitle, setPositionTitle] = useState('')
   const [lastEducation, setLastEducation] = useState('')
   const [selectedPhoto, setSelectedPhoto] = useState(null)
@@ -47,6 +49,7 @@ export function AccountSettingsPage({
   function applyEmployeeProfile(profile) {
     setDivisionId(profile.division_id ? String(profile.division_id) : '')
     setDepartmentId(profile.department_id ? String(profile.department_id) : '')
+    setBureauId(profile.bureau_id ? String(profile.bureau_id) : '')
     setPositionTitle(profile.position_title || '')
     setLastEducation(profile.last_education || '')
   }
@@ -55,8 +58,8 @@ export function AccountSettingsPage({
     if (!isApplicant) return undefined
     let active = true
     apiRequest('/account/employee-master')
-      .then((response) => { if (active) setMaster(response) })
-      .catch(() => {})
+      .then((response) => { if (active) setMaster({ bureaus: [], ...response }) })
+      .catch(() => { if (active) setMasterError('Daftar divisi dan departemen belum dapat dimuat. Muat ulang halaman; jika masih gagal, hubungi administrator.') })
     return () => { active = false }
   }, [isApplicant])
 
@@ -127,6 +130,7 @@ export function AccountSettingsPage({
           body: JSON.stringify({
             division_id: divisionId ? Number(divisionId) : null,
             department_id: departmentId ? Number(departmentId) : null,
+            bureau_id: bureauId ? Number(bureauId) : null,
             position_title: positionTitle.trim(),
             last_education: lastEducation,
           }),
@@ -291,8 +295,12 @@ export function AccountSettingsPage({
               {isApplicant && (
                 <>
                   <label>Divisi
+                    {masterError && <span className="account-settings-hint error" role="alert">{masterError}</span>}
+                    {!masterError && master.divisions.length === 0 && (
+                      <span className="account-settings-hint">Master data divisi belum tersedia. Hubungi administrator.</span>
+                    )}
                     <SearchableSelect
-                      onChange={(value) => { setDivisionId(value); setDepartmentId('') }}
+                      onChange={(value) => { setDivisionId(value); setDepartmentId(''); setBureauId('') }}
                       options={[{ value: '', label: 'Belum diisi' }, ...master.divisions.map((item) => ({ value: String(item.id), label: item.name }))]}
                       placeholder="Pilih divisi"
                       value={divisionId}
@@ -301,7 +309,7 @@ export function AccountSettingsPage({
                   {divisionId && (
                     <label>Departemen (Unit Kerja)
                       <SearchableSelect
-                        onChange={setDepartmentId}
+                        onChange={(value) => { setDepartmentId(value); setBureauId('') }}
                         options={[
                           { value: '', label: 'Belum diisi' },
                           ...master.departments
@@ -310,6 +318,21 @@ export function AccountSettingsPage({
                         ]}
                         placeholder="Pilih departemen"
                         value={departmentId}
+                      />
+                    </label>
+                  )}
+                  {departmentId && (
+                    <label>Biro / Bengkel
+                      <SearchableSelect
+                        onChange={setBureauId}
+                        options={[
+                          { value: '', label: 'Belum diisi' },
+                          ...master.bureaus
+                            .filter((item) => String(item.department_id) === departmentId)
+                            .map((item) => ({ value: String(item.id), label: item.name })),
+                        ]}
+                        placeholder="Pilih biro / bengkel"
+                        value={bureauId}
                       />
                     </label>
                   )}

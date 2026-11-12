@@ -460,7 +460,7 @@ pub(super) async fn admin_update_division(
     .ok_or(ApiError::NotFound("Divisi tidak ditemukan."))?;
     if secretariat_name.is_empty() {
         let secretariat_is_in_use: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM job_postings WHERE division_id = $1 AND target_level = 'secretariat' UNION ALL SELECT 1 FROM employee_directory WHERE division_id = $1 AND target_level = 'secretariat')",
+            "SELECT EXISTS(SELECT 1 FROM job_postings WHERE division_id = $1 AND target_level = 'secretariat')",
         )
         .bind(id)
         .fetch_one(&mut *transaction)

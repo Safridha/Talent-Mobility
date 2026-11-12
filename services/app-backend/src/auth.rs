@@ -374,6 +374,8 @@ pub(super) async fn get_account_profile(
         department_id: None,
         division_name: None,
         department_name: None,
+        bureau_id: None,
+        bureau_name: None,
         position_title: None,
         last_education: None,
     }))
@@ -492,6 +494,8 @@ pub(super) async fn update_account_profile(
         department_id: None,
         division_name: None,
         department_name: None,
+        bureau_id: None,
+        bureau_name: None,
         position_title: None,
         last_education: None,
     }))
@@ -505,6 +509,8 @@ type ApplicantProfileRow = (
     Option<i64>,
     Option<String>,
     Option<String>,
+    Option<i64>,
+    Option<String>,
     Option<String>,
     Option<String>,
 );
@@ -514,7 +520,7 @@ async fn build_applicant_profile_response(
     applicant_id: i64,
 ) -> Result<AccountProfileResponse, ApiError> {
     let row = sqlx::query_as::<_, ApplicantProfileRow>(
-        "SELECT applicants.name, COALESCE(applicants.email, ''), COALESCE(applicants.employee_number, ''), applicants.division_id, applicants.department_id, employee_divisions.name, employee_departments.name, applicants.position_title, applicants.last_education FROM applicants LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id WHERE applicants.id = $1",
+        "SELECT applicants.name, COALESCE(applicants.email, ''), COALESCE(applicants.employee_number, ''), applicants.division_id, applicants.department_id, employee_divisions.name, employee_departments.name, applicants.bureau_id, employee_bureaus.name, applicants.position_title, applicants.last_education FROM applicants LEFT JOIN employee_divisions ON employee_divisions.id = applicants.division_id LEFT JOIN employee_departments ON employee_departments.id = applicants.department_id LEFT JOIN employee_bureaus ON employee_bureaus.id = applicants.bureau_id WHERE applicants.id = $1",
     )
     .bind(applicant_id)
     .fetch_optional(pool)
@@ -530,8 +536,10 @@ async fn build_applicant_profile_response(
         department_id: row.4,
         division_name: row.5,
         department_name: row.6,
-        position_title: row.7,
-        last_education: row.8,
+        bureau_id: row.7,
+        bureau_name: row.8,
+        position_title: row.9,
+        last_education: row.10,
     })
 }
 
@@ -547,12 +555,13 @@ pub(super) async fn update_applicant_employee_profile(
     }
     let profile = resolve_applicant_profile(&state.pool, &input).await?;
     sqlx::query(
-        "UPDATE applicants SET division_id = $1, department_id = $2, position_title = $3, last_education = $4 WHERE id = $5",
+        "UPDATE applicants SET division_id = $1, department_id = $2, position_title = $3, last_education = $4, bureau_id = $5 WHERE id = $6",
     )
     .bind(profile.division_id)
     .bind(profile.department_id)
     .bind(&profile.position_title)
     .bind(&profile.last_education)
+    .bind(profile.bureau_id)
     .bind(account.id)
     .execute(&state.pool)
     .await

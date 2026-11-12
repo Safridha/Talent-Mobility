@@ -12,10 +12,8 @@ pub(super) const APPLICATIONS_CHANGE_STATUS: &str = "applications.change_status"
 pub(super) const APPLICATIONS_DOWNLOAD_DOCUMENTS: &str = "applications.download_documents";
 pub(super) const JOB_TYPES_MANAGE: &str = "job_types.manage";
 pub(super) const APPLICANT_ACCOUNTS_MANAGE: &str = "applicant_accounts.manage";
-pub(super) const EMPLOYEES_VIEW: &str = "employees.view";
-pub(super) const EMPLOYEES_MANAGE: &str = "employees.manage";
 
-const SCOPED_PERMISSION_KEYS: [&str; 10] = [
+const SCOPED_PERMISSION_KEYS: [&str; 8] = [
     JOBS_VIEW,
     JOBS_CREATE,
     JOBS_UPDATE,
@@ -24,11 +22,9 @@ const SCOPED_PERMISSION_KEYS: [&str; 10] = [
     APPLICATIONS_VIEW,
     APPLICATIONS_CHANGE_STATUS,
     APPLICATIONS_DOWNLOAD_DOCUMENTS,
-    EMPLOYEES_VIEW,
-    EMPLOYEES_MANAGE,
 ];
 
-const OPERATIONAL_PERMISSION_KEYS: [&str; 12] = [
+const OPERATIONAL_PERMISSION_KEYS: [&str; 10] = [
     JOBS_VIEW,
     JOBS_CREATE,
     JOBS_UPDATE,
@@ -39,8 +35,6 @@ const OPERATIONAL_PERMISSION_KEYS: [&str; 12] = [
     APPLICATIONS_DOWNLOAD_DOCUMENTS,
     JOB_TYPES_MANAGE,
     APPLICANT_ACCOUNTS_MANAGE,
-    EMPLOYEES_VIEW,
-    EMPLOYEES_MANAGE,
 ];
 
 const DEFAULT_SCOPED_PERMISSION_KEYS: [&str; 3] = [
@@ -116,11 +110,6 @@ pub(super) fn validate_admin_permissions(
             "Izin proses dan dokumen membutuhkan izin melihat lamaran.",
         ));
     }
-    if has(EMPLOYEES_MANAGE) && !has(EMPLOYEES_VIEW) {
-        return Err(ApiError::BadRequest(
-            "Izin mengelola karyawan membutuhkan izin melihat karyawan.",
-        ));
-    }
     if submitted.is_empty() {
         return Err(ApiError::BadRequest(
             "Akun admin harus memiliki setidaknya satu hak akses.",
@@ -155,7 +144,8 @@ mod tests {
         )
         .is_err());
         assert!(validate_admin_permissions("admin", &[]).is_err());
-        assert!(validate_admin_permissions("admin", &[EMPLOYEES_MANAGE.to_owned()]).is_err());
+        // Retired permission keys are rejected as unknown.
+        assert!(validate_admin_permissions("admin", &["employees.manage".to_owned()]).is_err());
     }
 
     #[test]
@@ -191,7 +181,6 @@ mod tests {
         assert!(default_permissions("admin").contains(&APPLICANT_ACCOUNTS_MANAGE.into()));
         assert!(!default_permissions("admin").contains(&JOBS_VIEW.into()));
         assert!(!default_permissions("admin").contains(&JOB_TYPES_MANAGE.into()));
-        assert!(!default_permissions("admin").contains(&EMPLOYEES_VIEW.into()));
         assert!(default_permissions("super_admin").is_empty());
     }
 }

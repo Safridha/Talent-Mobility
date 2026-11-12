@@ -21,6 +21,8 @@ export default function ApplicationForm({ job, directTarget, session, organizati
   // Data the applicant already keeps in their profile is shown as a summary instead of asked again.
   const [profile, setProfile] = useState(null)
   const [profileError, setProfileError] = useState('')
+  const [bureauMaster, setBureauMaster] = useState(null)
+  const [profileBureauId, setProfileBureauId] = useState('')
   const [originDepartmentId, setOriginDepartmentId] = useState('')
   const [originBureauId, setOriginBureauId] = useState('')
   const [supportingFiles, setSupportingFiles] = useState([])
@@ -31,6 +33,9 @@ export default function ApplicationForm({ job, directTarget, session, organizati
     apiRequest('/account/profile')
       .then((response) => { if (active) setProfile(response) })
       .catch((requestError) => { if (active) setProfileError(requestError.message) })
+    apiRequest('/account/employee-master')
+      .then((response) => { if (active) setBureauMaster(response) })
+      .catch(() => { if (active) setBureauMaster({ bureaus: [] }) })
     return () => { active = false }
   }, [])
 
@@ -39,6 +44,15 @@ export default function ApplicationForm({ job, directTarget, session, organizati
   const hasUnit = Boolean(profile?.department_name)
   const hasEducation = Boolean(profile?.last_education)
   const needsOrigin = !hasDivision || !hasUnit
+  // Biro/Bengkel comes from the roster master data. If the department has any and the profile has none yet,
+  // it must be picked here (and is saved to the profile).
+  const departmentBureaus = (bureauMaster?.bureaus ?? []).filter(
+    (bureau) => String(bureau.department_id) === String(profile?.department_id),
+  )
+  const needsBureau = !needsOrigin && departmentBureaus.length > 0 && !profile?.bureau_id
+  const selectedProfileBureau = profile?.bureau_id
+    ? profile.bureau_name
+    : departmentBureaus.find((bureau) => String(bureau.id) === profileBureauId)?.name || ''
 
   function updateField(event) {
     const { name, value } = event.target
@@ -92,7 +106,7 @@ export default function ApplicationForm({ job, directTarget, session, organizati
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
-    if (!profile) return
+    if (!profile || !bureauMaster) return
     if (needsOrigin && !selectedOriginUnit) {
       setError('Pilih departemen atau unit asal dari data master organisasi.')
       return
@@ -107,7 +121,14 @@ export default function ApplicationForm({ job, directTarget, session, organizati
     body.set('employee_number', hasNip ? profile.employee_number : form.employee_number)
     body.set('applicant_full_name', profile.name || form.applicant_full_name)
     body.set('origin_division', needsOrigin ? form.origin_division : profile.division_name)
-    body.set('origin_unit', needsOrigin ? selectedOriginUnit : profile.department_name)
+    if (needsBureau && !profileBureauId) {
+      setError('Pilih biro / bengkel asal terlebih dahulu.')
+      return
+    }
+    const profileUnit = selectedProfileBureau
+      ? `${profile.department_name} / ${selectedProfileBureau}`.slice(0, 160)
+      : profile.department_name
+    body.set('origin_unit', needsOrigin ? selectedOriginUnit : profileUnit)
     body.set('education_level', hasEducation ? toApplicationEducation(profile.last_education) : form.education_level)
     body.set('study_field', form.study_field)
     body.set('motivation', form.motivation)
@@ -122,6 +143,18 @@ export default function ApplicationForm({ job, directTarget, session, organizati
       supportingFiles.forEach((file) => body.append('supporting_document', file))
     }
     try {
+      if (needsBureau) {
+        await apiRequest('/account/employee-profile', {
+          method: 'PUT',
+          body: JSON.stringify({
+            division_id: profile.division_id,
+            department_id: profile.department_id,
+            bureau_id: Number(profileBureauId),
+            position_title: profile.position_title || '',
+            last_education: profile.last_education || '',
+          }),
+        })
+      }
       await onSubmit(body)
     } catch (submitError) {
       setError(submitError.message)
@@ -155,8 +188,8 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                 : getJobTargetLabels(job).join(' › ')}</span>
             </div>
             {profileError && <p className="login-error" role="alert">{profileError}</p>}
-            {!profile && !profileError && <p className="application-profile-loading">Memuat data profil...</p>}
-            {profile && (
+            {(!profile || !bureauMaster) && !profileError && <p className="application-profile-loading">Memuat data profil...</p>}
+            {profile && bureauMaster && (
               <section aria-label="Ringkasan data Anda" className="application-profile-summary">
                 <header>
                   <strong>Data Anda dari profil</strong>
@@ -167,10 +200,11 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                   {hasNip && <div><dt>NIP</dt><dd>{profile.employee_number}</dd></div>}
                   {hasDivision && <div><dt>Divisi</dt><dd>{profile.division_name}</dd></div>}
                   {hasUnit && <div><dt>Departemen</dt><dd>{profile.department_name}</dd></div>}
+                  {profile.bureau_name && <div><dt>Biro / Bengkel</dt><dd>{profile.bureau_name}</dd></div>}
                   {profile.position_title && <div><dt>Jabatan</dt><dd>{profile.position_title}</dd></div>}
                   {hasEducation && <div><dt>Pendidikan</dt><dd>{profile.last_education}</dd></div>}
                 </dl>
-                {(!hasNip || needsOrigin || !hasEducation) && (
+                {(!hasNip || needsOrigin || needsBureau || !hasEducation) && (
                   <p>Lengkapi data yang belum ada di profil pada formulir di bawah.</p>
                 )}
               </section>
@@ -240,6 +274,20 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                 />
               </label>
                 </>
+              )}
+              {needsBureau && (
+                <label className="application-form-wide" htmlFor="application-profile-bureau">
+                  <span className="application-form-label">Biro / Bengkel Asal <em>*</em></span>
+                  <SearchableSelect
+                    id="application-profile-bureau"
+                    onChange={setProfileBureauId}
+                    options={departmentBureaus.map((bureau) => ({ value: String(bureau.id), label: bureau.name }))}
+                    placeholder="Pilih biro / bengkel asal"
+                    required
+                    value={profileBureauId}
+                  />
+                  <small className="application-form-hint">Akan disimpan di profil Anda, jadi tidak perlu diisi lagi.</small>
+                </label>
               )}
               {!hasEducation && (
               <label htmlFor="application-education-level">

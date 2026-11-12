@@ -61,6 +61,7 @@ function emptyAccountForm() {
     employee_number: '',
     division_id: '',
     department_id: '',
+    bureau_id: '',
     position_title: '',
     last_education: '',
     email: '',
@@ -68,7 +69,6 @@ function emptyAccountForm() {
     password: '',
     passwordConfirmation: '',
     admin_role: '',
-    bureau_id: '',
     permissions: [],
   }
 }
@@ -99,13 +99,13 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   const [isResetting, setIsResetting] = useState(false)
   const divisions = organization?.divisions ?? []
   const departments = organization?.departments ?? []
-  const [employeeMaster, setEmployeeMaster] = useState({ divisions: [], departments: [] })
+  const [employeeMaster, setEmployeeMaster] = useState({ divisions: [], departments: [], bureaus: [] })
   const [isImportOpen, setIsImportOpen] = useState(false)
 
   function loadEmployeeMaster() {
     if (isAdminAccount) return
     apiRequest('/admin/employee-master')
-      .then((response) => setEmployeeMaster(response))
+      .then((response) => setEmployeeMaster({ bureaus: [], ...response }))
       .catch(() => {})
   }
 
@@ -170,6 +170,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
     if (!isAdminAccount) {
       body.division_id = form.division_id ? Number(form.division_id) : null
       body.department_id = form.department_id ? Number(form.department_id) : null
+      body.bureau_id = form.bureau_id ? Number(form.bureau_id) : null
       body.position_title = form.position_title.trim()
       body.last_education = form.last_education
     }
@@ -307,7 +308,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   }
 
   const filteredAccounts = accounts.filter((account) => (
-    `${account.name} ${account.email} ${account.admin_role || ''} ${account.scope_label || ''} ${account.employee_number || ''} ${account.division_name || ''} ${account.department_name || ''} ${account.position_title || ''}`.toLocaleLowerCase('id').includes(search.trim().toLocaleLowerCase('id'))
+    `${account.name} ${account.email} ${account.admin_role || ''} ${account.scope_label || ''} ${account.employee_number || ''} ${account.division_name || ''} ${account.department_name || ''} ${account.bureau_name || ''} ${account.position_title || ''}`.toLocaleLowerCase('id').includes(search.trim().toLocaleLowerCase('id'))
     && (statusFilter === 'all' || (account.is_active ? 'active' : 'inactive') === statusFilter)
   ))
   const { items: pageAccounts, page, setPage } = useAdminPagination(filteredAccounts)
@@ -337,7 +338,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           </label>
           <label><span>Divisi</span>
             <SearchableSelect
-              onChange={(value) => setForm((current) => ({ ...current, division_id: value, department_id: '' }))}
+              onChange={(value) => setForm((current) => ({ ...current, division_id: value, department_id: '', bureau_id: '' }))}
               options={[{ value: '', label: 'Tanpa divisi' }, ...employeeMaster.divisions.map((item) => ({ value: String(item.id), label: item.name }))]}
               placeholder="Pilih divisi"
               value={form.division_id}
@@ -346,7 +347,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           {form.division_id && (
             <label><span>Departemen (Unit Kerja)</span>
               <SearchableSelect
-                onChange={(value) => setForm((current) => ({ ...current, department_id: value }))}
+                onChange={(value) => setForm((current) => ({ ...current, department_id: value, bureau_id: '' }))}
                 options={[
                   { value: '', label: 'Tanpa departemen' },
                   ...employeeMaster.departments
@@ -355,6 +356,21 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                 ]}
                 placeholder="Pilih departemen"
                 value={form.department_id}
+              />
+            </label>
+          )}
+          {form.department_id && (
+            <label><span>Biro / Bengkel</span>
+              <SearchableSelect
+                onChange={(value) => setForm((current) => ({ ...current, bureau_id: value }))}
+                options={[
+                  { value: '', label: 'Tanpa biro / bengkel' },
+                  ...employeeMaster.bureaus
+                    .filter((item) => String(item.department_id) === String(form.department_id))
+                    .map((item) => ({ value: String(item.id), label: item.name })),
+                ]}
+                placeholder="Pilih biro / bengkel"
+                value={form.bureau_id}
               />
             </label>
           )}
@@ -584,7 +600,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           isAdminAccount ? 'Daftar Akun Admin' : 'Daftar Akun Pelamar',
           isAdminAccount
             ? ['Nama', 'Email', 'Peran', 'Lingkup organisasi', 'Izin aktif', 'Terdaftar', 'Status']
-            : ['NIP', 'Nama', 'Divisi', 'Departemen', 'Jabatan', 'Pendidikan', 'Email', 'Lamaran', 'Status'],
+            : ['NIP', 'Nama', 'Divisi', 'Departemen', 'Biro', 'Jabatan', 'Pendidikan', 'Email', 'Lamaran', 'Status'],
           filteredAccounts.map((account) => isAdminAccount
             ? [
                 account.name,
@@ -600,6 +616,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                 account.name,
                 account.division_name || '-',
                 account.department_name || '-',
+                account.bureau_name || '-',
                 account.position_title || '-',
                 account.last_education || '-',
                 account.email || '-',
@@ -634,7 +651,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                   </td>}
                   {!isAdminAccount && <td>
                     {account.employee_number ? <>NIP {account.employee_number}</> : <span className="admin-table-subtext">NIP belum diisi</span>}
-                    <span className="admin-table-subtext">{[account.division_name, account.department_name].filter(Boolean).join(' / ') || 'Divisi/departemen belum diisi'}</span>
+                    <span className="admin-table-subtext">{[account.division_name, account.department_name, account.bureau_name].filter(Boolean).join(' / ') || 'Divisi/departemen belum diisi'}</span>
                     <span className="admin-table-subtext">{[account.position_title, account.last_education].filter(Boolean).join(' · ') || 'Jabatan belum diisi'}</span>
                   </td>}
                   {!isAdminAccount && <td>{account.applications_count}</td>}
