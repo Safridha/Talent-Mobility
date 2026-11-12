@@ -247,9 +247,9 @@ export function AccountSettingsPage({
                 : <AccountAvatar alt="Foto profil" avatarUrl={avatarUrl} className="account-settings-avatar" iconSize={40} name={name} />}
               <div>
                 <strong>Foto profil</strong>
-                <span>JPG, PNG, atau WebP. Ukuran disesuaikan otomatis dan foto langsung tersimpan.</span>
+                <span>Foto apa pun bisa dipilih. Ukuran dikompres otomatis dan foto langsung tersimpan.</span>
                 <input
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/*"
                   aria-label="Pilih foto profil"
                   className="account-photo-input"
                   onChange={(event) => void choosePhoto(event)}

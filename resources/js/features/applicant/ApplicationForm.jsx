@@ -336,7 +336,7 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                         required
                         value={manualBureau}
                       />
-                      <small className="application-form-hint">Hanya dipakai untuk lamaran ini. Tulisan manual tidak masuk ke master data dan tidak disimpan di profil.</small>
+                      <small className="application-form-hint">Hanya dipakai untuk lamaran ini. Input tidak disimpan di profil.</small>
                     </>
                   )}
                 </fieldset>
