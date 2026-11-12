@@ -22,7 +22,9 @@ export default function ApplicationForm({ job, directTarget, session, organizati
   const [profile, setProfile] = useState(null)
   const [profileError, setProfileError] = useState('')
   const [bureauMaster, setBureauMaster] = useState(null)
+  const [bureauMode, setBureauMode] = useState('none') // none | master | manual
   const [profileBureauId, setProfileBureauId] = useState('')
+  const [manualBureau, setManualBureau] = useState('')
   const [originDepartmentId, setOriginDepartmentId] = useState('')
   const [originBureauId, setOriginBureauId] = useState('')
   const [supportingFiles, setSupportingFiles] = useState([])
@@ -49,10 +51,19 @@ export default function ApplicationForm({ job, directTarget, session, organizati
   const departmentBureaus = (bureauMaster?.bureaus ?? []).filter(
     (bureau) => String(bureau.department_id) === String(profile?.department_id),
   )
-  const needsBureau = !needsOrigin && departmentBureaus.length > 0 && !profile?.bureau_id
+  // Biro/Bengkel is optional. If the profile already has one it is summarised; otherwise the applicant may
+  // skip it, pick one from the master data (saved to the profile) or type one manually (this application only).
+  const showBureauForm = Boolean(profile) && !needsOrigin && !profile.bureau_id
+  const chosenMasterBureau = departmentBureaus.find((bureau) => String(bureau.id) === profileBureauId)
   const selectedProfileBureau = profile?.bureau_id
     ? profile.bureau_name
-    : departmentBureaus.find((bureau) => String(bureau.id) === profileBureauId)?.name || ''
+    : !showBureauForm
+      ? ''
+      : bureauMode === 'master'
+        ? chosenMasterBureau?.name || ''
+        : bureauMode === 'manual'
+          ? manualBureau.trim()
+          : ''
 
   function updateField(event) {
     const { name, value } = event.target
@@ -121,8 +132,12 @@ export default function ApplicationForm({ job, directTarget, session, organizati
     body.set('employee_number', hasNip ? profile.employee_number : form.employee_number)
     body.set('applicant_full_name', profile.name || form.applicant_full_name)
     body.set('origin_division', needsOrigin ? form.origin_division : profile.division_name)
-    if (needsBureau && !profileBureauId) {
-      setError('Pilih biro / bengkel asal terlebih dahulu.')
+    if (showBureauForm && bureauMode === 'master' && !profileBureauId) {
+      setError('Pilih biro / bengkel dari daftar, atau pilih opsi lain.')
+      return
+    }
+    if (showBureauForm && bureauMode === 'manual' && !manualBureau.trim()) {
+      setError('Tulis nama biro / bengkel, atau pilih "Tidak ada".')
       return
     }
     const profileUnit = selectedProfileBureau
@@ -143,7 +158,8 @@ export default function ApplicationForm({ job, directTarget, session, organizati
       supportingFiles.forEach((file) => body.append('supporting_document', file))
     }
     try {
-      if (needsBureau) {
+      // Only a bureau picked from the master data is saved to the profile; manual text never is.
+      if (showBureauForm && bureauMode === 'master') {
         await apiRequest('/account/employee-profile', {
           method: 'PUT',
           body: JSON.stringify({
@@ -200,11 +216,16 @@ export default function ApplicationForm({ job, directTarget, session, organizati
                   {hasNip && <div><dt>NIP</dt><dd>{profile.employee_number}</dd></div>}
                   {hasDivision && <div><dt>Divisi</dt><dd>{profile.division_name}</dd></div>}
                   {hasUnit && <div><dt>Departemen</dt><dd>{profile.department_name}</dd></div>}
-                  {profile.bureau_name && <div><dt>Biro / Bengkel</dt><dd>{profile.bureau_name}</dd></div>}
+                  {hasUnit && (
+                    <div>
+                      <dt>Biro / Bengkel</dt>
+                      <dd>{profile.bureau_name || <span className="application-summary-empty">Belum diisi</span>}</dd>
+                    </div>
+                  )}
                   {profile.position_title && <div><dt>Jabatan</dt><dd>{profile.position_title}</dd></div>}
                   {hasEducation && <div><dt>Pendidikan</dt><dd>{profile.last_education}</dd></div>}
                 </dl>
-                {(!hasNip || needsOrigin || needsBureau || !hasEducation) && (
+                {(!hasNip || needsOrigin || !hasEducation) && (
                   <p>Lengkapi data yang belum ada di profil pada formulir di bawah.</p>
                 )}
               </section>
@@ -275,19 +296,50 @@ export default function ApplicationForm({ job, directTarget, session, organizati
               </label>
                 </>
               )}
-              {needsBureau && (
-                <label className="application-form-wide" htmlFor="application-profile-bureau">
-                  <span className="application-form-label">Biro / Bengkel Asal <em>*</em></span>
-                  <SearchableSelect
-                    id="application-profile-bureau"
-                    onChange={setProfileBureauId}
-                    options={departmentBureaus.map((bureau) => ({ value: String(bureau.id), label: bureau.name }))}
-                    placeholder="Pilih biro / bengkel asal"
-                    required
-                    value={profileBureauId}
-                  />
-                  <small className="application-form-hint">Akan disimpan di profil Anda, jadi tidak perlu diisi lagi.</small>
-                </label>
+              {showBureauForm && (
+                <fieldset className="application-form-wide application-bureau-field">
+                  <legend className="application-form-label">Biro / Bengkel Asal <small>(opsional)</small></legend>
+                  <div className="application-bureau-options" role="radiogroup">
+                    <label>
+                      <input checked={bureauMode === 'none'} name="bureau-mode" onChange={() => setBureauMode('none')} type="radio" />
+                      <span>Tidak ada / tidak perlu diisi</span>
+                    </label>
+                    <label className={departmentBureaus.length ? '' : 'is-disabled'}>
+                      <input checked={bureauMode === 'master'} disabled={!departmentBureaus.length} name="bureau-mode" onChange={() => setBureauMode('master')} type="radio" />
+                      <span>Pilih dari daftar{departmentBureaus.length ? '' : ' (belum ada untuk departemen ini)'}</span>
+                    </label>
+                    <label>
+                      <input checked={bureauMode === 'manual'} name="bureau-mode" onChange={() => setBureauMode('manual')} type="radio" />
+                      <span>Tulis manual</span>
+                    </label>
+                  </div>
+                  {bureauMode === 'master' && (
+                    <>
+                      <SearchableSelect
+                        id="application-profile-bureau"
+                        onChange={setProfileBureauId}
+                        options={departmentBureaus.map((bureau) => ({ value: String(bureau.id), label: bureau.name }))}
+                        placeholder="Pilih biro / bengkel asal"
+                        required
+                        value={profileBureauId}
+                      />
+                      <small className="application-form-hint">Hanya biro / bengkel di bawah {profile.department_name}. Akan disimpan di profil Anda, jadi tidak perlu diisi lagi.</small>
+                    </>
+                  )}
+                  {bureauMode === 'manual' && (
+                    <>
+                      <input
+                        autoComplete="off"
+                        maxLength={80}
+                        onChange={(event) => setManualBureau(event.target.value)}
+                        placeholder="Contoh: Biro Perancangan Kapal"
+                        required
+                        value={manualBureau}
+                      />
+                      <small className="application-form-hint">Hanya dipakai untuk lamaran ini. Tulisan manual tidak masuk ke master data dan tidak disimpan di profil.</small>
+                    </>
+                  )}
+                </fieldset>
               )}
               {!hasEducation && (
               <label htmlFor="application-education-level">

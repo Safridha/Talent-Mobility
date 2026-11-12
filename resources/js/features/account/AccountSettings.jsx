@@ -92,6 +92,7 @@ export function AccountSettingsPage({
     return () => URL.revokeObjectURL(url)
   }, [selectedPhoto])
 
+  // Picking a photo uploads it right away (after resizing); the preview shows while it saves.
   async function choosePhoto(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -99,18 +100,16 @@ export function AccountSettingsPage({
     setError('')
     setIsPreparingPhoto(true)
     try {
-      setSelectedPhoto(await prepareAvatar(file))
+      const prepared = await prepareAvatar(file)
+      setSelectedPhoto(prepared)
+      setIsPreparingPhoto(false)
+      await uploadPhoto(prepared)
     } catch (photoError) {
       setSelectedPhoto(null)
       setError(photoError.message)
     } finally {
       setIsPreparingPhoto(false)
     }
-  }
-
-  function cancelPhoto() {
-    setSelectedPhoto(null)
-    setError('')
   }
 
   async function saveProfile(event) {
@@ -149,24 +148,23 @@ export function AccountSettingsPage({
     }
   }
 
-  async function savePhoto() {
-    if (!selectedPhoto) return
+  async function uploadPhoto(file) {
     setError('')
     setNotice('')
     setIsSavingPhoto(true)
     try {
       const formData = new FormData()
-      formData.append('photo', selectedPhoto)
+      formData.append('photo', file)
       await apiRequest('/account/avatar', {
         method: 'POST',
         body: formData,
       })
-      setSelectedPhoto(null)
       onAvatarChanged()
       setNotice('Foto profil berhasil diperbarui.')
     } catch (requestError) {
       setError(requestError.message)
     } finally {
+      setSelectedPhoto(null)
       setIsSavingPhoto(false)
     }
   }
@@ -246,10 +244,10 @@ export function AccountSettingsPage({
             <section className="account-settings-photo">
               {photoPreview
                 ? <img alt="Pratinjau foto profil" className="account-avatar account-settings-avatar" src={photoPreview} />
-                : <AccountAvatar alt="Foto profil" avatarUrl={avatarUrl} className="account-settings-avatar" iconSize={40} />}
+                : <AccountAvatar alt="Foto profil" avatarUrl={avatarUrl} className="account-settings-avatar" iconSize={40} name={name} />}
               <div>
                 <strong>Foto profil</strong>
-                <span>JPG, PNG, atau WebP. Ukuran foto disesuaikan otomatis.</span>
+                <span>JPG, PNG, atau WebP. Ukuran disesuaikan otomatis dan foto langsung tersimpan.</span>
                 <input
                   accept="image/jpeg,image/png,image/webp"
                   aria-label="Pilih foto profil"
@@ -259,19 +257,9 @@ export function AccountSettingsPage({
                   type="file"
                 />
                 <div className="account-settings-actions">
-                  {selectedPhoto ? (
-                    <>
-                      <button className="admin-small-button primary" disabled={isSavingPhoto} onClick={() => void savePhoto()} type="button">
-                        <Camera size={15} /> {isSavingPhoto ? 'Menyimpan...' : 'Simpan foto'}
-                      </button>
-                      <button className="admin-small-button" disabled={isSavingPhoto} onClick={cancelPhoto} type="button">
-                        <X size={15} /> Batal
-                      </button>
-                    </>
-                  ) : (
                     <>
                       <button className="admin-small-button" disabled={isPreparingPhoto || isSavingPhoto} onClick={() => photoInput.current?.click()} type="button">
-                        <Camera size={15} /> {isPreparingPhoto ? 'Memproses...' : avatarUrl ? 'Ganti foto' : 'Pilih foto'}
+                        <Camera size={15} /> {isPreparingPhoto ? 'Memproses...' : isSavingPhoto ? 'Menyimpan...' : avatarUrl ? 'Ganti foto' : 'Pilih foto'}
                       </button>
                       {avatarUrl && (
                         <button className="admin-small-button danger" disabled={isSavingPhoto} onClick={() => void removePhoto()} type="button">
@@ -279,7 +267,6 @@ export function AccountSettingsPage({
                         </button>
                       )}
                     </>
-                  )}
                 </div>
               </div>
             </section>
