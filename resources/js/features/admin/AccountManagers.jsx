@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Database, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, Shield, Users } from 'lucide-react'
+import { Database, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, Shield, Trash2, Users } from 'lucide-react'
 import { apiRequest } from '../../api'
 import PasswordRequirements from '../../components/PasswordRequirements'
 import { meetsPasswordRequirements } from '../../components/passwordValidation'
@@ -96,6 +96,8 @@ export function AccountListManager({ accountType, currentAdminId, organization }
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [pendingPermanentDelete, setPendingPermanentDelete] = useState(null)
+  const [isPermanentDeleting, setIsPermanentDeleting] = useState(false)
   const [updatingStatusId, setUpdatingStatusId] = useState(null)
   const [pendingReset, setPendingReset] = useState(null)
   const [isResetting, setIsResetting] = useState(false)
@@ -308,6 +310,22 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       setError(requestError.message)
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  async function permanentlyDeleteAccount() {
+    if (!pendingPermanentDelete) return
+    setError('')
+    setIsPermanentDeleting(true)
+    try {
+      const response = await apiRequest(`/admin/accounts/${pendingPermanentDelete.id}/permanent`, { method: 'DELETE' })
+      setPendingPermanentDelete(null)
+      setNotice(response.message)
+      refreshAccounts()
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsPermanentDeleting(false)
     }
   }
 
@@ -694,6 +712,17 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                             <KeyRound aria-hidden="true" size={15} />
                           </button>
                         )}
+                        {!isAdminAccount && (
+                          <button
+                            aria-label={`Hapus akun ${account.name} secara permanen`}
+                            className="admin-small-button admin-icon-button danger"
+                            onClick={() => { setError(''); setPendingPermanentDelete(account) }}
+                            title="Hapus akun permanen"
+                            type="button"
+                          >
+                            <Trash2 aria-hidden="true" size={15} />
+                          </button>
+                        )}
                       </>}
                   </td>
                 </tr>
@@ -737,6 +766,24 @@ export function AccountListManager({ accountType, currentAdminId, organization }
           onConfirm={() => void resetPassword()}
           title="Reset kata sandi ke default?"
           tone="primary"
+        />
+      )}
+      {pendingPermanentDelete && (
+        <ConfirmDialog
+          busyLabel="Menghapus..."
+          confirmLabel="Ya, hapus permanen"
+          details={[
+            `Seluruh lamaran (${pendingPermanentDelete.applications_count ?? 0}), dokumen, notifikasi, dan sesi pelamar ikut terhapus dan tidak dapat dipulihkan.`,
+            'Pelamar tidak dapat masuk lagi dan jumlah lamarannya tidak lagi dihitung dalam batas lamaran.',
+            'Jika hanya ingin menutup akses sementara dengan riwayat tetap tersimpan, gunakan tombol Nonaktifkan.',
+            'Tindakan ini dicatat di audit log.',
+          ]}
+          error={error}
+          isBusy={isPermanentDeleting}
+          message={`Akun ${pendingPermanentDelete.name}${pendingPermanentDelete.employee_number ? ` (NIP ${pendingPermanentDelete.employee_number})` : ''} akan dihapus permanen.`}
+          onCancel={() => { setPendingPermanentDelete(null); setError('') }}
+          onConfirm={() => void permanentlyDeleteAccount()}
+          title="Hapus akun pelamar permanen?"
         />
       )}
       {pendingDelete && (

@@ -916,6 +916,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             put(admin_update_account).delete(admin_deactivate_account),
         )
         .route(
+            "/api/admin/accounts/{id}/permanent",
+            delete(admin_delete_account),
+        )
+        .route(
             "/api/admin/accounts/{id}/reset-password",
             post(admin_reset_account_password),
         )

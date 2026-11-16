@@ -672,6 +672,56 @@ async fn set_applicant_account_status(
     Ok(())
 }
 
+/// Permanently removes an applicant account together with its applications, documents,
+/// notifications, sessions and push subscriptions (all `ON DELETE CASCADE`).
+pub(super) async fn admin_delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = authorized_operational_admin(&state.pool, &headers).await?;
+    admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    let (name, email, employee_number) = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+        "SELECT name, email, employee_number FROM applicants WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Akun tidak ditemukan."))?;
+    let applications_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM applications WHERE applicant_id = $1")
+            .bind(id)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(internal_error)?;
+    sqlx::query("DELETE FROM applicants WHERE id = $1")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_error)?;
+    record_admin_audit(
+        &mut transaction,
+        admin.id,
+        "delete",
+        "applicant_account",
+        &id.to_string(),
+        json!({
+            "name": name,
+            "email": email,
+            "employee_number": employee_number,
+            "applications_deleted": applications_count,
+        }),
+    )
+    .await
+    .map_err(internal_error)?;
+    transaction.commit().await.map_err(internal_error)?;
+    Ok(Json(
+        json!({ "message": "Akun pelamar beserta seluruh lamaran dan dokumennya dihapus permanen." }),
+    ))
+}
+
 pub(super) async fn admin_list_admin_accounts(
     State(state): State<AppState>,
     headers: HeaderMap,
