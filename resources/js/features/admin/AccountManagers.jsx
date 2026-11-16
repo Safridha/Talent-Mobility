@@ -24,18 +24,18 @@ const adminPermissionGroups = [
   {
     title: 'Lamaran',
     permissions: [
-      ['applications.view', 'Lihat data pelamar'],
-      ['applications.change_status', 'Ubah tahapan seleksi'],
-      ['applications.download_documents', 'Unduh dokumen pelamar'],
+      ['applications.view', 'Lihat data pelamar', 'Melihat daftar dan detail lamaran'],
+      ['applications.change_status', 'Ubah tahapan seleksi', 'Memproses lamaran ke tahap berikutnya'],
+      ['applications.download_documents', 'Unduh dokumen pelamar', 'Mengunduh berkas yang diunggah pelamar'],
     ],
   },
   {
-    title: 'Kelola akun pelamar',
+    title: 'Akun pelamar',
     permissions: [
-      ['applicant_accounts.manage', 'Kelola akun pelamar (lihat, buat, impor, aktif/nonaktif, master data)'],
-      ['applicant_accounts.edit', 'Edit data akun pelamar'],
-      ['applicant_accounts.reset_password', 'Reset kata sandi pelamar'],
-      ['applicant_accounts.delete', 'Hapus akun pelamar permanen'],
+      ['applicant_accounts.manage', 'Akses kelola akun pelamar', 'Lihat daftar, buat, impor, aktif/nonaktif, dan master data'],
+      ['applicant_accounts.edit', 'Edit data akun', 'Ubah nama, NIP, email, dan data kepegawaian'],
+      ['applicant_accounts.reset_password', 'Reset kata sandi', 'Kembalikan ke kata sandi awal pelamar'],
+      ['applicant_accounts.delete', 'Hapus akun permanen', 'Menghapus akun beserta seluruh lamaran dan dokumennya'],
     ],
   },
 ]
@@ -560,22 +560,43 @@ export function AccountListManager({
                     form.admin_role === 'admin'
                     || !permission.startsWith('applicant_accounts.')
                   ))
+                  const mainPermissions = availablePermissions.filter(([permission]) => !APPLICANT_ACCOUNT_SUB_PERMISSIONS.includes(permission))
+                  const subPermissions = availablePermissions.filter(([permission]) => APPLICANT_ACCOUNT_SUB_PERMISSIONS.includes(permission))
+                  const renderOption = ([permission, label, description]) => {
+                    const isOn = form.permissions.includes(permission)
+                    const isDanger = permission === 'applicant_accounts.delete'
+                    return (
+                      <label
+                        className={`permission-option${isOn ? ' is-on' : ''}${isDanger ? ' is-danger' : ''}`}
+                        key={permission}
+                      >
+                        <input
+                          checked={isOn}
+                          className="permission-input"
+                          onChange={(event) => togglePermission(permission, event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span className="permission-text">
+                          <strong>{label}</strong>
+                          <small>{description}</small>
+                        </span>
+                        <span aria-hidden="true" className="permission-switch" />
+                      </label>
+                    )
+                  }
                   return availablePermissions.length ? (
                     <section className="account-permission-group" key={group.title}>
                       <h4>{group.title}</h4>
-                      {availablePermissions.map(([permission, label]) => (
-                        <label
-                          className={`account-permission-option${APPLICANT_ACCOUNT_SUB_PERMISSIONS.includes(permission) ? ' account-permission-sub' : ''}`}
-                          key={permission}
+                      {mainPermissions.map(renderOption)}
+                      {subPermissions.length > 0 && (
+                        <div
+                          aria-label="Tindakan yang diizinkan"
+                          className={`permission-sub-list${form.permissions.includes('applicant_accounts.manage') ? '' : ' is-muted'}`}
+                          role="group"
                         >
-                          <input
-                            checked={form.permissions.includes(permission)}
-                            onChange={(event) => togglePermission(permission, event.target.checked)}
-                            type="checkbox"
-                          />
-                          <span>{label}</span>
-                        </label>
-                      ))}
+                          {subPermissions.map(renderOption)}
+                        </div>
+                      )}
                     </section>
                   ) : null
                 })}

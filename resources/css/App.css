@@ -852,12 +852,29 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .account-manager-form .account-password-field button:hover { background: #f1f5f9; color: #334155; }
 .account-permissions { display: grid; grid-column: 1 / -1; gap: 12px; margin: 0; padding: 14px; border: 1px solid #dbe3ee; border-radius: 10px; }
 .account-permissions legend { padding: 0 5px; color: #334155; font-size: 13px; font-weight: 600; }
-.account-permission-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.account-permission-group { display: grid; align-content: start; gap: 8px; }
-.account-permission-group h4 { margin: 0; color: #475569; font-size: 12px; }
+.account-permission-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.account-permission-group { display: grid; align-content: start; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f8fbff; }
+.account-permission-group h4 { margin: 0 0 2px; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .account-permission-option { display: flex; align-items: center; gap: 8px; color: #334155; font-size: 12px; font-weight: 500; }
 .organization-form .account-permission-option input { width: 16px; min-height: 16px; margin: 0; padding: 0; accent-color: #2563eb; }
-.account-permission-option.account-permission-sub { margin-left: 22px; }
+.permission-option { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: white; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+.permission-option:hover { border-color: #93c5fd; box-shadow: 0 2px 8px #2563eb14; }
+.permission-option.is-on { border-color: #93c5fd; background: #eff6ff; }
+.permission-option.is-danger.is-on { border-color: #fca5a5; background: #fef2f2; }
+.permission-input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.permission-text { display: grid; gap: 2px; min-width: 0; }
+.permission-text strong { color: #1e293b; font-size: 13px; font-weight: 600; line-height: 1.3; }
+.permission-text small { color: #64748b; font-size: 11.5px; line-height: 1.4; }
+.permission-option.is-danger .permission-text strong { color: #b91c1c; }
+.permission-switch { position: relative; width: 36px; height: 20px; flex: none; border-radius: 20px; background: #cbd5e1; transition: background-color .18s ease; }
+.permission-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0f172a33; transition: transform .18s ease; }
+.permission-input:checked ~ .permission-switch { background: #2563eb; }
+.permission-option.is-danger .permission-input:checked ~ .permission-switch { background: #dc2626; }
+.permission-input:checked ~ .permission-switch::after { transform: translateX(16px); }
+.permission-input:focus-visible ~ .permission-switch { outline: 3px solid #bfdbfe; outline-offset: 2px; }
+.permission-sub-list { display: grid; gap: 8px; margin-left: 12px; padding-left: 14px; border-left: 2px solid #bfdbfe; transition: opacity .15s ease; }
+.permission-sub-list.is-muted { opacity: .65; border-left-color: #e2e8f0; }
+@media (prefers-reduced-motion: reduce) { .permission-option, .permission-switch, .permission-switch::after, .permission-sub-list { transition: none; } }
 .account-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 20px; border-bottom: 1px solid var(--line); color: #64748b; font-size: 12px; }
 .account-list-toolbar label { display: flex; min-width: min(320px, 100%); align-items: center; gap: 8px; color: #64748b; }
 .account-list-toolbar input { width: 100%; min-height: 38px; padding: 0 11px; border: 1px solid #d5deea; border-radius: 8px; color: #1e293b; }
