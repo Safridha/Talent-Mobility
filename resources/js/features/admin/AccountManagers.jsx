@@ -741,6 +741,8 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       )}
       {pendingDelete && (
         <ConfirmDialog
+          busyLabel="Menonaktifkan..."
+          confirmLabel="Nonaktifkan"
           error={error}
           isBusy={isDeleting}
           message={`Akun ${pendingDelete.email || pendingDelete.employee_number || pendingDelete.name} akan dinonaktifkan. Riwayat lamaran dan dokumen tetap tersimpan.`}
