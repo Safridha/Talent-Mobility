@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import JobCatalog from './features/applicant/JobCatalog'
-import FirstLoginPasswordChange from './features/auth/FirstLoginPasswordChange'
-import AdminDashboard from './features/admin/AdminDashboard'
 import { apiRequest } from './api'
+
+// The admin dashboard and the forced password-change screen are only needed by some visitors, so they
+// load as separate chunks and the public job catalog stays small.
+const AdminDashboard = lazy(() => import('./features/admin/AdminDashboard'))
+const FirstLoginPasswordChange = lazy(() => import('./features/auth/FirstLoginPasswordChange'))
 import NotFoundPage from './components/NotFoundPage'
 import SessionTransition from './components/SessionTransition'
 import { ADMIN_ROUTES, APPLICANT_ROUTES, GUEST_ROUTES } from './routes'
@@ -241,8 +244,10 @@ export default function App() {
 
   return (
     <>
-      {view}
-      {transition && <SessionTransition kind={transition.kind} leaving={transition.leaving} />}
+      <Suspense fallback={<div aria-busy="true" aria-live="polite" role="status" style={{ minHeight: '100vh' }} />}>
+        {view}
+      </Suspense>
+      {transition &&<SessionTransition kind={transition.kind} leaving={transition.leaving} />}
     </>
   )
 }

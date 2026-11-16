@@ -459,6 +459,7 @@ pub(super) async fn admin_reset_account_password(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let admin = authorized_operational_admin(&state.pool, &headers).await?;
     admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    admin.require_permission(APPLICANT_ACCOUNTS_RESET_PASSWORD)?;
     let password_hash = hash_password(default_applicant_password())?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let result = sqlx::query(
@@ -501,6 +502,11 @@ pub(super) async fn admin_update_account(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let admin = authorized_operational_admin(&state.pool, &headers).await?;
     admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    admin.require_permission(APPLICANT_ACCOUNTS_EDIT)?;
+    // The edit form can also set or reset the password; that needs its own grant.
+    if account.password.is_some() || account.reset_password {
+        admin.require_permission(APPLICANT_ACCOUNTS_RESET_PASSWORD)?;
+    }
     let name = account.name.trim();
     let email = normalize_optional_email(account.email.as_deref())?;
     if name.is_empty() || name.len() > 200 {
@@ -674,6 +680,7 @@ async fn set_applicant_account_status(
 
 /// Permanently removes an applicant account together with its applications, documents,
 /// notifications, sessions and push subscriptions (all `ON DELETE CASCADE`).
+/// Irreversible, so it needs its own grant (`applicant_accounts.delete`); Super Admin always has it.
 pub(super) async fn admin_delete_account(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -681,6 +688,7 @@ pub(super) async fn admin_delete_account(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let admin = authorized_operational_admin(&state.pool, &headers).await?;
     admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
+    admin.require_permission(APPLICANT_ACCOUNTS_DELETE)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let (name, email, employee_number) = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
         "SELECT name, email, employee_number FROM applicants WHERE id = $1 FOR UPDATE",

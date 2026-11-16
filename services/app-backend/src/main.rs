@@ -3390,6 +3390,280 @@ mod tests {
         assert!(super_admin.has_permission(APPLICANT_ACCOUNTS_MANAGE));
     }
 
+    /// Exercises every combination of the "Kelola akun pelamar" checklist end to end:
+    /// edit, reset password and permanent delete are independent grants on top of `manage`.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn applicant_account_checklist_controls_edit_reset_and_delete(pool: PgPool) {
+        fn cookie_headers(response_headers: &HeaderMap) -> HeaderMap {
+            let mut headers = HeaderMap::new();
+            let cookie = response_headers
+                .get(SET_COOKIE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap();
+            headers.insert(COOKIE, HeaderValue::from_str(cookie).unwrap());
+            headers
+        }
+        async fn login_as(state: &AppState, email: &str) -> HeaderMap {
+            let (headers, _) = admin_login(
+                State(state.clone()),
+                Json(AdminLoginRequest {
+                    email: email.to_owned(),
+                    password: "Admin!Pass123".to_owned(),
+                }),
+            )
+            .await
+            .unwrap();
+            cookie_headers(&headers)
+        }
+        async fn new_applicant(state: &AppState, nip: &str) -> i64 {
+            let hash = hash_password("Correct!Password123").unwrap();
+            sqlx::query_scalar::<_, i64>(
+                "INSERT INTO applicants (name, employee_number, password_hash, must_change_password) VALUES ($1, $2, $3, FALSE) RETURNING id",
+            )
+            .bind(format!("Pelamar {nip}"))
+            .bind(nip)
+            .bind(hash)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap()
+        }
+        async fn applicant_exists(state: &AppState, id: i64) -> bool {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM applicants WHERE id = $1")
+                .bind(id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap()
+                == 1
+        }
+        async fn must_change_password(state: &AppState, id: i64) -> bool {
+            sqlx::query_scalar::<_, bool>("SELECT must_change_password FROM applicants WHERE id = $1")
+                .bind(id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap()
+        }
+        fn update_request(
+            nip: &str,
+            name: &str,
+            reset_password: bool,
+            password: Option<&str>,
+        ) -> Json<AdminApplicantUpdateRequest> {
+            Json(AdminApplicantUpdateRequest {
+                profile: ApplicantProfileInput {
+                    employee_number: Some(nip.to_owned()),
+                    ..Default::default()
+                },
+                name: name.to_owned(),
+                email: None,
+                reset_password,
+                password: password.map(str::to_owned),
+            })
+        }
+        fn is_ok<T>(result: &Result<T, ApiError>) -> bool {
+            result.is_ok()
+        }
+        fn is_forbidden<T>(result: &Result<T, ApiError>) -> bool {
+            matches!(result, Err(ApiError::Forbidden))
+        }
+
+        let state = AppState {
+            pool,
+            push_service: None,
+        };
+        insert_bootstrap_admin(
+            &state.pool,
+            "Checklist Super Admin",
+            "checklist-super@example.com",
+            &hash_password("Admin!Pass123").unwrap(),
+        )
+        .await
+        .unwrap();
+        let super_headers = login_as(&state, "checklist-super@example.com").await;
+
+        let create_admin = |email: String, permissions: Vec<String>| {
+            let state = state.clone();
+            let super_headers = super_headers.clone();
+            async move {
+                admin_create_admin_account(
+                    State(state),
+                    super_headers,
+                    Json(AdminAccountCreateRequest {
+                        name: email.clone(),
+                        employee_number: None,
+                        email,
+                        password: "Admin!Pass123".to_owned(),
+                        admin_role: "admin".to_owned(),
+                        division_id: None,
+                        department_id: None,
+                        bureau_id: None,
+                        permissions: Some(permissions),
+                    }),
+                )
+                .await
+            }
+        };
+
+        // Sub-grants without the base "kelola akun pelamar" grant are rejected at creation time.
+        for sub in [
+            APPLICANT_ACCOUNTS_EDIT,
+            APPLICANT_ACCOUNTS_RESET_PASSWORD,
+            APPLICANT_ACCOUNTS_DELETE,
+        ] {
+            let result = create_admin(
+                format!("no-base-{}@example.com", sub.replace('.', "-").replace('_', "-")),
+                vec![APPLICATIONS_VIEW.to_owned(), sub.to_owned()],
+            )
+            .await;
+            assert!(
+                matches!(result, Err(ApiError::BadRequest(_))),
+                "{sub} without manage must be rejected"
+            );
+        }
+
+        // 2^3 combinations of the three sub-grants, always with the base grant.
+        for mask in 0u8..8 {
+            let can_edit = mask & 0b001 != 0;
+            let can_reset = mask & 0b010 != 0;
+            let can_delete = mask & 0b100 != 0;
+            let mut permissions = vec![
+                APPLICATIONS_VIEW.to_owned(),
+                APPLICANT_ACCOUNTS_MANAGE.to_owned(),
+            ];
+            if can_edit {
+                permissions.push(APPLICANT_ACCOUNTS_EDIT.to_owned());
+            }
+            if can_reset {
+                permissions.push(APPLICANT_ACCOUNTS_RESET_PASSWORD.to_owned());
+            }
+            if can_delete {
+                permissions.push(APPLICANT_ACCOUNTS_DELETE.to_owned());
+            }
+            let email = format!("operational-{mask}@example.com");
+            let _ = create_admin(email.clone(), permissions)
+                .await
+                .unwrap_or_else(|_| panic!("admin for mask {mask:03b} should be created"));
+            let headers = login_as(&state, &email).await;
+            let label = format!("edit={can_edit} reset={can_reset} delete={can_delete}");
+
+            let nip = |n: u8| format!("77{mask}{n}00");
+
+            // Edit data (no password change).
+            let target = new_applicant(&state, &nip(1)).await;
+            let result = admin_update_account(
+                State(state.clone()),
+                headers.clone(),
+                Path(target),
+                update_request(&nip(1), "Nama Baru", false, None),
+            )
+            .await;
+            assert_eq!(is_ok(&result), can_edit, "edit [{label}]");
+            assert_eq!(is_forbidden(&result), !can_edit, "edit forbidden [{label}]");
+
+            // Edit form that also changes the password needs the reset grant as well.
+            let result = admin_update_account(
+                State(state.clone()),
+                headers.clone(),
+                Path(target),
+                update_request(&nip(1), "Nama Baru", false, Some("Newpass123")),
+            )
+            .await;
+            assert_eq!(is_ok(&result), can_edit && can_reset, "edit+set password [{label}]");
+            let result = admin_update_account(
+                State(state.clone()),
+                headers.clone(),
+                Path(target),
+                update_request(&nip(1), "Nama Baru", true, None),
+            )
+            .await;
+            assert_eq!(is_ok(&result), can_edit && can_reset, "edit+reset checkbox [{label}]");
+            assert_eq!(
+                is_forbidden(&result),
+                !(can_edit && can_reset),
+                "edit+reset forbidden [{label}]"
+            );
+
+            // Standalone reset password.
+            let target = new_applicant(&state, &nip(2)).await;
+            let result =
+                admin_reset_account_password(State(state.clone()), headers.clone(), Path(target))
+                    .await;
+            assert_eq!(is_ok(&result), can_reset, "reset [{label}]");
+            assert_eq!(is_forbidden(&result), !can_reset, "reset forbidden [{label}]");
+            assert_eq!(must_change_password(&state, target).await, can_reset, "reset effect [{label}]");
+
+            // Activate / deactivate stays on the base grant for every combination.
+            let result = admin_set_account_status(
+                State(state.clone()),
+                headers.clone(),
+                Path(target),
+                Json(ApplicantAccountStatusRequest { is_active: false }),
+            )
+            .await;
+            assert!(is_ok(&result), "status toggle only needs manage [{label}]");
+
+            // Permanent delete.
+            let target = new_applicant(&state, &nip(3)).await;
+            let result =
+                admin_delete_account(State(state.clone()), headers.clone(), Path(target)).await;
+            assert_eq!(is_ok(&result), can_delete, "delete [{label}]");
+            assert_eq!(is_forbidden(&result), !can_delete, "delete forbidden [{label}]");
+            assert_eq!(
+                applicant_exists(&state, target).await,
+                !can_delete,
+                "delete effect [{label}]"
+            );
+        }
+
+        // An operational admin without the base grant cannot do any of it.
+        let _ = create_admin(
+            "no-manage@example.com".to_owned(),
+            vec![APPLICATIONS_VIEW.to_owned()],
+        )
+        .await
+        .unwrap();
+        let headers = login_as(&state, "no-manage@example.com").await;
+        let target = new_applicant(&state, "7790000").await;
+        assert!(is_forbidden(
+            &admin_update_account(
+                State(state.clone()),
+                headers.clone(),
+                Path(target),
+                update_request("7790000", "X", false, None),
+            )
+            .await
+        ));
+        assert!(is_forbidden(
+            &admin_reset_account_password(State(state.clone()), headers.clone(), Path(target)).await
+        ));
+        assert!(is_forbidden(
+            &admin_delete_account(State(state.clone()), headers.clone(), Path(target)).await
+        ));
+        assert!(applicant_exists(&state, target).await);
+
+        // Super Admin always has every action regardless of the checklist.
+        assert!(is_ok(
+            &admin_update_account(
+                State(state.clone()),
+                super_headers.clone(),
+                Path(target),
+                update_request("7790000", "Oleh Super", true, None),
+            )
+            .await
+        ));
+        assert!(is_ok(
+            &admin_reset_account_password(State(state.clone()), super_headers.clone(), Path(target))
+                .await
+        ));
+        assert!(is_ok(
+            &admin_delete_account(State(state.clone()), super_headers.clone(), Path(target)).await
+        ));
+        assert!(!applicant_exists(&state, target).await);
+    }
+
     #[test]
     fn application_public_ids_are_ulids() {
         let id = Ulid::new();

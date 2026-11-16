@@ -30,9 +30,12 @@ const adminPermissionGroups = [
     ],
   },
   {
-    title: 'Pengaturan',
+    title: 'Kelola akun pelamar',
     permissions: [
-      ['applicant_accounts.manage', 'Kelola akun pelamar'],
+      ['applicant_accounts.manage', 'Kelola akun pelamar (lihat, buat, impor, aktif/nonaktif, master data)'],
+      ['applicant_accounts.edit', 'Edit data akun pelamar'],
+      ['applicant_accounts.reset_password', 'Reset kata sandi pelamar'],
+      ['applicant_accounts.delete', 'Hapus akun pelamar permanen'],
     ],
   },
 ]
@@ -42,10 +45,19 @@ const APPLICATION_PERMISSIONS = [
   'applications.change_status',
   'applications.download_documents',
 ]
-const ADMIN_PERMISSIONS = [...APPLICATION_PERMISSIONS, 'applicant_accounts.manage']
+const APPLICANT_ACCOUNT_PERMISSIONS = [
+  'applicant_accounts.manage',
+  'applicant_accounts.edit',
+  'applicant_accounts.reset_password',
+  'applicant_accounts.delete',
+]
+// Sub-grants only make sense (and are only accepted by the API) together with the base grant.
+const APPLICANT_ACCOUNT_SUB_PERMISSIONS = APPLICANT_ACCOUNT_PERMISSIONS.slice(1)
+const ADMIN_PERMISSIONS = [...APPLICATION_PERMISSIONS, ...APPLICANT_ACCOUNT_PERMISSIONS]
 const ACTIVE_ADMIN_PERMISSION_KEYS = new Set(ADMIN_PERMISSIONS)
 const defaultAdminPermissions = {
-  admin: ADMIN_PERMISSIONS,
+  // Same as the server defaults: everything except the irreversible permanent delete.
+  admin: ADMIN_PERMISSIONS.filter((permission) => permission !== 'applicant_accounts.delete'),
   division_head: APPLICATION_PERMISSIONS,
   department_head: APPLICATION_PERMISSIONS,
   super_admin: [],
@@ -73,7 +85,14 @@ function emptyAccountForm() {
   }
 }
 
-export function AccountListManager({ accountType, currentAdminId, organization }) {
+export function AccountListManager({
+  accountType,
+  currentAdminId,
+  organization,
+  canEdit = false,
+  canResetPassword = false,
+  canPermanentlyDelete = false,
+}) {
   const isAdminAccount = accountType === 'admin'
   const accountsPath = isAdminAccount ? '/admin/admin-accounts' : '/admin/accounts'
   const accountKind = isAdminAccount ? 'admin' : 'pelamar'
@@ -245,8 +264,12 @@ export function AccountListManager({ accountType, currentAdminId, organization }
       if (checked) {
         permissions.add(permission)
         if (permission.startsWith('applications.') && permission !== 'applications.view') permissions.add('applications.view')
+        if (APPLICANT_ACCOUNT_SUB_PERMISSIONS.includes(permission)) permissions.add('applicant_accounts.manage')
       } else {
         permissions.delete(permission)
+        if (permission === 'applicant_accounts.manage') {
+          for (const key of APPLICANT_ACCOUNT_SUB_PERMISSIONS) permissions.delete(key)
+        }
         if (permission === 'applications.view') {
           for (const key of ['applications.change_status', 'applications.download_documents']) permissions.delete(key)
         }
@@ -467,7 +490,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
         <PasswordRequirements confirmation={form.passwordConfirmation} password={form.password} />
       )}
         </>
-      ) : editingId ? (
+      ) : editingId && canResetPassword ? (
         <label className="account-permission-option">
           <input checked={form.reset_password} onChange={(event) => setForm({ ...form, reset_password: event.target.checked })} type="checkbox" />
           <span>Reset kata sandi ke kata sandi awal. Pelamar wajib menggantinya saat masuk berikutnya.</span>
@@ -535,13 +558,16 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                 {adminPermissionGroups.map((group) => {
                   const availablePermissions = group.permissions.filter(([permission]) => (
                     form.admin_role === 'admin'
-                    || permission !== 'applicant_accounts.manage'
+                    || !permission.startsWith('applicant_accounts.')
                   ))
                   return availablePermissions.length ? (
                     <section className="account-permission-group" key={group.title}>
                       <h4>{group.title}</h4>
                       {availablePermissions.map(([permission, label]) => (
-                        <label className="account-permission-option" key={permission}>
+                        <label
+                          className={`account-permission-option${APPLICANT_ACCOUNT_SUB_PERMISSIONS.includes(permission) ? ' account-permission-sub' : ''}`}
+                          key={permission}
+                        >
                           <input
                             checked={form.permissions.includes(permission)}
                             onChange={(event) => togglePermission(permission, event.target.checked)}
@@ -700,8 +726,10 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                     {isCurrentAdmin
                       ? <span className="admin-table-subtext">Akun admin Anda</span>
                       : <>
-                        <button className="admin-small-button" onClick={() => editAccount(account)} type="button">Edit</button>
-                        {!isAdminAccount && (
+                        {(isAdminAccount || canEdit) && (
+                          <button className="admin-small-button" onClick={() => editAccount(account)} type="button">Edit</button>
+                        )}
+                        {!isAdminAccount && canResetPassword && (
                           <button
                             aria-label={`Reset kata sandi ${account.name} ke default`}
                             className="admin-small-button admin-icon-button"
@@ -712,7 +740,7 @@ export function AccountListManager({ accountType, currentAdminId, organization }
                             <KeyRound aria-hidden="true" size={15} />
                           </button>
                         )}
-                        {!isAdminAccount && (
+                        {!isAdminAccount && canPermanentlyDelete && (
                           <button
                             aria-label={`Hapus akun ${account.name} secara permanen`}
                             className="admin-small-button admin-icon-button danger"
@@ -804,6 +832,9 @@ export function AccountListManager({ accountType, currentAdminId, organization }
 
 export function AccountManager({ session, organization }) {
   const canManageAdminAccounts = session.admin.admin_role === 'super_admin'
+  const grantedPermissions = new Set(session.admin.permissions || [])
+  // Super Admin has every action; other admins only what their checklist grants.
+  const hasPermission = (permission) => canManageAdminAccounts || grantedPermissions.has(permission)
   const [accountType, setAccountType] = useState(canManageAdminAccounts ? 'admin' : 'applicant')
   return (
     <section className="account-management-page">
@@ -843,6 +874,9 @@ export function AccountManager({ session, organization }) {
       ) : (
         <AccountListManager
           accountType={accountType}
+          canEdit={hasPermission('applicant_accounts.edit')}
+          canPermanentlyDelete={hasPermission('applicant_accounts.delete')}
+          canResetPassword={hasPermission('applicant_accounts.reset_password')}
           currentAdminId={session.admin.id}
           key={accountType}
           organization={organization}
