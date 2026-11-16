@@ -647,13 +647,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .admin-dashboard-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .admin-summary-card, .admin-table-panel { overflow: hidden; border: 1px solid var(--line); border-top: 3px solid #2563eb; border-radius: 15px; background: white; box-shadow: 0 4px 14px #0f172a0a; }
 .admin-summary-card { display: grid; min-height: 128px; align-content: space-between; justify-items: center; gap: 8px; padding: 16px 18px; color: #334155; text-align: center; }
-.admin-summary-total { border-color: #bfdbfe; border-top-color: #2563eb; background: #eff6ff; }
+.admin-summary-total { border-color: #cbd5e1; border-top-color: #334155; background: #f1f5f9; }
 .admin-summary-total > span, .admin-summary-status > span { font-size: 13px; font-weight: 700; }
 .admin-summary-total > strong, .admin-summary-status > strong { color: #172554; font-size: 30px; line-height: 1; }
+.admin-summary-total > span { color: #334155; }
+.admin-summary-total > strong { color: #0f172a; }
 .admin-summary-card > small { color: #64748b; font-size: 11px; }
 .admin-summary-status { width: 100%; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease; }
 .admin-summary-status:hover { transform: translateY(-2px); box-shadow: 0 8px 18px #0f172a12; }
-.admin-summary-status.status-submitted { border-color: #bfdbfe; border-top-color: #2563eb; background: #eff6ff; }
+.admin-summary-status.status-submitted { border-color: #bae6fd; border-top-color: #0284c7; background: #f0f9ff; }
+.admin-summary-status.status-submitted > span { color: #0369a1; }
+.admin-summary-status.status-submitted > strong { color: #0369a1; }
+.admin-summary-status.status-screening > span { color: #6d28d9; }
+.admin-summary-status.status-interview > span { color: #b45309; }
+.admin-summary-status.status-accepted > span { color: #047857; }
+.admin-summary-status.status-rejected > span { color: #b91c1c; }
 .admin-summary-status.status-screening { border-color: #c4b5fd; border-top-color: #7c3aed; background: #f5f3ff; }
 .admin-summary-status.status-interview { border-color: #fde68a; border-top-color: #d97706; background: #fffbeb; }
 .admin-summary-status.status-accepted { border-color: #a7f3d0; border-top-color: #059669; background: #ecfdf5; }
