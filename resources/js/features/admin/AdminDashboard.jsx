@@ -481,7 +481,11 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                       return (
                         <tr key={application.id}>
                           <td className="position-code">{registrationId}<span className="admin-table-subtext">{createdAt.toLocaleString('id-ID')}</span></td>
-                          <td className="position-name">{application.applicant_name}<span className="admin-table-subtext">NIP: {application.employee_number || '-'} · {application.applicant_email}</span></td>
+                          <td className="position-name">
+                            {application.applicant_name}
+                            <span className="admin-table-subtext">NIP: {application.employee_number || '-'}</span>
+                            <span className="admin-table-subtext">{application.applicant_email}</span>
+                          </td>
                           <td>{application.origin_division || application.current_unit || '-'}<span className="admin-table-subtext">{application.origin_unit || application.current_position || ''}</span></td>
                           <td className="position-name">{application.target_label || application.job_title}{application.job_id && <span className="admin-table-subtext">Riwayat lowongan lama</span>}</td>
                           <td>{application.education_level || '-'}<span className="admin-table-subtext">{application.study_field || ''}</span></td>
