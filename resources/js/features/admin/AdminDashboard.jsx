@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Building2, Database, FileText, Menu, Shield, Users, X } from 'lucide-react'
+import { Bell, Building2, Database, Eye, FileText, Menu, Shield, Users, X } from 'lucide-react'
 import { apiDownload, apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -554,7 +554,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                           <td><span className={`status-pill status-${application.status}`}>{applicationStatusOptions.find((status) => status.value === application.status)?.label || application.status}</span></td>
                           <td>
                             <div className="application-row-actions">
-                              <button className="admin-small-button application-review-button" onClick={() => void openApplication(application.id)} type="button">Tinjau</button>
+                              <button className="admin-small-button application-review-button" onClick={() => void openApplication(application.id)} type="button"><Eye aria-hidden="true" size={15} />Tinjau</button>
                               <ApplicationDownloadMenu
                                 application={application}
                                 canDownloadDocuments={canDownloadApplicationDocuments}

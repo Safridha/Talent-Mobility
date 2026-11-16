@@ -1368,3 +1368,56 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .application-download-heading { margin: 6px 10px 2px; color: #64748b; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .application-download-note { margin: 4px 10px 8px; color: #64748b; font-size: 12px; }
 @media (max-width: 700px) { .application-download-menu { width: min(280px, calc(100vw - 16px)) !important; } }
+
+/* Soft professional blue + modern badges.
+   One calm denim/cornflower blue replaces the default saturated blue for badges and the
+   recently added action controls. Change the --soft-blue-* tokens to retune everything below. */
+:root {
+  --soft-blue-50: #f4f7fd;
+  --soft-blue-100: #e7edfa;
+  --soft-blue-200: #d0dbf3;
+  --soft-blue-400: #7d9be0;
+  --soft-blue-500: #5f7fd0;
+  --soft-blue-600: #4a67b8;
+  --soft-blue-700: #3c5499;
+}
+.status-pill { gap: 6px; padding: 4px 11px; font-size: 11.5px; font-weight: 600; letter-spacing: .01em; line-height: 1.4; white-space: nowrap; }
+.status-pill.status-submitted { border-color: var(--soft-blue-200); background: var(--soft-blue-100); color: var(--soft-blue-700); }
+.status-pill.status-screening { border-color: #ddd4f5; background: #f1edfc; color: #5b3fa8; }
+.status-pill.status-interview, .status-pill.draft { border-color: #f4dfae; background: #fdf3de; color: #94590a; }
+.status-pill.status-accepted, .status-pill.open { border-color: #c1e4d1; background: #e4f5ec; color: #1f764b; }
+.status-pill.status-rejected { border-color: #f2cbcf; background: #fcecee; color: #a02f3a; }
+.status-pill.closed { border-color: #d9dfe7; background: #eef1f5; color: #566274; }
+
+.account-status { padding: 0 10px; font-weight: 600; }
+.account-status.active { background: #e4f5ec; color: #1f764b; }
+.account-status.inactive { background: #eef1f5; color: #566274; }
+
+.hero-badge { border-color: #35497f; background: #1e2e55; color: #bccdf3; font-weight: 600; letter-spacing: .01em; }
+.hero-badge > span { background: var(--soft-blue-500); }
+
+.admin-summary-status.status-submitted { border-color: var(--soft-blue-200); border-top-color: var(--soft-blue-500); background: var(--soft-blue-50); }
+.admin-summary-status.status-submitted > span, .admin-summary-status.status-submitted > strong { color: var(--soft-blue-700); }
+
+.admin-small-button { border-color: var(--soft-blue-200); background: var(--soft-blue-50); color: var(--soft-blue-700); }
+.admin-small-button:hover { border-color: var(--soft-blue-400); background: var(--soft-blue-100); color: var(--soft-blue-700); }
+.application-row-actions .application-review-button { border-color: var(--soft-blue-600); background: var(--soft-blue-600); color: white; }
+.application-row-actions .application-review-button:hover { border-color: var(--soft-blue-700); background: var(--soft-blue-700); color: white; }
+.application-download-item:hover, .application-download-item:focus-visible { background: var(--soft-blue-50); color: var(--soft-blue-700); }
+.application-download-item:hover svg, .application-download-item:focus-visible svg { color: var(--soft-blue-700); }
+.permission-option:hover { border-color: var(--soft-blue-400); box-shadow: 0 2px 8px #4a67b81a; }
+.permission-option.is-on { border-color: var(--soft-blue-200); background: var(--soft-blue-50); }
+.permission-input:checked ~ .permission-switch { background: var(--soft-blue-600); }
+.permission-sub-list { border-left-color: var(--soft-blue-200); }
+
+/* Row action buttons (Tinjau / Unduh): rounder, lighter type, soft depth and clear focus. */
+.application-row-actions { gap: 8px; }
+.application-row-actions .admin-small-button { min-height: 38px; padding: 0 14px; border-radius: 10px; font-size: 12.5px; font-weight: 600; letter-spacing: .005em; transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.application-row-actions .admin-small-button:active:not(:disabled) { transform: scale(.97); }
+.application-row-actions .admin-small-button:focus-visible { outline: 3px solid var(--soft-blue-200); outline-offset: 2px; }
+.application-row-actions .application-review-button { gap: 7px; border-color: transparent; background: var(--soft-blue-600); box-shadow: 0 1px 2px #3c549933, 0 4px 10px -3px #4a67b866; }
+.application-row-actions .application-review-button:hover { border-color: transparent; background: var(--soft-blue-700); box-shadow: 0 2px 4px #3c549938, 0 8px 16px -4px #4a67b873; transform: translateY(-1px); }
+.application-row-actions .application-download-trigger { gap: 7px; border-color: var(--soft-blue-200); background: white; color: var(--soft-blue-700); box-shadow: 0 1px 2px #0f172a0d; }
+.application-row-actions .application-download-trigger:hover:not(:disabled), .application-row-actions .application-download-trigger[aria-expanded="true"] { border-color: var(--soft-blue-400); background: var(--soft-blue-50); box-shadow: 0 2px 6px #4a67b81f; }
+.application-download-chevron { transition: transform .18s ease; }
+@media (prefers-reduced-motion: reduce) { .application-row-actions .admin-small-button, .application-download-chevron { transition: none; } .application-row-actions .application-review-button:hover { transform: none; } }
