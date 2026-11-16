@@ -712,7 +712,7 @@ export function AccountListManager({
                 const isLastActiveAdmin = isAdminAccount && account.is_active && account.admin_role === 'super_admin' && activeSuperAdminCount <= 1
                 return (
                 <tr key={account.id}>
-                  <td className="position-name">{account.name}<span className="admin-table-subtext">{isAdminAccount && account.employee_number ? `NIP ${account.employee_number} · ` : ''}{account.email || 'Tanpa email'}</span></td>
+                  <td className="position-name">{account.name}{isAdminAccount && account.employee_number && <span className="admin-table-subtext">NIP {account.employee_number}</span>}<span className="admin-table-subtext">{account.email || 'Tanpa email'}</span></td>
                   {isAdminAccount && <td>
                     {adminRoles.find((role) => role.value === account.admin_role)?.label || account.admin_role}
                     <span className="admin-table-subtext">{account.scope_label}</span>
