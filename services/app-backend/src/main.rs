@@ -972,7 +972,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route(
             "/api/admin/notifications/read",
-            delete(admin_clear_read_notifications),
+            patch(admin_mark_all_notifications_read).delete(admin_clear_read_notifications),
         )
         .route("/api/admin/applications/{id}", get(admin_get_application))
         .route(
@@ -1001,7 +1001,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route(
             "/api/notifications/read",
-            delete(clear_read_applicant_notifications),
+            patch(mark_all_applicant_notifications_read).delete(clear_read_applicant_notifications),
         )
         .route_layer(middleware::from_fn(prevent_api_caching))
         // Vite emits content-hashed file names, so built assets can be cached for a year.
@@ -2917,6 +2917,52 @@ mod tests {
         assert_eq!(applicant_notifications.data.len(), 1);
         assert_eq!(applicant_notifications.unread_count, 1);
         assert_eq!(applicant_notifications.read_count, 0);
+
+        // "Tandai semua terbaca": everything unread becomes read in one call, nothing is deleted,
+        // and repeating it is a harmless no-op.
+        let admin_before = admin_list_notifications(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert!(admin_before.unread_count > 0);
+        let marked = admin_mark_all_notifications_read(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(marked["updated_count"], admin_before.unread_count);
+        let admin_after = admin_list_notifications(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(admin_after.unread_count, 0);
+        assert_eq!(admin_after.read_count, admin_before.read_count + admin_before.unread_count);
+        assert_eq!(admin_after.data.len(), admin_before.data.len());
+        let marked_again =
+            admin_mark_all_notifications_read(State(state.clone()), super_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        assert_eq!(marked_again["updated_count"], 0);
+
+        let applicant_before =
+            list_applicant_notifications(State(state.clone()), applicant_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        assert!(applicant_before.unread_count > 0);
+        let marked =
+            mark_all_applicant_notifications_read(State(state.clone()), applicant_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        assert_eq!(marked["updated_count"], applicant_before.unread_count);
+        let applicant_after =
+            list_applicant_notifications(State(state.clone()), applicant_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        assert_eq!(applicant_after.unread_count, 0);
+        assert_eq!(applicant_after.data.len(), applicant_before.data.len());
         let audit_response = admin_list_audit_events(
             State(state.clone()),
             super_headers.clone(),

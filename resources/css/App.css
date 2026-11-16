@@ -1421,3 +1421,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .application-row-actions .application-download-trigger:hover:not(:disabled), .application-row-actions .application-download-trigger[aria-expanded="true"] { border-color: var(--soft-blue-400); background: var(--soft-blue-50); box-shadow: 0 2px 6px #4a67b81f; }
 .application-download-chevron { transition: transform .18s ease; }
 @media (prefers-reduced-motion: reduce) { .application-row-actions .admin-small-button, .application-download-chevron { transition: none; } .application-row-actions .application-review-button:hover { transform: none; } }
+
+/* Notifications: per-item "mark as read" X and the "mark all as read" row */
+.notification-clear-button { display: inline-flex; align-items: center; gap: 6px; }
+.notification-dismiss { position: absolute; top: 10px; right: 12px; display: grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 50%; background: transparent; color: #94a3b8; transition: background-color .15s ease, color .15s ease, border-color .15s ease; }
+.notification-dismiss:hover:not(:disabled), .notification-dismiss:focus-visible { border-color: var(--soft-blue-200); background: white; color: var(--soft-blue-700); }
+.notification-dismiss:disabled { cursor: wait; opacity: .5; }
+.admin-notification-row { position: relative; border-bottom: 1px solid #edf1f6; background: white; }
+.admin-notification-row.unread { background: var(--soft-blue-50); }
+.admin-notification-row .admin-notification-item { border-bottom: 0; background: transparent; padding-right: 48px; }
+.admin-notification-row .admin-notification-item:hover { background: var(--soft-blue-100); }
+.admin-notification-row:not(.unread) .admin-notification-item { opacity: .7; }
+.applicant-notification-panel li { position: relative; }
+.applicant-notification-panel li.unread { background: var(--soft-blue-50); }
+.applicant-notification-panel li:not(.unread) { opacity: .75; }
+.applicant-notification-panel li .notification-dismiss { top: 12px; right: 14px; }

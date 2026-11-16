@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Building2, Database, Eye, FileText, Menu, Shield, Users, X } from 'lucide-react'
+import { Bell, Building2, CheckCheck, Database, Eye, FileText, Menu, Shield, Users, X } from 'lucide-react'
 import { apiDownload, apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -64,7 +64,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const [exportingApplicationId, setExportingApplicationId] = useState(null)
   const [logoutError, setLogoutError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [isClearingReadNotifications, setIsClearingReadNotifications] = useState(false)
+  const [isMarkingAllNotifications, setIsMarkingAllNotifications] = useState(false)
+  const [markingNotificationId, setMarkingNotificationId] = useState(null)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const isAuthenticated = Boolean(session)
   const adminRole = session.admin.admin_role || 'super_admin'
@@ -118,7 +119,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const organization = organizationQuery.data ?? { divisions: [], departments: [], bureaus: [] }
   const adminNotifications = adminNotificationsQuery.data?.data ?? []
   const unreadNotificationCount = adminNotificationsQuery.data?.unread_count ?? 0
-  const readNotificationCount = adminNotificationsQuery.data?.read_count ?? 0
   const isLoading = activeView === 'dashboard'
     ? dashboardQuery.isPending
     : activeView === 'applications' && applicationsQuery.isPending
@@ -230,17 +230,33 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     }
   }
 
-  async function clearReadNotifications() {
-    if (!readNotificationCount || isClearingReadNotifications) return
+  // The X on a notification: mark just that one as read (it stays in the list, dimmed).
+  async function markNotificationRead(notification) {
+    if (notification.read_at || markingNotificationId) return
     setError('')
-    setIsClearingReadNotifications(true)
+    setMarkingNotificationId(notification.id)
     try {
-      await apiRequest('/admin/notifications/read', { method: 'DELETE' })
+      await apiRequest(`/admin/notifications/${notification.id}/read`, { method: 'PATCH' })
       await queryClient.invalidateQueries({ queryKey: queryKeys.adminNotifications })
     } catch (requestError) {
       setError(requestError.message)
     } finally {
-      setIsClearingReadNotifications(false)
+      setMarkingNotificationId(null)
+    }
+  }
+
+  // "Tandai semua terbaca": one request instead of marking notifications one by one.
+  async function markAllNotificationsRead() {
+    if (!unreadNotificationCount || isMarkingAllNotifications) return
+    setError('')
+    setIsMarkingAllNotifications(true)
+    try {
+      await apiRequest('/admin/notifications/read', { method: 'PATCH' })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.adminNotifications })
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsMarkingAllNotifications(false)
     }
   }
 
@@ -356,16 +372,17 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                     <button aria-label="Tutup notifikasi" className="admin-notification-close" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                   </div>
                   <PushNotificationControl />
-                  {readNotificationCount > 0 && (
+                  {unreadNotificationCount > 0 && (
                     <div className="notification-clear-row">
-                      <span>{readNotificationCount} sudah dibaca</span>
+                      <span>{unreadNotificationCount} belum dibaca</span>
                       <button
                         className="notification-clear-button"
-                        disabled={isClearingReadNotifications}
-                        onClick={() => void clearReadNotifications()}
+                        disabled={isMarkingAllNotifications}
+                        onClick={() => void markAllNotificationsRead()}
                         type="button"
                       >
-                        {isClearingReadNotifications ? 'Menghapus...' : 'Hapus yang dibaca'}
+                        <CheckCheck aria-hidden="true" size={14} />
+                        {isMarkingAllNotifications ? 'Memproses...' : 'Tandai semua terbaca'}
                       </button>
                     </div>
                   )}
@@ -376,16 +393,29 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                   ) : adminNotifications.length ? (
                     <div className="admin-notification-list">
                       {adminNotifications.map((notification) => (
-                        <button
-                          className={`admin-notification-item${notification.read_at ? '' : ' unread'}`}
-                          key={notification.id}
-                          onClick={() => void openAdminNotification(notification)}
-                          type="button"
-                        >
-                          <span className="admin-notification-item-title">{notification.applicant_name}</span>
-                          <span>{notification.job_id ? `${notification.target_label || notification.job_title} · Riwayat lowongan lama` : notification.target_label || notification.job_title}</span>
-                          <small>{new Date(notification.created_at).toLocaleString('id-ID')}</small>
-                        </button>
+                        <div className={`admin-notification-row${notification.read_at ? '' : ' unread'}`} key={notification.id}>
+                          <button
+                            className="admin-notification-item"
+                            onClick={() => void openAdminNotification(notification)}
+                            type="button"
+                          >
+                            <span className="admin-notification-item-title">{notification.applicant_name}</span>
+                            <span>{notification.job_id ? `${notification.target_label || notification.job_title} · Riwayat lowongan lama` : notification.target_label || notification.job_title}</span>
+                            <small>{new Date(notification.created_at).toLocaleString('id-ID')}</small>
+                          </button>
+                          {!notification.read_at && (
+                            <button
+                              aria-label={`Tandai notifikasi ${notification.applicant_name} sudah dibaca`}
+                              className="notification-dismiss"
+                              disabled={markingNotificationId === notification.id}
+                              onClick={() => void markNotificationRead(notification)}
+                              title="Tandai sudah dibaca"
+                              type="button"
+                            >
+                              <X aria-hidden="true" size={14} />
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </div>
                   ) : <p className="admin-notification-empty">Belum ada lamaran baru.</p>}

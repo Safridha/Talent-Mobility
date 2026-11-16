@@ -214,6 +214,31 @@ pub(super) async fn admin_mark_notification_read(
     ))
 }
 
+/// Marks every unread notification in the admin's scope as read (the "Tandai semua terbaca" button).
+/// Already-read notifications keep their original read time.
+pub(super) async fn admin_mark_all_notifications_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = authorized_admin_context(&state.pool, &headers).await?;
+    admin.require_permission(APPLICATIONS_VIEW)?;
+    let scope_filter = "($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $3) OR ($2 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $4))";
+    let result = sqlx::query(&format!(
+        "UPDATE admin_application_notifications AS notifications SET read_at = NOW() FROM applications {APPLICATION_TARGET_JOINS} WHERE notifications.application_id = applications.id AND notifications.admin_id = $1 AND notifications.read_at IS NULL AND {scope_filter}"
+    ))
+    .bind(admin.id)
+    .bind(&admin.admin_role)
+    .bind(admin.division_id)
+    .bind(admin.department_id)
+    .execute(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(json!({
+        "updated_count": result.rows_affected(),
+        "message": "Semua notifikasi ditandai sudah dibaca."
+    })))
+}
+
 pub(super) async fn admin_clear_read_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,

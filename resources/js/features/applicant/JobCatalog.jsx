@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../query/queryKeys'
 import ApplicationForm from './ApplicationForm'
 import JobCardSkeletons from '../../components/JobCardSkeletons'
-import { ArrowLeft, Bell, Building2, ChevronLeft, ChevronRight, Eye, FileText, LogIn, Megaphone, RotateCcw, Search, Users, Wrench, X } from 'lucide-react'
+import { ArrowLeft, Bell, Building2, CheckCheck, ChevronLeft, ChevronRight, Eye, FileText, LogIn, Megaphone, RotateCcw, Search, Users, Wrench, X } from 'lucide-react'
 import { apiRequest, apiUpload } from '../../api'
 import Brand from '../../components/Brand'
 import ModalBackdrop from '../../components/ModalBackdrop'
@@ -75,7 +75,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const [notificationActionError, setNotificationActionError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [markingNotificationId, setMarkingNotificationId] = useState(null)
-  const [isClearingReadNotifications, setIsClearingReadNotifications] = useState(false)
+  const [isMarkingAllNotifications, setIsMarkingAllNotifications] = useState(false)
   const isAuthenticated = Boolean(session)
   const [avatarUrl, refreshAvatar] = useAccountAvatar(isAuthenticated)
   const applicationsQuery = useQuery({
@@ -108,7 +108,6 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const isApplicationsLoading = Boolean(isAuthenticated && applicationsQuery.isPending)
   const currentUserNotifications = notificationsQuery.data?.data ?? []
   const currentUnreadNotificationCount = notificationsQuery.data?.unread_count ?? 0
-  const currentReadNotificationCount = notificationsQuery.data?.read_count ?? 0
   const applicationsError = applicationActionError || applicationsQuery.error?.message || ''
   const notificationsError = notificationActionError || notificationsQuery.error?.message || ''
   const submitApplicationMutation = useMutation({
@@ -344,17 +343,32 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     }
   }
 
-  async function clearReadNotifications() {
-    if (!currentReadNotificationCount || isClearingReadNotifications) return
+  // The X on a notification: mark just that one as read (it stays in the list, dimmed).
+  async function dismissNotification(notification) {
+    if (notification.read_at || markingNotificationId) return
+    setMarkingNotificationId(notification.id)
     setNotificationActionError('')
-    setIsClearingReadNotifications(true)
     try {
-      await apiRequest('/notifications/read', { method: 'DELETE' })
+      await markNotificationMutation.mutateAsync(notification)
+    } catch (requestError) {
+      setNotificationActionError(requestError.message)
+    } finally {
+      setMarkingNotificationId(null)
+    }
+  }
+
+  // "Tandai semua terbaca": one request instead of marking notifications one by one.
+  async function markAllNotificationsRead() {
+    if (!currentUnreadNotificationCount || isMarkingAllNotifications) return
+    setNotificationActionError('')
+    setIsMarkingAllNotifications(true)
+    try {
+      await apiRequest('/notifications/read', { method: 'PATCH' })
       await queryClient.invalidateQueries({ queryKey: queryKeys.applicantNotifications })
     } catch (requestError) {
       setNotificationActionError(requestError.message)
     } finally {
-      setIsClearingReadNotifications(false)
+      setIsMarkingAllNotifications(false)
     }
   }
 
@@ -403,16 +417,17 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                         <button aria-label="Tutup notifikasi" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                       </header>
                       <PushNotificationControl isAuthenticated={isAuthenticated} />
-                      {currentReadNotificationCount > 0 && (
+                      {currentUnreadNotificationCount > 0 && (
                         <div className="notification-clear-row">
-                          <span>{currentReadNotificationCount} sudah dibaca</span>
+                          <span>{currentUnreadNotificationCount} belum dibaca</span>
                           <button
                             className="notification-clear-button"
-                            disabled={isClearingReadNotifications}
-                            onClick={() => void clearReadNotifications()}
+                            disabled={isMarkingAllNotifications}
+                            onClick={() => void markAllNotificationsRead()}
                             type="button"
                           >
-                            {isClearingReadNotifications ? 'Menghapus...' : 'Hapus yang dibaca'}
+                            <CheckCheck aria-hidden="true" size={14} />
+                            {isMarkingAllNotifications ? 'Memproses...' : 'Tandai semua terbaca'}
                           </button>
                         </div>
                       )}
@@ -427,6 +442,18 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                             const newStatus = applicationStatusOptions.find((status) => status.value === notification.new_status)?.label || notification.new_status
                             return (
                               <li className={notification.read_at ? '' : 'unread'} key={notification.id}>
+                                {!notification.read_at && (
+                                  <button
+                                    aria-label={`Tandai pembaruan ${notification.job_title} sudah dibaca`}
+                                    className="notification-dismiss"
+                                    disabled={markingNotificationId === notification.id}
+                                    onClick={() => void dismissNotification(notification)}
+                                    title="Tandai sudah dibaca"
+                                    type="button"
+                                  >
+                                    <X aria-hidden="true" size={14} />
+                                  </button>
+                                )}
                                 <span className="applicant-notification-status">{newStatus}</span>
                                 <strong>{notification.job_title}</strong>
                                 <p>Status berubah dari {previousStatus} menjadi {newStatus}.</p>

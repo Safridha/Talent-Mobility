@@ -103,6 +103,25 @@ pub(super) async fn mark_applicant_notification_read(
     ))
 }
 
+/// Marks every unread status notification of the signed-in applicant as read.
+pub(super) async fn mark_all_applicant_notifications_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
+    let result = sqlx::query(
+        "UPDATE application_status_notifications SET read_at = NOW() WHERE applicant_id = $1 AND read_at IS NULL",
+    )
+    .bind(applicant_id)
+    .execute(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(json!({
+        "updated_count": result.rows_affected(),
+        "message": "Semua notifikasi ditandai sudah dibaca."
+    })))
+}
+
 pub(super) async fn clear_read_applicant_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
