@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiRequest } from '../../api'
 import SuccessPopup from '../../components/SuccessPopup'
+import { Pencil } from 'lucide-react'
 import { ConfirmDialog } from './AdminPrimitives'
 import { queryKeys } from '../../query/queryKeys'
 
@@ -13,6 +14,7 @@ export default function ApplicationLimitManager() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [pendingEditValue, setPendingEditValue] = useState(null)
   const limitQuery = useQuery({
     queryKey: queryKeys.adminApplicationLimit,
     queryFn: () => apiRequest('/admin/application-limit'),
@@ -55,8 +57,21 @@ export default function ApplicationLimitManager() {
       setError(`Masukkan bilangan bulat antara 1 dan ${MAX_APPLICATION_LIMIT}.`)
       return
     }
+    if (hasLimit) {
+      if (value === currentLimit) {
+        setError('Nilai batas sama dengan batas saat ini. Ubah angkanya terlebih dahulu.')
+        return
+      }
+      setPendingEditValue(value)
+      return
+    }
+    await persistLimit(value)
+  }
+
+  async function persistLimit(value) {
     try {
       await saveMutation.mutateAsync({ max_applications: value, isEditing: hasLimit })
+      setPendingEditValue(null)
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -127,10 +142,38 @@ export default function ApplicationLimitManager() {
         <ConfirmDialog
           error={error}
           isBusy={deleteMutation.isPending}
-          message="Setelah batas dihapus, setiap pelamar dapat mengirim lamaran tanpa batas. Riwayat lamaran yang sudah masuk tidak akan dihapus."
+          details={[
+            'Perubahan berlaku langsung untuk semua pelamar, termasuk yang saat ini sedang membuka halaman lowongan.',
+            'Indikator sisa kesempatan melamar akan hilang dan tombol Apply aktif kembali bagi pelamar yang sebelumnya sudah mencapai batas.',
+            'Riwayat lamaran yang sudah masuk tidak dihapus.',
+            'Tindakan ini dicatat di audit log. Batas dapat dibuat lagi kapan saja.',
+          ]}
+          message={`Batas saat ini ${currentLimit} lamaran per orang akan dihapus, sehingga pelamar dapat mengirim lamaran tanpa batas.`}
           onCancel={() => { setIsDeleteOpen(false); setError('') }}
           onConfirm={() => void deleteLimit()}
           title="Hapus batas lamaran?"
+        />
+      )}
+      {pendingEditValue !== null && (
+        <ConfirmDialog
+          busyLabel="Menyimpan..."
+          confirmLabel="Ya, simpan perubahan"
+          details={[
+            'Perubahan berlaku langsung untuk semua pelamar.',
+            'Jumlah yang dihitung adalah semua lamaran yang pernah dikirim, termasuk yang ditolak.',
+            pendingEditValue > currentLimit
+              ? 'Pelamar yang sebelumnya sudah mencapai batas dapat melamar lagi sampai batas baru.'
+              : 'Pelamar yang jumlah lamarannya sudah sama atau melebihi batas baru tidak dapat melamar lagi. Lamaran mereka yang sudah masuk tidak dihapus.',
+            'Perubahan dicatat di audit log.',
+          ]}
+          error={error}
+          icon={Pencil}
+          isBusy={saveMutation.isPending}
+          message={`Batas lamaran akan diubah dari ${currentLimit} menjadi ${pendingEditValue} lamaran per orang.`}
+          onCancel={() => { setPendingEditValue(null); setError('') }}
+          onConfirm={() => void persistLimit(pendingEditValue)}
+          title="Ubah batas lamaran?"
+          tone="primary"
         />
       )}
     </section>

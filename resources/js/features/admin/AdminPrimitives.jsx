@@ -55,7 +55,7 @@ export function AdminTableToolbar({
   )
 }
 
-export function ConfirmDialog({ title, message, error, isBusy, onCancel, onConfirm, confirmLabel = 'Hapus', busyLabel = 'Menghapus...', icon: Icon = Trash2, tone = 'danger' }) {
+export function ConfirmDialog({ title, message, details, error, isBusy, onCancel, onConfirm, confirmLabel = 'Hapus', busyLabel = 'Menghapus...', icon: Icon = Trash2, tone = 'danger' }) {
   return (
     <ModalBackdrop className="modal-backdrop admin-confirm-backdrop" canDismiss={!isBusy} onDismiss={onCancel}>
       <section
@@ -68,6 +68,11 @@ export function ConfirmDialog({ title, message, error, isBusy, onCancel, onConfi
         <div className="admin-confirm-icon"><Icon size={21} /></div>
         <h2 id="admin-confirm-title">{title}</h2>
         <p>{message}</p>
+        {details?.length > 0 && (
+          <ul className="admin-confirm-details">
+            {details.map((detail) => <li key={detail}>{detail}</li>)}
+          </ul>
+        )}
         {error && <p className="admin-alert error" role="alert">{error}</p>}
         <div className="admin-confirm-actions">
           <button className="detail-button" disabled={isBusy} onClick={onCancel} type="button">Batal</button>

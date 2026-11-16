@@ -5,6 +5,7 @@ import FirstLoginPasswordChange from './features/auth/FirstLoginPasswordChange'
 import AdminDashboard from './features/admin/AdminDashboard'
 import { apiRequest } from './api'
 import NotFoundPage from './components/NotFoundPage'
+import SessionTransition from './components/SessionTransition'
 import { ADMIN_ROUTES, APPLICANT_ROUTES, GUEST_ROUTES } from './routes'
 import { goTo, usePathname } from './usePathRoute'
 import '../css/App.css'
@@ -47,6 +48,19 @@ export default function App() {
   const previousAudience = useRef(adminSession ? 'admin' : session ? 'applicant' : 'guest')
   const storedSessionExists = useRef(Boolean(session || adminSession))
   const restoreSessionRequest = useRef(null)
+  const [transition, setTransition] = useState(null)
+  const transitionTimers = useRef([])
+
+  const showTransition = useCallback((kind, holdMs) => {
+    transitionTimers.current.forEach(window.clearTimeout)
+    setTransition({ kind, leaving: false })
+    transitionTimers.current = [
+      window.setTimeout(() => setTransition({ kind, leaving: true }), holdMs),
+      window.setTimeout(() => setTransition(null), holdMs + 350),
+    ]
+  }, [])
+
+  useEffect(() => () => transitionTimers.current.forEach(window.clearTimeout), [])
 
   const handleLogin = useCallback((newSession) => {
     authenticatedDuringRestore.current = true
@@ -147,22 +161,38 @@ export default function App() {
     return () => { active = false }
   }, [handleLogin, queryClient])
 
-  async function handleLogout() {
-    authenticatedDuringRestore.current = true
-    await apiRequest('/logout', { method: 'POST' })
-    localStorage.removeItem(APPLICANT_SESSION_KEY)
-    queryClient.clear()
-    setSession(null)
-    setSessionNotice('')
+  // Explicit sign-in from the login dialog: same as handleLogin plus a short welcome animation.
+  function handleInteractiveLogin(newSession) {
+    handleLogin(newSession)
+    if (!newSession.applicant?.must_change_password) showTransition('login', 1100)
   }
 
-  async function handleAdminLogout() {
+  async function runLogout(path, storageKey, clearSession) {
     authenticatedDuringRestore.current = true
-    await apiRequest('/admin/logout', { method: 'POST' })
-    localStorage.removeItem(ADMIN_SESSION_KEY)
+    transitionTimers.current.forEach(window.clearTimeout)
+    setTransition({ kind: 'logout', leaving: false })
+    try {
+      await Promise.all([
+        apiRequest(path, { method: 'POST' }),
+        new Promise((resolve) => window.setTimeout(resolve, 900)),
+      ])
+    } catch (error) {
+      setTransition(null)
+      throw error
+    }
+    localStorage.removeItem(storageKey)
     queryClient.clear()
-    setAdminSession(null)
+    clearSession(null)
     setSessionNotice('')
+    showTransition('logout', 150)
+  }
+
+  function handleLogout() {
+    return runLogout('/logout', APPLICANT_SESSION_KEY, setSession)
+  }
+
+  function handleAdminLogout() {
+    return runLogout('/admin/logout', ADMIN_SESSION_KEY, setAdminSession)
   }
 
   function handleProfileUpdated(profile) {
@@ -200,13 +230,19 @@ export default function App() {
     return <NotFoundPage />
   }
 
+  let view
   if (adminSession) {
-    return <AdminDashboard onLogout={handleAdminLogout} onProfileUpdated={handleProfileUpdated} session={adminSession} />
+    view = <AdminDashboard onLogout={handleAdminLogout} onProfileUpdated={handleProfileUpdated} session={adminSession} />
+  } else if (session?.applicant?.must_change_password) {
+    view = <FirstLoginPasswordChange onComplete={handleLogin} onLogout={handleLogout} />
+  } else {
+    view = <JobCatalog onLogin={handleInteractiveLogin} onLogout={handleLogout} onProfileUpdated={handleProfileUpdated} session={session} sessionNotice={sessionNotice} />
   }
 
-  if (session?.applicant?.must_change_password) {
-    return <FirstLoginPasswordChange onComplete={handleLogin} onLogout={handleLogout} />
-  }
-
-  return <JobCatalog onLogin={handleLogin} onLogout={handleLogout} onProfileUpdated={handleProfileUpdated} session={session} sessionNotice={sessionNotice} />
+  return (
+    <>
+      {view}
+      {transition && <SessionTransition kind={transition.kind} leaving={transition.leaving} />}
+    </>
+  )
 }

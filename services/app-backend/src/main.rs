@@ -477,6 +477,7 @@ struct ApplicationStatusHistory {
 #[derive(Serialize)]
 struct ApplicationsResponse {
     data: Vec<ApplicationSummary>,
+    max_applications: Option<i32>,
 }
 
 #[derive(FromRow, Serialize)]

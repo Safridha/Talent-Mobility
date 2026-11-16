@@ -1251,3 +1251,50 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* Application form: upload progress bar */
 .application-upload-progress { height: 4px; overflow: hidden; background: #e2e8f0; }
 .application-upload-progress > span { display: block; height: 100%; background: var(--brand); transition: width .2s ease; }
+
+/* Konfirmasi lamaran */
+.confirm-dialog-backdrop { position: fixed; z-index: 1100; inset: 0; display: grid; place-items: center; padding: 20px; background: #0f172a66; backdrop-filter: blur(3px); animation: success-popup-fade .18s ease-out; }
+.confirm-dialog { display: grid; width: min(420px, 100%); justify-items: center; gap: 10px; padding: 30px 26px 24px; border: 1px solid #e2e8f0; border-radius: 20px; background: white; box-shadow: 0 24px 70px #0f172a40; color: #172033; text-align: center; animation: success-popup-in .22s ease-out; }
+.confirm-dialog-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 50%; background: #e0f2fe; color: #0369a1; }
+.confirm-dialog h2 { margin: 4px 0 0; font-size: 20px; letter-spacing: -.3px; }
+.confirm-dialog p { margin: 0; color: #475569; font-size: 14px; line-height: 1.6; }
+.confirm-dialog-actions { display: flex; width: 100%; justify-content: center; gap: 10px; margin-top: 12px; }
+.confirm-dialog-actions button { flex: 1; justify-content: center; }
+
+/* Animasi masuk / keluar */
+.session-transition { position: fixed; z-index: 2000; inset: 0; display: grid; place-items: center; padding: 20px; background: #0f172acc; backdrop-filter: blur(6px); animation: success-popup-fade .22s ease-out; }
+.session-transition.is-leaving { animation: session-fade-out .35s ease-in forwards; pointer-events: none; }
+.session-transition-card { position: relative; display: grid; width: min(340px, 100%); justify-items: center; gap: 8px; overflow: hidden; padding: 32px 28px 30px; border-radius: 22px; background: white; box-shadow: 0 24px 70px #0f172a50; text-align: center; animation: session-card-in .4s cubic-bezier(.2, .9, .3, 1.2); }
+.session-transition-card strong { color: #172033; font-size: 20px; }
+.session-transition-card p { margin: 0; color: #64748b; font-size: 14px; }
+.session-transition-icon { display: grid; width: 70px; height: 70px; place-items: center; border-radius: 50%; margin-bottom: 4px; }
+.session-transition-login .session-transition-icon { background: #dcfce7; color: #16a34a; animation: session-pop .5s .1s cubic-bezier(.2, .9, .3, 1.4) both; }
+.session-transition-logout .session-transition-icon { background: #e0f2fe; color: #0369a1; animation: session-nudge 1s ease-in-out infinite; }
+.session-transition-bar { position: absolute; left: 0; bottom: 0; height: 4px; width: 100%; transform-origin: left; animation: session-progress 1s ease-out forwards; }
+.session-transition-login .session-transition-bar { background: #16a34a; }
+.session-transition-logout .session-transition-bar { background: #0369a1; }
+@keyframes session-card-in { from { opacity: 0; transform: translateY(14px) scale(.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes session-pop { from { opacity: 0; transform: scale(.3); } to { opacity: 1; transform: scale(1); } }
+@keyframes session-nudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(6px); } }
+@keyframes session-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes session-fade-out { to { opacity: 0; } }
+
+/* Skeleton lowongan */
+.skeleton { display: block; border-radius: 8px; background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 37%, #e2e8f0 63%); background-size: 400% 100%; animation: skeleton-shimmer 1.4s ease infinite; }
+.skeleton-card { pointer-events: none; }
+.skeleton-card .card-top { display: flex; justify-content: space-between; gap: 10px; }
+.skeleton-pill { width: 42%; height: 22px; border-radius: 999px; }
+.skeleton-pill-short { width: 22%; }
+.skeleton-title { width: 78%; height: 24px; margin: 16px 0 14px; }
+.skeleton-line { width: 100%; height: 13px; margin-bottom: 9px; }
+.skeleton-line-short { width: 60%; }
+.skeleton-card .card-footer { display: flex; gap: 10px; margin-top: 18px; }
+.skeleton-button { flex: 1; height: 38px; border-radius: 10px; }
+.sr-only-skeleton { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@keyframes skeleton-shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+
+/* Indikator sisa kesempatan melamar */
+.apply-quota { display: inline-block; margin: 0 0 14px; padding: 8px 14px; border: 1px solid #bae6fd; border-radius: 999px; background: #f0f9ff; color: #075985; font-size: 13.5px; font-weight: 600; }
+.apply-quota-low { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+.apply-quota-empty { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.admin-confirm-details { display: grid; gap: 7px; margin: 12px 0 0; padding: 12px 14px 12px 30px; border-radius: 12px; background: #f8fafc; color: #475569; font-size: 13px; line-height: 1.55; text-align: left; }

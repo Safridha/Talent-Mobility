@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../query/queryKeys'
 import ApplicationForm from './ApplicationForm'
+import JobCardSkeletons from '../../components/JobCardSkeletons'
 import { ArrowLeft, Bell, Building2, ChevronLeft, ChevronRight, Eye, FileText, LogIn, Megaphone, RotateCcw, Search, Users, Wrench, X } from 'lucide-react'
 import { apiRequest, apiUpload } from '../../api'
 import Brand from '../../components/Brand'
@@ -89,6 +90,12 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     refetchInterval: 15_000,
   })
   const currentUserApplications = applicationsQuery.data?.data ?? []
+  // The server counts every submitted application (any status) against the admin-set limit.
+  const maxApplications = applicationsQuery.data?.max_applications ?? null
+  const remainingApplications = maxApplications === null
+    ? null
+    : Math.max(0, maxApplications - currentUserApplications.length)
+  const isApplyLimitReached = remainingApplications === 0
   const selectedApplication = currentUserApplications.find((application) => application.id === selectedApplicationId)
   const selectedApplicationJob = selectedApplication ? {
     id: selectedApplication.job_id,
@@ -285,6 +292,10 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     if (!session) {
       setPendingDirectTarget(directTarget)
       setAuthMode('login')
+      return
+    }
+    if (isApplyLimitReached) {
+      setApplicationActionError('Anda telah mencapai batas maksimal lamaran yang diizinkan.')
       return
     }
     if (appliedDirectTargetKeys.has(directTarget.key)) {
@@ -524,8 +535,18 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
 
             {applicationsError && <p className="login-error" role="alert">{applicationsError}</p>}
             <SuccessPopup message={applicationNotice} onClose={setApplicationNotice} />
+            {isAuthenticated && remainingApplications !== null && (
+              <p
+                className={`apply-quota${isApplyLimitReached ? ' apply-quota-empty' : remainingApplications <= 1 ? ' apply-quota-low' : ''}`}
+                role="status"
+              >
+                {isApplyLimitReached
+                  ? `Batas lamaran habis (${currentUserApplications.length}/${maxApplications}). Anda tidak dapat melamar lagi.`
+                  : `Sisa kesempatan melamar: ${remainingApplications} dari ${maxApplications}`}
+              </p>
+            )}
             {isLoading ? (
-              <section className="empty-state"><h2>Memuat unit kerja...</h2></section>
+              <JobCardSkeletons count={6} />
             ) : organizationError ? (
               <section className="empty-state"><h2>Unit kerja belum dapat dimuat</h2><p role="alert">{organizationError}</p></section>
             ) : directTargets.length > 0 ? (
@@ -564,11 +585,11 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                           </button>
                           <button
                             className="apply-button"
-                            disabled={hasApplied || Boolean(applyingJobId)}
+                            disabled={hasApplied || isApplyLimitReached || Boolean(applyingJobId)}
                             onClick={() => handleDirectApply(target)}
                             type="button"
                           >
-                            {isApplying ? 'Mengirim...' : hasApplied ? 'Sudah melamar' : 'Apply'}
+                            {isApplying ? 'Mengirim...' : hasApplied ? 'Sudah melamar' : isApplyLimitReached ? 'Batas habis' : 'Apply'}
                           </button>
                         </div>
                       </article>
@@ -728,7 +749,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
               <button className="detail-button" onClick={() => setSelectedDirectTarget(null)} type="button">Tutup</button>
               <button
                 className="apply-button"
-                disabled={appliedDirectTargetKeys.has(selectedDirectTarget.key) || Boolean(applyingJobId)}
+                disabled={appliedDirectTargetKeys.has(selectedDirectTarget.key) || isApplyLimitReached || Boolean(applyingJobId)}
                 onClick={() => {
                   const target = selectedDirectTarget
                   setSelectedDirectTarget(null)
@@ -736,7 +757,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 }}
                 type="button"
               >
-                {appliedDirectTargetKeys.has(selectedDirectTarget.key) ? 'Sudah melamar' : 'Apply'}
+                {appliedDirectTargetKeys.has(selectedDirectTarget.key) ? 'Sudah melamar' : isApplyLimitReached ? 'Batas habis' : 'Apply'}
               </button>
             </footer>
           </section>

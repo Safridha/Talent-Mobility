@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, UploadCloud, X } from 'lucide-react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import ModalBackdrop from '../../components/ModalBackdrop'
 import SearchableSelect from '../../components/SearchableSelect'
 import { apiRequest } from '../../api'
@@ -21,6 +22,7 @@ export default function ApplicationForm({ job, directTarget, session, organizati
   // Data the applicant already keeps in their profile is shown as a summary instead of asked again.
   // One key per form: every retry of this same submission resends it, so the server never applies it twice.
   const [idempotencyKey] = useState(() => crypto.randomUUID())
+  const [pendingBody, setPendingBody] = useState(null)
   const [profile, setProfile] = useState(null)
   const [profileError, setProfileError] = useState('')
   const [bureauMaster, setBureauMaster] = useState(null)
@@ -159,6 +161,13 @@ export default function ApplicationForm({ job, directTarget, session, organizati
     } else {
       supportingFiles.forEach((file) => body.append('supporting_document', file))
     }
+    setPendingBody(body)
+  }
+
+  async function sendApplication() {
+    const body = pendingBody
+    setPendingBody(null)
+    if (!body) return
     try {
       // Only a bureau picked from the master data is saved to the profile; manual text never is.
       if (showBureauForm && bureauMode === 'master') {
@@ -407,6 +416,15 @@ export default function ApplicationForm({ job, directTarget, session, organizati
           </footer>
         </form>
       </section>
+      {pendingBody && (
+        <ConfirmDialog
+          confirmLabel="Ya, kirim"
+          message="Pastikan data dan berkas sudah benar. Setelah dikirim, lamaran akan diproses dan tidak dapat diubah."
+          onCancel={() => setPendingBody(null)}
+          onConfirm={sendApplication}
+          title="Kirim lamaran sekarang?"
+        />
+      )}
     </ModalBackdrop>
   )
 }

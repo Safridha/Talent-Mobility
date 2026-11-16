@@ -12,7 +12,16 @@ pub(super) async fn list_applications(
     .fetch_all(&state.pool)
     .await
     .map_err(internal_error)?;
-    Ok(Json(ApplicationsResponse { data }))
+    let max_applications = sqlx::query_scalar::<_, i32>(
+        "SELECT max_applications FROM applicant_application_limit WHERE id = 1",
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(ApplicationsResponse {
+        data,
+        max_applications,
+    }))
 }
 
 pub(super) async fn list_applicant_notifications(
