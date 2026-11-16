@@ -15,7 +15,7 @@ use axum::{
     },
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{any, get, patch, post, put},
+    routing::{any, delete, get, patch, post, put},
     Router,
 };
 use rand_core::RngCore;
@@ -499,6 +499,7 @@ struct ApplicantStatusNotification {
 struct ApplicantNotificationsResponse {
     data: Vec<ApplicantStatusNotification>,
     unread_count: i64,
+    read_count: i64,
 }
 
 #[derive(FromRow, Serialize)]
@@ -764,6 +765,7 @@ struct AdminApplicationNotification {
 struct AdminNotificationsResponse {
     data: Vec<AdminApplicationNotification>,
     unread_count: i64,
+    read_count: i64,
 }
 
 #[derive(FromRow, Serialize)]
@@ -962,6 +964,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/admin/notifications/{id}/read",
             patch(admin_mark_notification_read),
         )
+        .route(
+            "/api/admin/notifications/read",
+            delete(admin_clear_read_notifications),
+        )
         .route("/api/admin/applications/{id}", get(admin_get_application))
         .route(
             "/api/admin/applications/{id}/documents/{document_id}",
@@ -982,6 +988,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/api/notifications/{id}/read",
             patch(mark_applicant_notification_read),
+        )
+        .route(
+            "/api/notifications/read",
+            delete(clear_read_applicant_notifications),
         )
         .route_layer(middleware::from_fn(prevent_api_caching))
         // Vite emits content-hashed file names, so built assets can be cached for a year.
@@ -2517,7 +2527,7 @@ mod tests {
         let application_id = submitted["application_id"].as_str().unwrap().to_owned();
         let division_application = submit_test_application(
             &state,
-            applicant_headers,
+            applicant_headers.clone(),
             "AUDIT-JOB-DIV",
             "EMP-002",
             "admin-workflow-audit-division",
@@ -2755,6 +2765,7 @@ mod tests {
             .unwrap()
             .0;
         assert_eq!(notifications.unread_count, 2);
+        assert_eq!(notifications.read_count, 0);
         let _ = admin_mark_notification_read(
             State(state.clone()),
             super_headers.clone(),
@@ -2762,6 +2773,24 @@ mod tests {
         )
         .await
         .unwrap();
+        let notifications = admin_list_notifications(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(notifications.unread_count, 1);
+        assert_eq!(notifications.read_count, 1);
+        let cleared = admin_clear_read_notifications(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(cleared["deleted_count"], 1);
+        let notifications = admin_list_notifications(State(state.clone()), super_headers.clone())
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(notifications.data.len(), 1);
+        assert_eq!(notifications.unread_count, 1);
+        assert_eq!(notifications.read_count, 0);
         let _ = admin_set_application_status(
             State(state.clone()),
             super_headers.clone(),
@@ -2786,6 +2815,42 @@ mod tests {
         )
         .await
         .unwrap();
+        let applicant_notifications =
+            list_applicant_notifications(State(state.clone()), applicant_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        assert_eq!(applicant_notifications.data.len(), 2);
+        assert_eq!(applicant_notifications.unread_count, 2);
+        assert_eq!(applicant_notifications.read_count, 0);
+        let _ = mark_applicant_notification_read(
+            State(state.clone()),
+            applicant_headers.clone(),
+            Path(applicant_notifications.data[1].id),
+        )
+        .await
+        .unwrap();
+        let applicant_notifications =
+            list_applicant_notifications(State(state.clone()), applicant_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        assert_eq!(applicant_notifications.unread_count, 1);
+        assert_eq!(applicant_notifications.read_count, 1);
+        let cleared =
+            clear_read_applicant_notifications(State(state.clone()), applicant_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        assert_eq!(cleared["deleted_count"], 1);
+        let applicant_notifications =
+            list_applicant_notifications(State(state.clone()), applicant_headers.clone())
+                .await
+                .unwrap()
+                .0;
+        assert_eq!(applicant_notifications.data.len(), 1);
+        assert_eq!(applicant_notifications.unread_count, 1);
+        assert_eq!(applicant_notifications.read_count, 0);
         let audit_response = admin_list_audit_events(
             State(state.clone()),
             super_headers.clone(),

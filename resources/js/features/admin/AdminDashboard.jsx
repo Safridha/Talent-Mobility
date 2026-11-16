@@ -63,6 +63,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const [exportingApplicationId, setExportingApplicationId] = useState(null)
   const [logoutError, setLogoutError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [isClearingReadNotifications, setIsClearingReadNotifications] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const isAuthenticated = Boolean(session)
   const adminRole = session.admin.admin_role || 'super_admin'
@@ -116,6 +117,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const organization = organizationQuery.data ?? { divisions: [], departments: [], bureaus: [] }
   const adminNotifications = adminNotificationsQuery.data?.data ?? []
   const unreadNotificationCount = adminNotificationsQuery.data?.unread_count ?? 0
+  const readNotificationCount = adminNotificationsQuery.data?.read_count ?? 0
   const isLoading = activeView === 'dashboard'
     ? dashboardQuery.isPending
     : activeView === 'applications' && applicationsQuery.isPending
@@ -192,6 +194,20 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       await openApplication(notification.application_id)
     } catch (requestError) {
       setError(requestError.message)
+    }
+  }
+
+  async function clearReadNotifications() {
+    if (!readNotificationCount || isClearingReadNotifications) return
+    setError('')
+    setIsClearingReadNotifications(true)
+    try {
+      await apiRequest('/admin/notifications/read', { method: 'DELETE' })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.adminNotifications })
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsClearingReadNotifications(false)
     }
   }
 
@@ -307,6 +323,19 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                     <button aria-label="Tutup notifikasi" className="admin-notification-close" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                   </div>
                   <PushNotificationControl />
+                  {readNotificationCount > 0 && (
+                    <div className="notification-clear-row">
+                      <span>{readNotificationCount} sudah dibaca</span>
+                      <button
+                        className="notification-clear-button"
+                        disabled={isClearingReadNotifications}
+                        onClick={() => void clearReadNotifications()}
+                        type="button"
+                      >
+                        {isClearingReadNotifications ? 'Menghapus...' : 'Hapus yang dibaca'}
+                      </button>
+                    </div>
+                  )}
                   {adminNotificationsQuery.isPending ? (
                     <p className="admin-notification-empty">Memuat notifikasi...</p>
                   ) : adminNotificationsQuery.error ? (

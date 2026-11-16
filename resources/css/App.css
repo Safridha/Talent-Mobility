@@ -411,6 +411,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .signed-in-user .applicant-notification-open { display: inline-flex; width: fit-content; min-height: 30px; align-items: center; padding: 0 9px; border: 1px solid #bfdbfe; border-radius: 7px; background: white; color: #1d4ed8; font-size: 11px; font-weight: 700; }
 .signed-in-user .applicant-notification-open:hover { border-color: #93c5fd; background: #dbeafe; }
 .signed-in-user .applicant-notification-open:disabled { cursor: wait; opacity: .6; }
+.notification-clear-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #e8edf4; color: #64748b; font-size: 11px; }
+.notification-clear-button { min-height: 30px; padding: 0 9px; border: 1px solid #dbe3ef; border-radius: 7px; background: white; color: #334155; font-size: 11px; font-weight: 700; }
+.notification-clear-button:hover:not(:disabled) { border-color: #94a3b8; background: #f8fafc; }
+.notification-clear-button:disabled { cursor: wait; opacity: .6; }
 .push-notification-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px 12px; padding: 12px 14px; border-bottom: 1px solid #e8edf4; background: #f8fafc; }
 .push-notification-copy { display: flex; min-width: 0; align-items: flex-start; gap: 9px; }
 .push-notification-copy > svg { flex: 0 0 auto; margin-top: 2px; color: #2563eb; }
@@ -526,6 +530,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     overscroll-behavior: contain;
   }
   .applicant-notification-panel > header,
+  .applicant-notification-panel > .notification-clear-row,
   .applicant-notification-panel > .push-notification-control { flex: 0 0 auto; }
   .applicant-notification-panel ul { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
   .card-footer { align-items: flex-start; flex-direction: column; }

@@ -171,7 +171,21 @@ pub(super) async fn admin_list_notifications(
     .fetch_one(&state.pool)
     .await
     .map_err(internal_error)?;
-    Ok(Json(AdminNotificationsResponse { data, unread_count }))
+    let read_count = sqlx::query_scalar::<_, i64>(&format!(
+        "SELECT COUNT(*) FROM admin_application_notifications AS notifications JOIN applications ON applications.id = notifications.application_id {APPLICATION_TARGET_JOINS} WHERE notifications.admin_id = $1 AND notifications.read_at IS NOT NULL AND {scope_filter}"
+    ))
+    .bind(admin.id)
+    .bind(&admin.admin_role)
+    .bind(admin.division_id)
+    .bind(admin.department_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(AdminNotificationsResponse {
+        data,
+        unread_count,
+        read_count,
+    }))
 }
 
 pub(super) async fn admin_mark_notification_read(
@@ -198,6 +212,29 @@ pub(super) async fn admin_mark_notification_read(
     Ok(Json(
         json!({ "message": "Notifikasi ditandai sudah dibaca." }),
     ))
+}
+
+pub(super) async fn admin_clear_read_notifications(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let admin = authorized_admin_context(&state.pool, &headers).await?;
+    admin.require_permission(APPLICATIONS_VIEW)?;
+    let scope_filter = "($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $3) OR ($2 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $4))";
+    let result = sqlx::query(&format!(
+        "DELETE FROM admin_application_notifications AS notifications USING applications {APPLICATION_TARGET_JOINS} WHERE notifications.application_id = applications.id AND notifications.admin_id = $1 AND notifications.read_at IS NOT NULL AND {scope_filter}"
+    ))
+    .bind(admin.id)
+    .bind(&admin.admin_role)
+    .bind(admin.division_id)
+    .bind(admin.department_id)
+    .execute(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(json!({
+        "deleted_count": result.rows_affected(),
+        "message": "Notifikasi yang sudah dibaca berhasil dihapus."
+    })))
 }
 
 pub(super) async fn admin_list_applications(

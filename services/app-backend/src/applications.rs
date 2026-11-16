@@ -43,7 +43,18 @@ pub(super) async fn list_applicant_notifications(
     .fetch_one(&state.pool)
     .await
     .map_err(internal_error)?;
-    Ok(Json(ApplicantNotificationsResponse { data, unread_count }))
+    let read_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM application_status_notifications WHERE applicant_id = $1 AND read_at IS NOT NULL",
+    )
+    .bind(applicant_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(ApplicantNotificationsResponse {
+        data,
+        unread_count,
+        read_count,
+    }))
 }
 
 pub(crate) fn validate_application_status_reason(
@@ -90,6 +101,24 @@ pub(super) async fn mark_applicant_notification_read(
     Ok(Json(
         json!({ "message": "Notifikasi ditandai sudah dibaca." }),
     ))
+}
+
+pub(super) async fn clear_read_applicant_notifications(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (applicant_id, _) = authorized_applicant(&state.pool, &headers).await?;
+    let result = sqlx::query(
+        "DELETE FROM application_status_notifications WHERE applicant_id = $1 AND read_at IS NOT NULL",
+    )
+    .bind(applicant_id)
+    .execute(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    Ok(Json(json!({
+        "deleted_count": result.rows_affected(),
+        "message": "Notifikasi yang sudah dibaca berhasil dihapus."
+    })))
 }
 
 async fn parse_application_submission(

@@ -75,6 +75,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const [notificationActionError, setNotificationActionError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [markingNotificationId, setMarkingNotificationId] = useState(null)
+  const [isClearingReadNotifications, setIsClearingReadNotifications] = useState(false)
   const isAuthenticated = Boolean(session)
   const [avatarUrl, refreshAvatar] = useAccountAvatar(isAuthenticated)
   const applicationsQuery = useQuery({
@@ -107,6 +108,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const isApplicationsLoading = Boolean(isAuthenticated && applicationsQuery.isPending)
   const currentUserNotifications = notificationsQuery.data?.data ?? []
   const currentUnreadNotificationCount = notificationsQuery.data?.unread_count ?? 0
+  const currentReadNotificationCount = notificationsQuery.data?.read_count ?? 0
   const applicationsError = applicationActionError || applicationsQuery.error?.message || ''
   const notificationsError = notificationActionError || notificationsQuery.error?.message || ''
   const submitApplicationMutation = useMutation({
@@ -156,6 +158,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
             item.id === notification.id ? { ...item, read_at: new Date().toISOString() } : item
           )),
           unread_count: Math.max(0, current.unread_count - Number(wasUnread)),
+          read_count: current.read_count + Number(wasUnread),
         }
       })
     },
@@ -341,6 +344,20 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     }
   }
 
+  async function clearReadNotifications() {
+    if (!currentReadNotificationCount || isClearingReadNotifications) return
+    setNotificationActionError('')
+    setIsClearingReadNotifications(true)
+    try {
+      await apiRequest('/notifications/read', { method: 'DELETE' })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.applicantNotifications })
+    } catch (requestError) {
+      setNotificationActionError(requestError.message)
+    } finally {
+      setIsClearingReadNotifications(false)
+    }
+  }
+
   async function handleLogout() {
     setLogoutError('')
     try {
@@ -386,6 +403,19 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                         <button aria-label="Tutup notifikasi" onClick={() => setIsNotificationsOpen(false)} type="button"><X size={17} /></button>
                       </header>
                       <PushNotificationControl isAuthenticated={isAuthenticated} />
+                      {currentReadNotificationCount > 0 && (
+                        <div className="notification-clear-row">
+                          <span>{currentReadNotificationCount} sudah dibaca</span>
+                          <button
+                            className="notification-clear-button"
+                            disabled={isClearingReadNotifications}
+                            onClick={() => void clearReadNotifications()}
+                            type="button"
+                          >
+                            {isClearingReadNotifications ? 'Menghapus...' : 'Hapus yang dibaca'}
+                          </button>
+                        </div>
+                      )}
                       {notificationsError ? (
                         <p className="applicant-notification-error" role="alert">{notificationsError}</p>
                       ) : notificationsQuery.isPending ? (
