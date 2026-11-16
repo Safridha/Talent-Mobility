@@ -44,6 +44,7 @@ mod idempotency;
 mod auth;
 mod jobs;
 mod push;
+mod zip_archive;
 
 use admin_accounts::*;
 use admin_applications::*;
@@ -55,6 +56,7 @@ use idempotency::*;
 use auth::*;
 use jobs::*;
 use push::*;
+use zip_archive::*;
 
 #[derive(Clone)]
 struct AppState {
@@ -976,6 +978,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/api/admin/applications/{id}/documents/{document_id}",
             get(admin_download_application_document),
+        )
+        .route(
+            "/api/admin/applications/{id}/documents-archive",
+            get(admin_download_application_documents_archive),
         )
         .route(
             "/api/admin/applications/{id}/status",
@@ -2763,6 +2769,62 @@ mod tests {
                 .as_ref(),
             b"%PDF-1.7\nAudit document"
         );
+
+        // "Semua berkas (.zip)": same permission and scope rules as a single document.
+        let archive = admin_download_application_documents_archive(
+            State(state.clone()),
+            super_headers.clone(),
+            Path(application_id.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(archive.status(), StatusCode::OK);
+        assert_eq!(
+            archive.headers().get(CONTENT_TYPE).unwrap(),
+            "application/zip"
+        );
+        assert!(archive
+            .headers()
+            .get(CONTENT_DISPOSITION)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .ends_with("-documents.zip\""));
+        let archive_bytes = axum::body::to_bytes(archive.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(&archive_bytes[..4], b"PK\x03\x04");
+        assert_eq!(
+            u16::from_le_bytes([
+                archive_bytes[archive_bytes.len() - 12],
+                archive_bytes[archive_bytes.len() - 11]
+            ]),
+            1,
+            "one document, one zip entry"
+        );
+        assert!(archive_bytes
+            .windows(b"%PDF-1.7\nAudit document".len())
+            .any(|window| window == b"%PDF-1.7\nAudit document"));
+        for headers in [&view_only_headers, &status_only_headers] {
+            assert!(matches!(
+                admin_download_application_documents_archive(
+                    State(state.clone()),
+                    headers.clone(),
+                    Path(application_id.clone()),
+                )
+                .await,
+                Err(ApiError::Forbidden)
+            ));
+        }
+        assert!(matches!(
+            admin_download_application_documents_archive(
+                State(state.clone()),
+                super_headers.clone(),
+                Path("01ARZ3NDEKTSV4RRFFQ69G5FAV".to_owned()),
+            )
+            .await,
+            Err(ApiError::NotFound(_))
+        ));
 
         let notifications = admin_list_notifications(State(state.clone()), super_headers.clone())
             .await

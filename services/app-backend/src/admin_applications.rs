@@ -347,6 +347,67 @@ pub(super) async fn admin_download_application_document(
         .map_err(internal_error)
 }
 
+/// Downloads every PDF of one application as a single ZIP. Same access rules as a single document:
+/// `applications.download_documents` plus the admin's organization scope.
+pub(super) async fn admin_download_application_documents_archive(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(public_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let admin = authorized_admin_context(&state.pool, &headers).await?;
+    admin.require_permission(APPLICATIONS_DOWNLOAD_DOCUMENTS)?;
+    let scope_filter = "($2 IN ('super_admin', 'admin') OR ($2 = 'division_head' AND COALESCE(target_job.division_id, target_division.id) = $3) OR ($2 = 'department_head' AND COALESCE(target_job.department_id, applications.target_department_id) = $4))";
+    let application_id = sqlx::query_scalar::<_, i64>(
+        &format!("SELECT applications.id FROM applications {APPLICATION_TARGET_JOINS} WHERE applications.public_id = $1 AND {scope_filter}"),
+    )
+    .bind(&public_id)
+    .bind(&admin.admin_role)
+    .bind(admin.division_id)
+    .bind(admin.department_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Lamaran tidak ditemukan."))?;
+    let documents = sqlx::query_as::<_, (i64, String, Vec<u8>)>(
+        "SELECT id, document_type, content FROM application_documents WHERE application_id = $1 ORDER BY created_at, id",
+    )
+    .bind(application_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal_error)?;
+    if documents.is_empty() {
+        return Err(ApiError::NotFound("Lamaran ini belum memiliki berkas."));
+    }
+    // Same names as a single download; at most one cv/cover letter/certificate per application,
+    // and supporting documents carry their id, so entry names never collide.
+    let entries = documents
+        .into_iter()
+        .map(|(id, document_type, content)| {
+            let name = match document_type.as_str() {
+                "cv" => "cv.pdf".to_owned(),
+                "cover_letter" => "cover-letter.pdf".to_owned(),
+                "certificate" => "certificate.pdf".to_owned(),
+                "supporting_document" => format!("supporting-document-{id}.pdf"),
+                _ => return Err(ApiError::Internal),
+            };
+            Ok((name, content))
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+    let archive = build_stored_zip(&entries).ok_or(ApiError::Internal)?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CACHE_CONTROL, "private, no-store")
+        .header(CONTENT_TYPE, "application/zip")
+        .header(
+            CONTENT_DISPOSITION,
+            format!("attachment; filename=\"application-{public_id}-documents.zip\""),
+        )
+        .header("x-content-type-options", "nosniff")
+        .body(Body::from(archive))
+        .map_err(internal_error)
+}
+
 pub(super) async fn admin_set_application_status(
     State(state): State<AppState>,
     headers: HeaderMap,

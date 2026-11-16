@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Building2, Database, Download, FileText, Menu, Shield, Users, X } from 'lucide-react'
+import { Bell, Building2, Database, FileText, Menu, Shield, Users, X } from 'lucide-react'
 import { apiDownload, apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -17,6 +17,7 @@ import { UnitWorkManager } from './OrganizationManagers'
 import ApplicationLimitManager from './ApplicationLimitManager'
 import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
+import { ApplicationDownloadMenu } from './ApplicationDownloadMenu'
 import { AdminAuditLog } from './AdminAuditLog'
 import { queryKeys } from '../../query/queryKeys'
 import { usePathRoute, readPath } from '../../usePathRoute'
@@ -158,6 +159,38 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       )
       const safeName = file.file_name.replace(/[\\/:*?"<>|]/g, '_')
       saveDownload(blob, `lamaran-${application.id}-${safeName}`)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setDownloadingApplicationId(null)
+    }
+  }
+
+  async function loadApplicationDocuments(application) {
+    const details = await apiRequest(`/admin/applications/${application.id}`)
+    return details.documents ?? []
+  }
+
+  async function downloadApplicationDocument(application, file) {
+    setError('')
+    setDownloadingApplicationId(application.id)
+    try {
+      const blob = await apiDownload(`/admin/applications/${application.id}/documents/${file.id}`, {})
+      const safeName = file.file_name.replace(/[\\/:*?"<>|]/g, '_')
+      saveDownload(blob, `lamaran-${application.id}-${safeName}`)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setDownloadingApplicationId(null)
+    }
+  }
+
+  async function downloadApplicationArchive(application) {
+    setError('')
+    setDownloadingApplicationId(application.id)
+    try {
+      const blob = await apiDownload(`/admin/applications/${application.id}/documents-archive`, {})
+      saveDownload(blob, `lamaran-${application.id}-berkas.zip`)
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -502,7 +535,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
             {isLoading ? <div className="admin-loading">Memuat lamaran...</div> : filteredApplications.length ? (
               <div className="admin-table-scroll">
                 <table className="admin-table application-table">
-                  <thead><tr><th>REG ID / WAKTU</th><th>NIP &amp; NAMA</th><th>UNIT ASAL</th><th>UNIT DITUJU</th><th>PENDIDIKAN</th><th>FILE DOKUMEN</th><th>STATUS TAHAPAN</th><th>AKSI</th></tr></thead>
+                  <thead><tr><th>REG ID / WAKTU</th><th>NIP &amp; NAMA</th><th>UNIT ASAL</th><th>UNIT DITUJU</th><th>PENDIDIKAN</th><th>STATUS TAHAPAN</th><th>AKSI</th></tr></thead>
                   <tbody>
                     {pageApplications.map((application) => {
                       const createdAt = new Date(application.created_at)
@@ -518,34 +551,20 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                           <td>{application.origin_division || application.current_unit || '-'}<span className="admin-table-subtext">{application.origin_unit || application.current_position || ''}</span></td>
                           <td className="position-name">{application.target_label || application.job_title}{application.job_id && <span className="admin-table-subtext">Riwayat lowongan lama</span>}</td>
                           <td>{application.education_level || '-'}<span className="admin-table-subtext">{application.study_field || ''}</span></td>
-                          <td>
-                            {application.documents_count && canDownloadApplicationDocuments ? (
-                              <button
-                                aria-label={`Unduh CV atau berkas utama ${application.applicant_name}`}
-                                className="admin-small-button admin-document-download"
-                                disabled={downloadingApplicationId === application.id}
-                                onClick={() => void downloadPrimaryApplicationDocument(application)}
-                                type="button"
-                              >
-                                <Download size={14} />
-                                {downloadingApplicationId === application.id ? 'Mengunduh...' : 'Unduh CV/berkas'}
-                              </button>
-                            ) : application.documents_count ? `${application.documents_count} berkas` : 'Belum ada'}
-                          </td>
                           <td><span className={`status-pill status-${application.status}`}>{applicationStatusOptions.find((status) => status.value === application.status)?.label || application.status}</span></td>
                           <td>
                             <div className="application-row-actions">
-                              <button
-                                aria-label={`Unduh data pelamar ${application.applicant_name}`}
-                                className="admin-small-button"
-                                disabled={exportingApplicationId === application.id}
-                                onClick={() => void downloadApplicantData(application)}
-                                type="button"
-                              >
-                                <Download size={14} />
-                                {exportingApplicationId === application.id ? 'Menyiapkan...' : 'Unduh data'}
-                              </button>
-                              <button className="admin-small-button" onClick={() => void openApplication(application.id)} type="button">Tinjau</button>
+                              <button className="admin-small-button application-review-button" onClick={() => void openApplication(application.id)} type="button">Tinjau</button>
+                              <ApplicationDownloadMenu
+                                application={application}
+                                canDownloadDocuments={canDownloadApplicationDocuments}
+                                isBusy={exportingApplicationId === application.id || downloadingApplicationId === application.id}
+                                loadDocuments={loadApplicationDocuments}
+                                onDownloadArchive={downloadApplicationArchive}
+                                onDownloadData={downloadApplicantData}
+                                onDownloadDocument={downloadApplicationDocument}
+                                onDownloadPrimary={downloadPrimaryApplicationDocument}
+                              />
                             </div>
                           </td>
                         </tr>
