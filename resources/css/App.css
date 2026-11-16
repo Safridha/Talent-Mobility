@@ -1321,3 +1321,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .apply-quota-low { border-color: #fde68a; background: #fffbeb; color: #92400e; }
 .apply-quota-empty { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
 .admin-confirm-details { display: grid; gap: 7px; margin: 12px 0 0; padding: 12px 14px 12px 30px; border-radius: 12px; background: #f8fafc; color: #475569; font-size: 13px; line-height: 1.55; text-align: left; }
+
+/* Mobile headers: one compact row. The brand text ("Empower To Produce / From Potential...") is hidden;
+   the logo stays (the link keeps its aria-label) and the account controls get the remaining width. */
+@media (max-width: 700px) {
+  .brand-copy { display: none; }
+  .brand { flex: 0 0 auto; gap: 0; }
+  .site-header, .header-inner { min-height: 64px; }
+  .header-inner { padding: 8px 0; }
+  .header-account { min-width: 0; flex: 1 1 auto; justify-content: flex-end; }
+  .admin-header-inner { flex-wrap: nowrap; justify-content: space-between; gap: 10px; padding: 10px 0; }
+  .admin-header-inner > .brand { flex: 0 0 auto; }
+  .admin-header-user { width: auto; min-width: 0; flex: 1 1 auto; justify-content: flex-end; gap: 8px; }
+  .admin-header-user .account-settings-menu, .header-account .account-settings-menu { min-width: 0; }
+  .admin-header-user .account-settings-trigger, .header-account .account-settings-trigger { max-width: 100%; }
+  .account-settings-identity { max-width: min(120px, 32vw); }
+  .account-settings-identity small { display: none; }
+  .admin-notification-panel { inset: calc(72px + env(safe-area-inset-top)) 12px auto auto; max-height: min(72dvh, 560px, calc(100dvh - 84px - env(safe-area-inset-top))); }
+}
+@media (max-width: 540px) {
+  .admin-shell { --admin-header-height: 64px; }
+}
