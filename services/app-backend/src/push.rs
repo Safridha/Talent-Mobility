@@ -128,6 +128,10 @@ fn parse_vapid_keys(
     let private_key_bytes = URL_SAFE_NO_PAD
         .decode(private_key)
         .map_err(|_| "VAPID_PRIVATE_KEY must be base64url without padding (43 characters).")?;
+    // The key library panics on any other length instead of returning an error.
+    if private_key_bytes.len() != 32 {
+        return Err("VAPID_PRIVATE_KEY is not a valid P-256 private key (expected 32 bytes).".into());
+    }
     let vapid_key = ES256KeyPair::from_bytes(&private_key_bytes)
         .map_err(|_| "VAPID_PRIVATE_KEY is not a valid P-256 private key (expected 32 bytes).")?;
 

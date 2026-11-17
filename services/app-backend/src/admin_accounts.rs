@@ -680,15 +680,28 @@ async fn set_applicant_account_status(
 
 /// Permanently removes an applicant account together with its applications, documents,
 /// notifications, sessions and push subscriptions (all `ON DELETE CASCADE`).
-/// Irreversible, so it needs its own grant (`applicant_accounts.delete`); Super Admin always has it.
+/// Same rules as the typed confirmation in the dialog: case and extra whitespace do not matter.
+fn normalize_confirmation(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+/// Irreversible, so it needs its own grant (`applicant_accounts.delete`; Super Admin always has it)
+/// and the request must carry `{"confirmation": "hapus akun <NIP>"}` for this exact account. The server
+/// builds the expected text itself, so the UI cannot be bypassed by calling the API directly.
 pub(super) async fn admin_delete_account(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<i64>,
+    request: Option<Json<AdminDeleteAccountRequest>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let admin = authorized_operational_admin(&state.pool, &headers).await?;
     admin.require_permission(APPLICANT_ACCOUNTS_MANAGE)?;
     admin.require_permission(APPLICANT_ACCOUNTS_DELETE)?;
+    let confirmation = request
+        .map(|Json(body)| body.confirmation)
+        .ok_or(ApiError::BadRequest(
+            "Teks konfirmasi wajib diisi: hapus akun diikuti NIP.",
+        ))?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     let (name, email, employee_number) = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
         "SELECT name, email, employee_number FROM applicants WHERE id = $1 FOR UPDATE",
@@ -698,6 +711,15 @@ pub(super) async fn admin_delete_account(
     .await
     .map_err(internal_error)?
     .ok_or(ApiError::NotFound("Akun tidak ditemukan."))?;
+    let expected_confirmation = format!(
+        "hapus akun {}",
+        employee_number.clone().unwrap_or_else(|| id.to_string())
+    );
+    if normalize_confirmation(&confirmation) != normalize_confirmation(&expected_confirmation) {
+        return Err(ApiError::BadRequest(
+            "Teks konfirmasi tidak sesuai. Ketik hapus akun diikuti NIP akun ini.",
+        ));
+    }
     let applications_count =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM applications WHERE applicant_id = $1")
             .bind(id)

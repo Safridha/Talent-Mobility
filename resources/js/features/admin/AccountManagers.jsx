@@ -338,12 +338,15 @@ export function AccountListManager({
     }
   }
 
-  async function permanentlyDeleteAccount() {
+  async function permanentlyDeleteAccount(confirmation) {
     if (!pendingPermanentDelete) return
     setError('')
     setIsPermanentDeleting(true)
     try {
-      const response = await apiRequest(`/admin/accounts/${pendingPermanentDelete.id}/permanent`, { method: 'DELETE' })
+      const response = await apiRequest(`/admin/accounts/${pendingPermanentDelete.id}/permanent`, {
+        method: 'DELETE',
+        body: JSON.stringify({ confirmation }),
+      })
       setPendingPermanentDelete(null)
       setNotice(response.message)
       refreshAccounts()
@@ -806,7 +809,7 @@ export function AccountListManager({
           isBusy={isPermanentDeleting}
           message={`Akun ${pendingPermanentDelete.name}${pendingPermanentDelete.employee_number ? ` (NIP ${pendingPermanentDelete.employee_number})` : ''} akan dihapus permanen.`}
           onCancel={() => { setPendingPermanentDelete(null); setError('') }}
-          onConfirm={() => void permanentlyDeleteAccount()}
+          onConfirm={(typed) => void permanentlyDeleteAccount(typed)}
           title="Hapus akun pelamar permanen?"
         />
       )}

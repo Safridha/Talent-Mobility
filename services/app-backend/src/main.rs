@@ -307,6 +307,12 @@ struct AdminApplicantUpdateRequest {
     password: Option<String>,
 }
 
+/// Body of the permanent-delete call: the typed confirmation, "hapus akun <NIP>".
+#[derive(Deserialize)]
+struct AdminDeleteAccountRequest {
+    confirmation: String,
+}
+
 #[derive(Deserialize)]
 struct ApplicantAccountStatusRequest {
     is_active: bool,
@@ -3577,6 +3583,11 @@ mod tests {
         fn is_forbidden<T>(result: &Result<T, ApiError>) -> bool {
             matches!(result, Err(ApiError::Forbidden))
         }
+        fn confirmation(text: &str) -> Option<Json<AdminDeleteAccountRequest>> {
+            Some(Json(AdminDeleteAccountRequest {
+                confirmation: text.to_owned(),
+            }))
+        }
 
         let state = AppState {
             pool,
@@ -3715,8 +3726,13 @@ mod tests {
 
             // Permanent delete.
             let target = new_applicant(&state, &nip(3)).await;
-            let result =
-                admin_delete_account(State(state.clone()), headers.clone(), Path(target)).await;
+            let result = admin_delete_account(
+                State(state.clone()),
+                headers.clone(),
+                Path(target),
+                confirmation(&format!("hapus akun {}", nip(3))),
+            )
+            .await;
             assert_eq!(is_ok(&result), can_delete, "delete [{label}]");
             assert_eq!(is_forbidden(&result), !can_delete, "delete forbidden [{label}]");
             assert_eq!(
@@ -3748,7 +3764,13 @@ mod tests {
             &admin_reset_account_password(State(state.clone()), headers.clone(), Path(target)).await
         ));
         assert!(is_forbidden(
-            &admin_delete_account(State(state.clone()), headers.clone(), Path(target)).await
+            &admin_delete_account(
+                State(state.clone()),
+                headers.clone(),
+                Path(target),
+                confirmation("hapus akun 7790000"),
+            )
+            .await
         ));
         assert!(applicant_exists(&state, target).await);
 
@@ -3766,8 +3788,42 @@ mod tests {
             &admin_reset_account_password(State(state.clone()), super_headers.clone(), Path(target))
                 .await
         ));
+        // The server checks the typed confirmation itself, not just the UI: even a Super Admin must
+        // send "hapus akun <NIP>" of this exact account.
+        let attempts: [(&str, Option<Json<AdminDeleteAccountRequest>>); 6] = [
+            ("no body", None),
+            ("empty text", confirmation("")),
+            ("missing NIP", confirmation("hapus akun")),
+            ("another NIP", confirmation("hapus akun 7790001")),
+            ("extra text", confirmation("hapus akun 7790000 sekarang")),
+            ("wrong words", confirmation("delete akun 7790000")),
+        ];
+        for (name, body) in attempts {
+            let result = admin_delete_account(
+                State(state.clone()),
+                super_headers.clone(),
+                Path(target),
+                body,
+            )
+            .await;
+            assert!(
+                matches!(result, Err(ApiError::BadRequest(_))),
+                "confirmation attempt `{name}` must be rejected"
+            );
+            assert!(
+                applicant_exists(&state, target).await,
+                "account must survive the rejected attempt `{name}`"
+            );
+        }
+        // Case, surrounding and repeated spaces are ignored, like in the dialog.
         assert!(is_ok(
-            &admin_delete_account(State(state.clone()), super_headers.clone(), Path(target)).await
+            &admin_delete_account(
+                State(state.clone()),
+                super_headers.clone(),
+                Path(target),
+                confirmation("  HAPUS   Akun 7790000  "),
+            )
+            .await
         ));
         assert!(!applicant_exists(&state, target).await);
     }

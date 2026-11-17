@@ -87,7 +87,8 @@ export function ConfirmDialog({ title, message, details, error, isBusy, onCancel
   const canConfirm = phraseMatches && !isBusy
 
   function confirm() {
-    if (canConfirm) onConfirm()
+    // A phrase dialog hands the typed text to the caller (the server verifies it too).
+    if (canConfirm) onConfirm(needsPhrase ? typed : undefined)
   }
 
   return (
