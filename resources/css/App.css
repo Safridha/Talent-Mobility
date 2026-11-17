@@ -1481,3 +1481,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .pdf-viewer-skeleton { position: absolute; z-index: 1; inset: 0; display: flex; justify-content: center; overflow: hidden; padding: 12px; background: #e2e8f0; pointer-events: none; }
 .pdf-viewer-skeleton .pdf-skeleton-page { width: min(100%, 900px); }
 @media (prefers-reduced-motion: reduce) { .pdf-loading-bar > span.is-indeterminate { animation: none; width: 100%; } .pdf-loading-bar > span { transition: none; } }
+
+/* Table export menu (PDF / Excel) */
+.admin-export-button { display: inline-flex; align-items: center; gap: 7px; }
+.admin-export-button[aria-expanded="true"] .application-download-chevron { transform: rotate(180deg); }
+.admin-export-error { flex-basis: 100%; color: #b91c1c; font-size: 12px; }

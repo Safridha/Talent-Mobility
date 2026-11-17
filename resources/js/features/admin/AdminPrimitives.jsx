@@ -1,6 +1,7 @@
-import { Download, Search, Trash2, X } from 'lucide-react'
+import { Search, Trash2, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
 import SearchableSelect from '../../components/SearchableSelect'
+import { ExportMenu } from './ExportMenu'
 
 function AdminTableFilter({ filter, onPageChange }) {
   return (
@@ -22,13 +23,25 @@ function AdminTableFilter({ filter, onPageChange }) {
   )
 }
 
+// "Status akun: Aktif  ·  Pencarian: "budi"" - what the exported report says it was filtered by.
+function describeActiveFilters(filters, search) {
+  const parts = filters
+    .map((filter) => {
+      const option = filter.options.find((item) => String(item.value) === String(filter.value))
+      return filter.value && filter.value !== 'all' && option ? `${filter.label}: ${option.label}` : null
+    })
+    .filter(Boolean)
+  if (search?.trim()) parts.push(`Pencarian: "${search.trim()}"`)
+  return parts.length ? parts.join('  ·  ') : 'Semua data'
+}
+
 export function AdminTableToolbar({
   search,
   onSearchChange,
   searchPlaceholder,
   filters = [],
   onPageChange,
-  onDownloadPdf,
+  onDownload,
   downloadDisabled = false,
 }) {
   return (
@@ -46,10 +59,11 @@ export function AdminTableToolbar({
         />
       </label>
       {filters.map((filter) => <AdminTableFilter filter={filter} key={filter.label} onPageChange={onPageChange} />)}
-      {onDownloadPdf && (
-        <button className="admin-small-button admin-export-button" disabled={downloadDisabled} onClick={onDownloadPdf} type="button">
-          <Download aria-hidden="true" size={15} /> Unduh PDF
-        </button>
+      {onDownload && (
+        <ExportMenu
+          disabled={downloadDisabled}
+          onExport={(format) => onDownload(format, { filterText: describeActiveFilters(filters, search) })}
+        />
       )}
     </div>
   )

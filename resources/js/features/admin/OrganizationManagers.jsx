@@ -5,7 +5,7 @@ import SearchableSelect from '../../components/SearchableSelect'
 import { AdminTableToolbar, ConfirmDialog, AdminFormDialog } from './AdminPrimitives'
 import { AdminTablePagination } from './AdminPagination'
 import { useAdminPagination } from './useAdminPagination'
-import { downloadTablePdf } from './downloadPdf'
+import { exportTable } from './exportTable'
 import SuccessPopup from '../../components/SuccessPopup'
 
 export function OrganizationManager({ level, organization, isLoading, onRefresh }) {
@@ -291,24 +291,25 @@ export function OrganizationManager({ level, organization, isLoading, onRefresh 
         onSearchChange={setSearch}
         search={search}
         searchPlaceholder={`Cari ${definition.label.toLocaleLowerCase('id')}${definition.parentField ? ' atau induknya' : ''}...`}
-        onDownloadPdf={() => downloadTablePdf(
-          level,
-          level === 'divisions'
+        onDownload={(format, context) => exportTable(format, {
+          filename: level,
+          title: level === 'divisions'
             ? 'Daftar Divisi'
             : level === 'departments'
               ? 'Daftar Departemen'
               : 'Daftar Biro dan Bengkel',
-          level === 'divisions'
+          subtitle: `${filteredItems.length} data`,
+          headers: level === 'divisions'
             ? ['Divisi', 'Deskripsi', 'Sekretariat', 'Deskripsi sekretariat']
             : level === 'departments'
               ? ['Departemen', 'Divisi', 'Deskripsi']
               : ['Unit kerja', 'Jenis unit', 'Departemen / divisi', 'Deskripsi'],
-          filteredItems.map((item) => level === 'divisions'
+          rows: filteredItems.map((item) => level === 'divisions'
             ? [item.name, item.description, item.secretariat_name, item.secretariat_description]
             : level === 'departments'
               ? [item.name, getParentName(item), item.description]
               : [item.name, item.unit_type === 'bengkel' ? 'Bengkel' : 'Biro', getParentName(item), item.description]),
-        )}
+        }, context)}
         downloadDisabled={isLoading || !filteredItems.length}
       />
       <div className="admin-table-scroll">

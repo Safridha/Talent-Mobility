@@ -7,7 +7,8 @@ import SearchableSelect from '../../components/SearchableSelect'
 import { AdminTableToolbar, ConfirmDialog, AdminFormDialog } from './AdminPrimitives'
 import { AdminTablePagination } from './AdminPagination'
 import { useAdminPagination } from './useAdminPagination'
-import { downloadTablePdf } from './downloadPdf'
+import { exportTable } from './exportTable'
+import { buildAccountsExport } from './exportSpecs'
 import SuccessPopup from '../../components/SuccessPopup'
 import ApplicantImportDialog from './ApplicantImportDialog'
 import EmployeeMasterManager from './EmployeeMasterManager'
@@ -84,6 +85,7 @@ function emptyAccountForm() {
     permissions: [],
   }
 }
+
 
 export function AccountListManager({
   accountType,
@@ -664,35 +666,7 @@ export function AccountListManager({
         onSearchChange={setSearch}
         search={search}
         searchPlaceholder={isAdminAccount ? 'Cari nama atau email...' : 'Cari nama, NIP, divisi, atau jabatan...'}
-        onDownloadPdf={() => downloadTablePdf(
-          isAdminAccount ? 'akun-admin' : 'akun-pelamar',
-          isAdminAccount ? 'Daftar Akun Admin' : 'Daftar Akun Pelamar',
-          isAdminAccount
-            ? ['Nama', 'Email', 'Peran', 'Lingkup organisasi', 'Izin aktif', 'Terdaftar', 'Status']
-            : ['NIP', 'Nama', 'Divisi', 'Departemen', 'Biro', 'Jabatan', 'Pendidikan', 'Email', 'Lamaran', 'Status'],
-          filteredAccounts.map((account) => isAdminAccount
-            ? [
-                account.name,
-                account.email,
-                adminRoles.find((role) => role.value === account.admin_role)?.label || account.admin_role,
-                account.scope_label,
-                (account.permissions || []).length,
-                new Date(account.created_at).toLocaleDateString('id-ID'),
-                account.is_active ? 'Aktif' : 'Nonaktif',
-              ]
-            : [
-                account.employee_number || '-',
-                account.name,
-                account.division_name || '-',
-                account.department_name || '-',
-                account.bureau_name || '-',
-                account.position_title || '-',
-                account.last_education || '-',
-                account.email || '-',
-                account.applications_count,
-                account.is_active ? 'Aktif' : 'Nonaktif',
-              ]),
-        )}
+        onDownload={(format, context) => exportTable(format, buildAccountsExport(isAdminAccount, filteredAccounts, adminRoles), context)}
         downloadDisabled={isLoading || Boolean(loadError) || !filteredAccounts.length}
       />
       <div className="admin-table-scroll">

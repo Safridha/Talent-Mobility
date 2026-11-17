@@ -10,7 +10,9 @@ import { useAccountAvatar } from '../account/useAccountAvatar.ts'
 import { AdminTableToolbar } from './AdminPrimitives'
 import { AdminTablePagination } from './AdminPagination'
 import { useAdminPagination } from './useAdminPagination'
-import { downloadApplicantPdf, downloadTablePdf } from './downloadPdf'
+import { downloadApplicantPdf } from './downloadPdf'
+import { exportTable } from './exportTable'
+import { buildApplicationsExport } from './exportSpecs'
 import SuccessPopup from '../../components/SuccessPopup'
 import PushNotificationControl from '../../components/PushNotificationControl'
 import { UnitWorkManager } from './OrganizationManagers'
@@ -32,6 +34,8 @@ const ADMIN_VIEW_PRESENTATION = {
   'application-limit': { label: 'Batas Lamaran', icon: Users },
   audit: { label: 'Riwayat Audit', icon: Shield },
 }
+// Excel gets every column; the PDF folds them into a few readable ones (name + NIP + email, etc.).
+
 function saveDownload(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -540,25 +544,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                 onSearchChange={setApplicationSearch}
                 search={applicationSearch}
                 searchPlaceholder="Cari pelamar, email, NIP, posisi..."
-                onDownloadPdf={() => downloadTablePdf(
-                  'lamaran',
-                  'Daftar Lamaran',
-                  ['ID lamaran', 'Nama pelamar', 'Email', 'NIP', 'Divisi asal', 'Unit asal', 'Unit tujuan', 'Pendidikan', 'Bidang studi', 'Jumlah berkas', 'Status', 'Tanggal lamaran'],
-                  filteredApplications.map((application) => [
-                    application.id,
-                    application.applicant_name,
-                    application.applicant_email,
-                    application.employee_number,
-                    application.origin_division || application.current_unit,
-                    application.origin_unit || application.current_position,
-                    application.target_label || application.job_title,
-                    application.education_level,
-                    application.study_field,
-                    application.documents_count,
-                    applicationStatusOptions.find((status) => status.value === application.status)?.label || application.status,
-                    new Date(application.created_at).toLocaleString('id-ID'),
-                  ]),
-                )}
+                onDownload={(format, context) => exportTable(format, buildApplicationsExport(filteredApplications), context)}
                 downloadDisabled={!filteredApplications.length}
               />
             )}
