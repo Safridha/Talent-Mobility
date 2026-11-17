@@ -27,6 +27,9 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: 'public/spa',
     emptyOutDir: true,
+    // The pdf.js library (~500 kB) is one lazily loaded chunk that only phones download when an admin
+    // opens a PDF preview; every other chunk stays well below the default limit.
+    chunkSizeWarningLimit: 600,
   },
   server: {
     host: '127.0.0.1',

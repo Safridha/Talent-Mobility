@@ -1,9 +1,17 @@
 import { useState } from 'react'
-import { Building2, CalendarDays, Download, FileText, Mail, MapPin, Paperclip, Save, UserRound, X } from 'lucide-react'
+import { Building2, CalendarDays, Download, Eye, FileText, Mail, MapPin, Paperclip, Save, UserRound, X } from 'lucide-react'
 import { apiDownload } from '../../api'
 import ModalBackdrop from '../../components/ModalBackdrop'
 import SearchableSelect from '../../components/SearchableSelect'
+import { PdfPreviewModal } from './PdfPreviewModal'
 import { applicationStatusOptions, getAvailableApplicationStatuses } from '../applications/status'
+
+const DOCUMENT_TYPE_LABELS = {
+  cv: 'CV',
+  cover_letter: 'Surat pengantar',
+  certificate: 'Sertifikat pendukung',
+  supporting_document: 'Berkas pendukung',
+}
 
 function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return ''
@@ -24,6 +32,7 @@ export function ApplicationReview({
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [downloadingDocumentId, setDownloadingDocumentId] = useState(null)
+  const [previewFile, setPreviewFile] = useState(null)
   const documents = application.documents ?? []
   const statusLabel = applicationStatusOptions.find((option) => option.value === application.status)?.label || application.status
   const submittedAt = new Date(application.created_at)
@@ -58,6 +67,10 @@ export function ApplicationReview({
     } finally {
       setDownloadingDocumentId(null)
     }
+  }
+
+  function loadPreviewBlob(file) {
+    return apiDownload(`/admin/applications/${application.id}/documents/${file.id}`, {})
   }
 
   async function handleSave() {
@@ -153,20 +166,27 @@ export function ApplicationReview({
                 </div>
                 {documents.length ? documents.map((file) => (
                   <div className="application-document-row" key={file.id}>
-                    <span>{({
-                      cv: 'CV',
-                      cover_letter: 'Surat pengantar',
-                      certificate: 'Sertifikat pendukung',
-                      supporting_document: 'Berkas pendukung',
-                    })[file.document_type] || 'Dokumen'} <small>{file.file_name}{formatFileSize(file.file_size) && ` · ${formatFileSize(file.file_size)}`}</small></span>
-                    {canDownloadDocuments && <button
-                      className="admin-small-button"
-                      disabled={downloadingDocumentId === file.id}
-                      onClick={() => void downloadDocument(file)}
-                      type="button"
-                    >
-                      <Download size={15} /> {downloadingDocumentId === file.id ? 'Mengunduh...' : 'Unduh'}
-                    </button>}
+                    <span>{DOCUMENT_TYPE_LABELS[file.document_type] || 'Dokumen'} <small>{file.file_name}{formatFileSize(file.file_size) && ` · ${formatFileSize(file.file_size)}`}</small></span>
+                    {canDownloadDocuments && (
+                      <div className="application-document-actions">
+                        <button
+                          aria-label={`Lihat ${file.file_name}`}
+                          className="admin-small-button"
+                          onClick={() => setPreviewFile(file)}
+                          type="button"
+                        >
+                          <Eye aria-hidden="true" size={15} /> Lihat
+                        </button>
+                        <button
+                          className="admin-small-button"
+                          disabled={downloadingDocumentId === file.id}
+                          onClick={() => void downloadDocument(file)}
+                          type="button"
+                        >
+                          <Download size={15} /> {downloadingDocumentId === file.id ? 'Mengunduh...' : 'Unduh'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )) : <p className="application-document-empty">Belum ada dokumen pendukung.</p>}
               </div>
@@ -210,6 +230,16 @@ export function ApplicationReview({
           </button>}
         </footer>
       </section>
+      {previewFile && (
+        <PdfPreviewModal
+          fileName={previewFile.file_name}
+          key={previewFile.id}
+          loadBlob={() => loadPreviewBlob(previewFile)}
+          onClose={() => setPreviewFile(null)}
+          onDownload={() => void downloadDocument(previewFile)}
+          title={DOCUMENT_TYPE_LABELS[previewFile.document_type] || 'Dokumen'}
+        />
+      )}
     </ModalBackdrop>
   )
 }
