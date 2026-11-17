@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import { PdfLoadingBar, PdfSkeletonPage } from './PdfLoading'
 
 // Phones (notably Chrome on Android) cannot show a PDF inside the page, so the preview renders
 // the pages itself with pdf.js. This file is loaded lazily, only when a mobile admin opens a preview.
 const ZOOM_STEPS = [1, 1.5, 2, 3]
 const MAX_CANVAS_WIDTH = 2400
+const MAX_PAGE_WIDTH = 900
 
 export default function PdfJsViewer({ blob }) {
   const scrollRef = useRef(null)
@@ -45,7 +47,8 @@ export default function PdfJsViewer({ blob }) {
     if (!pdf || !pagesRef.current || !scrollRef.current) return undefined
     const container = pagesRef.current
     const zoom = ZOOM_STEPS[zoomIndex]
-    const availableWidth = Math.max(200, scrollRef.current.clientWidth - 24)
+    // Full-screen on a wide desktop would otherwise stretch one page across the whole monitor.
+    const availableWidth = Math.min(MAX_PAGE_WIDTH, Math.max(200, scrollRef.current.clientWidth - 24))
     let cancelled = false
     let currentTask = null
     container.replaceChildren()
@@ -110,8 +113,14 @@ export default function PdfJsViewer({ blob }) {
           {!pdf ? 'Memuat dokumen...' : isRendering ? `Memuat halaman ${renderedPages + 1} dari ${totalPages}` : `${totalPages} halaman`}
         </small>
       </div>
+      {(!pdf || isRendering) && !error && (
+        <PdfLoadingBar label="Memuat halaman" value={pdf ? renderedPages / totalPages : null} />
+      )}
       {error && <p className="pdf-preview-message" role="alert">{error}</p>}
       <div className="pdf-viewer-scroll" ref={scrollRef}>
+        {renderedPages === 0 && !error && (
+          <div className="pdf-viewer-skeleton"><PdfSkeletonPage /></div>
+        )}
         <div className="pdf-viewer-pages" ref={pagesRef} />
       </div>
     </div>

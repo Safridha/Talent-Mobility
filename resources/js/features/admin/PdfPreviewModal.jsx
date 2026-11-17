@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, FileText, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
+import { PdfLoadingPane } from './PdfLoading'
 
 // pdf.js is only needed on phones, so it stays out of the admin bundle until then.
 const PdfJsViewer = lazy(() => import('./PdfJsViewer'))
@@ -21,6 +22,8 @@ function canUseNativePdfViewer() {
 export function PdfPreviewModal({ title, fileName, loadBlob, onDownload, onClose }) {
   const [blob, setBlob] = useState(null)
   const [error, setError] = useState('')
+  const [progress, setProgress] = useState(null)
+  const [frameReady, setFrameReady] = useState(false)
   const closeButtonRef = useRef(null)
   const loadBlobRef = useRef(loadBlob)
   const useNative = useMemo(() => canUseNativePdfViewer(), [])
@@ -28,7 +31,7 @@ export function PdfPreviewModal({ title, fileName, loadBlob, onDownload, onClose
   // The file is fetched once per opened preview, whatever the parent re-renders do.
   useEffect(() => {
     let cancelled = false
-    loadBlobRef.current()
+    loadBlobRef.current(setProgress)
       .then((file) => { if (!cancelled) setBlob(file) })
       .catch((loadError) => { if (!cancelled) setError(loadError.message || 'Dokumen belum dapat dimuat.') })
     return () => { cancelled = true }
@@ -65,14 +68,19 @@ export function PdfPreviewModal({ title, fileName, loadBlob, onDownload, onClose
         <div className="pdf-preview-body">
           {error ? (
             <p className="pdf-preview-message" role="alert">{error}</p>
-          ) : !blob ? (
-            <p className="pdf-preview-message" role="status">Memuat dokumen...</p>
-          ) : useNative ? (
-            <iframe className="pdf-preview-frame" src={objectUrl} title={`Pratinjau ${fileName}`} />
           ) : (
-            <Suspense fallback={<p className="pdf-preview-message" role="status">Menyiapkan penampil PDF...</p>}>
-              <PdfJsViewer blob={blob} />
-            </Suspense>
+            <>
+              {!blob && <PdfLoadingPane label="Memuat dokumen" value={progress} />}
+              {blob && useNative && !frameReady && <PdfLoadingPane label="Membuka dokumen" value={null} />}
+              {blob && useNative && (
+                <iframe className="pdf-preview-frame" onLoad={() => setFrameReady(true)} src={objectUrl} title={`Pratinjau ${fileName}`} />
+              )}
+              {blob && !useNative && (
+                <Suspense fallback={<PdfLoadingPane label="Menyiapkan penampil PDF" value={null} />}>
+                  <PdfJsViewer blob={blob} />
+                </Suspense>
+              )}
+            </>
           )}
         </div>
       </section>

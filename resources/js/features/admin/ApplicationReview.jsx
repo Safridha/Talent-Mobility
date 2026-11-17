@@ -69,8 +69,8 @@ export function ApplicationReview({
     }
   }
 
-  function loadPreviewBlob(file) {
-    return apiDownload(`/admin/applications/${application.id}/documents/${file.id}`, {})
+  function loadPreviewBlob(file, onProgress) {
+    return apiDownload(`/admin/applications/${application.id}/documents/${file.id}`, { onProgress })
   }
 
   async function handleSave() {
@@ -234,7 +234,7 @@ export function ApplicationReview({
         <PdfPreviewModal
           fileName={previewFile.file_name}
           key={previewFile.id}
-          loadBlob={() => loadPreviewBlob(previewFile)}
+          loadBlob={(onProgress) => loadPreviewBlob(previewFile, onProgress)}
           onClose={() => setPreviewFile(null)}
           onDownload={() => void downloadDocument(previewFile)}
           title={DOCUMENT_TYPE_LABELS[previewFile.document_type] || 'Dokumen'}

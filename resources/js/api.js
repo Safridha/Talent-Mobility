@@ -50,7 +50,9 @@ export async function apiRequest(path, { suppressSessionExpired = false, ...opti
   return payload
 }
 
-export async function apiDownload(path, options = {}) {
+// `onProgress(fraction)` is called while the body streams in (0..1), or once with null when the
+// server did not send a Content-Length, so callers can show a determinate or indeterminate bar.
+export async function apiDownload(path, { onProgress, ...options } = {}) {
   const headers = new Headers(options.headers)
   headers.set('Accept', 'application/pdf')
 
@@ -73,7 +75,22 @@ export async function apiDownload(path, options = {}) {
     throw new Error(payload.message || 'Dokumen belum dapat diunduh.')
   }
 
-  return response.blob()
+  const total = Number(response.headers.get('content-length')) || 0
+  if (!onProgress || !response.body || !total) {
+    onProgress?.(null)
+    return response.blob()
+  }
+  const reader = response.body.getReader()
+  const chunks = []
+  let loaded = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    loaded += value.length
+    onProgress(Math.min(1, loaded / total))
+  }
+  return new Blob(chunks, { type: response.headers.get('content-type') || 'application/pdf' })
 }
 
 // fetch cannot report upload progress, so large uploads (several PDFs) use XMLHttpRequest. Same JSON/error
