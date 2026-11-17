@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Search, Trash2, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
 import SearchableSelect from '../../components/SearchableSelect'
@@ -69,7 +70,26 @@ export function AdminTableToolbar({
   )
 }
 
-export function ConfirmDialog({ title, message, details, error, isBusy, onCancel, onConfirm, confirmLabel = 'Hapus', busyLabel = 'Menghapus...', icon: Icon = Trash2, tone = 'danger' }) {
+// Case, extra spaces and surrounding whitespace do not matter when comparing the typed phrase.
+function normalizePhrase(text) {
+  return String(text ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('id')
+}
+
+/**
+ * Confirmation dialog. With `confirmPhrase` the user must also type that exact phrase before the confirm
+ * button works (used for irreversible actions, e.g. "hapus akun 105265015"). The dialog is mounted only
+ * while it is open, so the typed text always starts empty.
+ */
+export function ConfirmDialog({ title, message, details, error, isBusy, onCancel, onConfirm, confirmLabel = 'Hapus', busyLabel = 'Menghapus...', icon: Icon = Trash2, tone = 'danger', confirmPhrase }) {
+  const [typed, setTyped] = useState('')
+  const needsPhrase = Boolean(confirmPhrase)
+  const phraseMatches = !needsPhrase || normalizePhrase(typed) === normalizePhrase(confirmPhrase)
+  const canConfirm = phraseMatches && !isBusy
+
+  function confirm() {
+    if (canConfirm) onConfirm()
+  }
+
   return (
     <ModalBackdrop className="modal-backdrop admin-confirm-backdrop" canDismiss={!isBusy} onDismiss={onCancel}>
       <section
@@ -87,10 +107,36 @@ export function ConfirmDialog({ title, message, details, error, isBusy, onCancel
             {details.map((detail) => <li key={detail}>{detail}</li>)}
           </ul>
         )}
+        {needsPhrase && (
+          <label className="admin-confirm-phrase">
+            <span>Ketik <code>{confirmPhrase}</code> untuk melanjutkan</span>
+            <input
+              aria-invalid={typed.length > 0 && !phraseMatches}
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+              autoFocus
+              disabled={isBusy}
+              onChange={(event) => setTyped(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  confirm()
+                }
+              }}
+              placeholder={confirmPhrase}
+              spellCheck={false}
+              value={typed}
+            />
+            <small className={phraseMatches ? 'is-match' : ''}>
+              {phraseMatches ? 'Teks cocok. Tombol hapus aktif.' : 'Teks harus sama persis, termasuk NIP.'}
+            </small>
+          </label>
+        )}
         {error && <p className="admin-alert error" role="alert">{error}</p>}
         <div className="admin-confirm-actions">
           <button className="detail-button" disabled={isBusy} onClick={onCancel} type="button">Batal</button>
-          <button className={tone === 'danger' ? 'admin-danger-button' : 'apply-button'} disabled={isBusy} onClick={onConfirm} type="button">
+          <button className={tone === 'danger' ? 'admin-danger-button' : 'apply-button'} disabled={!canConfirm} onClick={confirm} type="button">
             {isBusy ? busyLabel : confirmLabel}
           </button>
         </div>

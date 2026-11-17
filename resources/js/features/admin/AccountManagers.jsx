@@ -795,6 +795,7 @@ export function AccountListManager({
         <ConfirmDialog
           busyLabel="Menghapus..."
           confirmLabel="Ya, hapus permanen"
+          confirmPhrase={`hapus akun ${pendingPermanentDelete.employee_number || pendingPermanentDelete.id}`}
           details={[
             `Seluruh lamaran (${pendingPermanentDelete.applications_count ?? 0}), dokumen, notifikasi, dan sesi pelamar ikut terhapus dan tidak dapat dipulihkan.`,
             'Pelamar tidak dapat masuk lagi dan jumlah lamarannya tidak lagi dihitung dalam batas lamaran.',
