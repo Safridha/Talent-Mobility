@@ -324,7 +324,7 @@ export function OrganizationManager({ level, organization, isLoading, onRefresh 
                 <th>DESKRIPSI</th>
                 {level === 'divisions' && <><th>SEKRETARIAT DIVISI</th><th>DESKRIPSI SEKRETARIAT</th></>}
                 {definition.parentField && <th>{definition.parentLabel.toUpperCase()}</th>}
-                <th>AKSI</th>
+                <th className="admin-actions-head">AKSI</th>
               </tr>
             </thead>
             <tbody>

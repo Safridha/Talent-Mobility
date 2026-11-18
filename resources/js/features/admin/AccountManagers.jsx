@@ -682,7 +682,7 @@ export function AccountListManager({
           </div>
         ) : filteredAccounts.length ? (
           <table className="admin-table account-table">
-            <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <><th>DATA KARYAWAN</th><th>LAMARAN</th><th>KATA SANDI</th></>}<th>TERDAFTAR</th><th>STATUS</th><th>AKSI</th></tr></thead>
+            <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <><th>DATA KARYAWAN</th><th>LAMARAN</th><th>KATA SANDI</th></>}<th>TERDAFTAR</th><th>STATUS</th><th className="admin-actions-head">AKSI</th></tr></thead>
             <tbody>
               {pageAccounts.map((account) => {
                 const isCurrentAdmin = isAdminAccount && account.id === currentAdminId

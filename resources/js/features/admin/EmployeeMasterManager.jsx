@@ -247,7 +247,7 @@ export default function EmployeeMasterManager() {
                 {kind === 'department' && <><th>DIVISI</th><th>BIRO / BENGKEL</th></>}
                 {kind === 'bureau' && <><th>DEPARTEMEN</th><th>DIVISI</th></>}
                 <th>AKUN PELAMAR</th>
-                <th>AKSI</th>
+                <th className="admin-actions-head">AKSI</th>
               </tr>
             </thead>
             <tbody>

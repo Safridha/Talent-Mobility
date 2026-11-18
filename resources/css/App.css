@@ -1496,3 +1496,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .admin-confirm-phrase small { color: #64748b; font-size: 12px; }
 .admin-confirm-phrase small.is-match { color: #1f764b; font-weight: 600; }
 .admin-danger-button:disabled { cursor: not-allowed; opacity: .45; }
+
+/* The AKSI column cells are centred (.admin-row-actions); centre their header too so they line up. */
+.admin-table th.admin-actions-head { text-align: center; }
