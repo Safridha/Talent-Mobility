@@ -737,7 +737,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .application-progress-summary dt { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: #718096; font-size: 11px; font-weight: 600; }
 .application-progress-summary dt svg { color: #3b82f6; }
 .application-progress-summary dd { margin: 0; color: #243248; font-size: 12px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
-.application-progress-position-description { margin: 12px 0 0; color: #475569; font-size: 12px; line-height: 1.6; white-space: pre-line; }
+.application-progress-summary .application-progress-position-description { margin: 16px 0 0; color: #475569; font-size: 12px; line-height: 1.6; white-space: pre-line; }
 .application-progress-sidebar { background: #f8fafc; }
 .application-progress-sidebar ol { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .application-progress-step { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 11px; min-width: 0; padding-bottom: 18px; }
@@ -1628,6 +1628,10 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
 .signed-in-user .applicant-notification-panel .applicant-notification-open { display: inline-flex; width: fit-content; }
 .applicant-notification-reason { padding: 7px 9px; border-left: 3px solid #93c5fd; border-radius: 0 7px 7px 0; background: #ffffffb3; }
 .applicant-notification-reason b { color: #334155; font-weight: 700; }
-.application-progress-note { box-sizing: border-box; max-width: 100%; max-height: 180px; margin: 6px 0 0; padding: 7px 9px; overflow: hidden auto; border-left: 3px solid #93c5fd; border-radius: 0 7px 7px 0; background: #eff6ff; color: #334155; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
-.application-progress-note.is-done { border-left-color: #34d399; background: #ecfdf5; }
+.application-progress-step .application-progress-note { box-sizing: border-box; max-width: 100%; max-height: 180px; margin: 6px 0 0; padding: 7px 9px; overflow: hidden auto; border-left: 3px solid #93c5fd; border-radius: 0 7px 7px 0; background: #eff6ff; color: #334155; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
+.application-progress-step.is-rejected .application-progress-indicator { border: 2px solid #dc2626; background: #fef2f2; color: #dc2626; box-shadow: 0 0 0 4px #fee2e2; }
+.application-progress-step.is-rejected strong { color: #b91c1c; font-weight: 700; }
+.application-progress-step.is-rejected p { color: #475569; }
+.application-progress-step .application-progress-note.is-rejected { border-left-color: #f87171; background: #fef2f2; color: #7f1d1d; }
+.application-progress-step .application-progress-note.is-done { border-left-color: #34d399; background: #ecfdf5; }
 .application-progress-note b { font-weight: 700; }

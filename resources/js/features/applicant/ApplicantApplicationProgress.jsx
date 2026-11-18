@@ -14,6 +14,7 @@ function formatDate(value, options) {
 }
 
 function stageState(stage, index, currentStatus, visitedStatuses) {
+  if (stage.value === 'decision' && currentStatus === 'rejected') return 'rejected'
   if (stage.value === currentStatus || (
     stage.value === 'decision' && ['accepted', 'rejected'].includes(currentStatus)
   )) return 'current'
@@ -100,17 +101,17 @@ export default function ApplicantApplicationProgress({ application, job, onClose
                   .find((item) => item.status === historyStatus)
                 const timestamp = historyEntry?.created_at
                 const note = historyEntry?.reason
-                const noteDone = state === 'completed' || (stage.value === 'decision' && currentStatus === 'accepted')
+                const noteClass = state === 'rejected' ? ' is-rejected' : (state === 'completed' || (stage.value === 'decision' && currentStatus === 'accepted')) ? ' is-done' : ''
                 return (
                   <li className={`application-progress-step is-${state}`} key={stage.value}>
                     <span aria-hidden="true" className="application-progress-indicator">
-                      {state === 'completed' ? <Check size={14} /> : state === 'current' ? <Clock3 size={14} /> : state === 'skipped' ? <X size={13} /> : <Circle size={12} />}
+                      {state === 'completed' ? <Check size={14} /> : state === 'current' ? <Clock3 size={14} /> : state === 'rejected' ? <X size={14} /> : state === 'skipped' ? <X size={13} /> : <Circle size={12} />}
                     </span>
                     <div>
                       <strong>{stage.label}</strong>
                       <p>{state === 'current' ? `Sedang berlangsung. ${stage.description}` : state === 'skipped' ? 'Tahap ini tidak dilalui.' : stage.description}</p>
                       {timestamp && <time dateTime={timestamp}>{formatDate(timestamp, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time>}
-                      {note && <p className={`application-progress-note${noteDone ? ' is-done' : ''}`}><b>Catatan:</b> {note}</p>}
+                      {note && <p className={`application-progress-note${noteClass}`}><b>Catatan:</b> {note}</p>}
                       {state === 'upcoming' && <span className="application-progress-upcoming"><Clock3 size={12} /> Menunggu</span>}
                     </div>
                   </li>
