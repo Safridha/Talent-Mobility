@@ -457,7 +457,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                                 <span className="applicant-notification-status">{newStatus}</span>
                                 <strong>{notification.job_title}</strong>
                                 <p>Status berubah dari {previousStatus} menjadi {newStatus}.</p>
-                                {notification.reason && <p>Alasan: {notification.reason}</p>}
+                                {notification.reason && <p className="applicant-notification-reason"><b>Catatan:</b> {notification.reason}</p>}
                                 <time dateTime={notification.created_at}>{new Date(notification.created_at).toLocaleString('id-ID')}</time>
                                 <button
                                   className="applicant-notification-open"

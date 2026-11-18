@@ -480,6 +480,7 @@ struct ApplicationSummary {
 struct ApplicationStatusHistory {
     status: String,
     created_at: String,
+    reason: Option<String>,
 }
 
 #[derive(Serialize)]

@@ -95,9 +95,11 @@ export default function ApplicantApplicationProgress({ application, job, onClose
                 const historyStatus = stage.value === 'decision'
                   ? ['accepted', 'rejected'].includes(currentStatus) ? currentStatus : null
                   : stage.value
-                const timestamp = [...history]
+                const historyEntry = [...history]
                   .reverse()
-                  .find((item) => item.status === historyStatus)?.created_at
+                  .find((item) => item.status === historyStatus)
+                const timestamp = historyEntry?.created_at
+                const note = historyEntry?.reason
                 return (
                   <li className={`application-progress-step is-${state}`} key={stage.value}>
                     <span aria-hidden="true" className="application-progress-indicator">
@@ -107,6 +109,7 @@ export default function ApplicantApplicationProgress({ application, job, onClose
                       <strong>{stage.label}</strong>
                       <p>{state === 'current' ? `Sedang berlangsung. ${stage.description}` : state === 'skipped' ? 'Tahap ini tidak dilalui.' : stage.description}</p>
                       {timestamp && <time dateTime={timestamp}>{formatDate(timestamp, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time>}
+                      {note && <p className="application-progress-note"><b>Catatan:</b> {note}</p>}
                       {state === 'upcoming' && <span className="application-progress-upcoming"><Clock3 size={12} /> Menunggu</span>}
                     </div>
                   </li>

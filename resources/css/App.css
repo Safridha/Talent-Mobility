@@ -1613,3 +1613,20 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
 @keyframes ss-rise { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes ss-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ss-sheet, .ss-sheet-backdrop { animation: none; } }
+/* Applicant notification panel: isolate from the dark header button styles */
+.signed-in-user .applicant-notification-panel { overflow-x: hidden; text-align: left; }
+.signed-in-user .applicant-notification-panel button { width: auto; height: auto; }
+.signed-in-user .applicant-notification-panel .push-notification-toggle { display: inline-grid; width: 36px; height: 36px; border: 1px solid #bfdbfe; border-radius: 10px; background: white; color: #1d4ed8; }
+.signed-in-user .applicant-notification-panel .push-notification-toggle.is-active { border-color: #fecaca; color: #b91c1c; }
+.signed-in-user .applicant-notification-panel .push-notification-toggle:hover:not(:disabled) { background: #eff6ff; }
+.signed-in-user .applicant-notification-panel .notification-clear-button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 9px; border: 1px solid #dbe3ef; border-radius: 7px; background: white; color: #334155; }
+.signed-in-user .applicant-notification-panel .notification-clear-button:hover:not(:disabled) { border-color: #94a3b8; background: #f8fafc; }
+.signed-in-user .applicant-notification-panel .notification-dismiss { position: absolute; top: 12px; right: 14px; display: grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 50%; background: transparent; color: #94a3b8; }
+.signed-in-user .applicant-notification-panel .notification-dismiss:hover:not(:disabled) { border-color: var(--soft-blue-200); background: white; color: var(--soft-blue-700); }
+.signed-in-user .applicant-notification-panel li { padding-right: 46px; color: #52627b; overflow-wrap: anywhere; }
+.signed-in-user .applicant-notification-panel li > strong { font-size: 13px; }
+.signed-in-user .applicant-notification-panel .applicant-notification-open { display: inline-flex; width: fit-content; }
+.applicant-notification-reason { padding: 7px 9px; border-left: 3px solid #93c5fd; border-radius: 0 7px 7px 0; background: #ffffffb3; }
+.applicant-notification-reason b { color: #334155; font-weight: 700; }
+.application-progress-note { margin: 6px 0 0; padding: 7px 9px; border-left: 3px solid #93c5fd; border-radius: 0 7px 7px 0; background: #eff6ff; color: #334155; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.application-progress-note b { font-weight: 700; }
