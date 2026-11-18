@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Building2, CheckCheck, Database, Eye, FileText, Menu, Shield, Users, X } from 'lucide-react'
+import { Bell, Building2, CheckCheck, Eye, FileText, Gauge, LayoutGrid, Shield, ShieldCheck, Users, X } from 'lucide-react'
 import { apiDownload, apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -20,19 +20,21 @@ import ApplicationLimitManager from './ApplicationLimitManager'
 import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
 import { ApplicationDownloadMenu } from './ApplicationDownloadMenu'
+import { AdminBottomNav } from './AdminBottomNav'
 import { AdminAuditLog } from './AdminAuditLog'
 import { queryKeys } from '../../query/queryKeys'
 import { usePathRoute, readPath } from '../../usePathRoute'
 import NotFoundPage from '../../components/NotFoundPage'
 import { ADMIN_ROUTES, ADMIN_VIEW_ROUTES, LEGACY_ADMIN_ROUTE_ALIASES } from '../../routes'
 
+// `icon` is used in the desktop sidebar; `barIcon` and `shortLabel` in the mobile bottom bar.
 const ADMIN_VIEW_PRESENTATION = {
-  dashboard: { label: 'Dashboard', icon: Database },
-  applications: { label: 'Lamaran Masuk', icon: FileText },
-  accounts: { label: 'Manajemen Akun', icon: Users },
-  units: { label: 'Unit Kerja', icon: Building2 },
-  'application-limit': { label: 'Batas Lamaran', icon: Users },
-  audit: { label: 'Riwayat Audit', icon: Shield },
+  dashboard: { label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutGrid },
+  applications: { label: 'Lamaran Masuk', shortLabel: 'Lamaran', icon: FileText },
+  accounts: { label: 'Manajemen Akun', shortLabel: 'Akun', icon: Users },
+  units: { label: 'Unit Kerja', shortLabel: 'Unit', icon: Building2 },
+  'application-limit': { label: 'Batas Lamaran', shortLabel: 'Batas', icon: Gauge },
+  audit: { label: 'Riwayat Audit', shortLabel: 'Audit', icon: ShieldCheck },
 }
 // Excel gets every column; the PDF folds them into a few readable ones (name + NIP + email, etc.).
 
@@ -70,7 +72,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isMarkingAllNotifications, setIsMarkingAllNotifications] = useState(false)
   const [markingNotificationId, setMarkingNotificationId] = useState(null)
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const isAuthenticated = Boolean(session)
   const adminRole = session.admin.admin_role || 'super_admin'
   const isSuperAdmin = adminRole === 'super_admin'
@@ -319,8 +320,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     return Object.keys(ADMIN_VIEW_ROUTES).filter((view) => access[view])
   }, [canManageApplicantAccounts, canViewApplications, isSuperAdmin])
   const views = availableViews.map((id) => {
-    const { label, icon: Icon } = ADMIN_VIEW_PRESENTATION[id]
-    return { id, label, icon: <Icon size={17} /> }
+    const { label, shortLabel, icon: Icon } = ADMIN_VIEW_PRESENTATION[id]
+    return { id, label, shortLabel, icon: <Icon size={17} />, barIcon: <Icon size={22} /> }
   })
   // A view the account may not open: redirect from the bare "/" (default route), otherwise show "not found".
   const isViewUnavailable = Boolean(availableViews.length) && !accountSection && !availableViews.includes(activeView)
@@ -333,7 +334,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
 
   function navigateView(view) {
     setAccountReturnView(view)
-    setIsMobileMenuOpen(false)
     navigate(`admin/${ADMIN_VIEW_ROUTES[view]}`)
   }
 
@@ -459,18 +459,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               <span aria-hidden="true" className="admin-heading-mark"><Shield size={30} /></span>
             </div>
             <div className="admin-workspace">
-              <nav aria-label="Navigasi dashboard admin" className={`admin-tabs${isMobileMenuOpen ? ' is-open' : ''}`}>
-                <button
-                  aria-controls="admin-navigation-menu-items"
-                  aria-expanded={isMobileMenuOpen}
-                  aria-label={isMobileMenuOpen ? 'Tutup navigasi admin' : 'Buka navigasi admin'}
-                  className="admin-mobile-nav-toggle"
-                  onClick={() => setIsMobileMenuOpen((open) => !open)}
-                  type="button"
-                >
-                  {isMobileMenuOpen ? <X aria-hidden="true" size={19} /> : <Menu aria-hidden="true" size={19} />}
-                  <span>Menu admin</span>
-                </button>
+              <nav aria-label="Navigasi dashboard admin" className="admin-tabs">
                 <div className="admin-tab-list" id="admin-navigation-menu-items">
                   {views.map((view) => (
                     <button aria-current={activeView === view.id ? 'page' : undefined} className={activeView === view.id ? 'admin-tab active' : 'admin-tab'} key={view.id} onClick={() => navigateView(view.id)} type="button">
@@ -479,7 +468,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                   ))}
                 </div>
               </nav>
-              <div className="admin-main-content">
+              <div className="admin-main-content" key={activeView}>
         {isForbiddenView ? (
           <NotFoundPage embedded />
         ) : !availableViews.length ? (
@@ -621,6 +610,9 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
           onClose={() => setSelectedApplication(null)}
           onSave={saveApplicationStatus}
         />
+      )}
+      {availableViews.length > 0 && (
+        <AdminBottomNav activeView={accountSection ? null : activeView} onNavigate={navigateView} views={views} />
       )}
     </main>
   )
