@@ -529,10 +529,14 @@ struct AdminApplicantAccount {
     applications_count: i64,
     is_active: bool,
     must_change_password: bool,
+    last_login_at: Option<String>,
+    last_seen_at: Option<String>,
 }
 
 #[derive(FromRow, Serialize)]
 struct ManagedAdminAccount {
+    last_login_at: Option<String>,
+    last_seen_at: Option<String>,
     id: i64,
     name: String,
     email: String,
@@ -1086,6 +1090,7 @@ async fn authorized_admin_context(
     let Some((id, admin_role, division_id, department_id, permissions)) = admin else {
         return Err(ApiError::Unauthorized);
     };
+    touch_last_seen(pool, "admins", id).await;
     Ok(AdminContext {
         id,
         token_hash,
@@ -1163,12 +1168,21 @@ async fn authorized_account_identity(
         "admin" => "admin",
         _ => return Err(ApiError::Internal),
     };
+    touch_last_seen(pool, if role == "admin" { "admins" } else { "applicants" }, id).await;
     Ok(AccountIdentity {
         id,
         role,
         token_hash,
         must_change_password,
     })
+}
+
+async fn touch_last_seen(pool: &PgPool, table: &'static str, id: i64) {
+    // Throttled to one write per minute per account; failures never block the request.
+    let sql = format!(
+        "UPDATE {table} SET last_seen_at = NOW() WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '1 minute')"
+    );
+    let _ = sqlx::query(&sql).bind(id).execute(pool).await;
 }
 
 fn is_valid_email(email: &str) -> bool {

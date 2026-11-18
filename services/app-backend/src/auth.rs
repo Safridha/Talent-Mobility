@@ -43,6 +43,7 @@ pub(super) async fn login(
             .execute(&state.pool)
             .await
             .map_err(internal_error)?;
+    sqlx::query("UPDATE applicants SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = $1").bind(applicant.id).execute(&state.pool).await.map_err(internal_error)?;
 
             let mut headers = HeaderMap::new();
             headers.insert(SET_COOKIE, session_cookie(Some(&token))?);
@@ -99,6 +100,7 @@ pub(super) async fn login(
     .execute(&state.pool)
     .await
     .map_err(internal_error)?;
+    sqlx::query("UPDATE admins SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = $1").bind(admin.id).execute(&state.pool).await.map_err(internal_error)?;
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, session_cookie(Some(&token))?);
@@ -175,6 +177,7 @@ pub(super) async fn admin_login(
     .execute(&state.pool)
     .await
     .map_err(internal_error)?;
+    sqlx::query("UPDATE admins SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = $1").bind(admin.id).execute(&state.pool).await.map_err(internal_error)?;
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, session_cookie(Some(&token))?);

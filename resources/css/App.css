@@ -1638,3 +1638,7 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
 .application-progress-step .application-progress-note.is-rejected { border-left-color: #f87171; background: #fef2f2; color: #7f1d1d; }
 .application-progress-step .application-progress-note.is-done { border-left-color: #34d399; background: #ecfdf5; }
 .application-progress-note b { font-weight: 700; }
+
+.account-activity { display: inline-flex; align-items: center; gap: 6px; color: #64748b; font-size: 12px; white-space: nowrap; }
+.account-activity.is-online { color: #047857; font-weight: 700; }
+.account-activity i { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 3px #d1fae5; }

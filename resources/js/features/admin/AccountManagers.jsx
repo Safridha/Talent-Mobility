@@ -64,6 +64,27 @@ const defaultAdminPermissions = {
   super_admin: [],
 }
 
+const ACTIVE_WINDOW_MS = 5 * 60 * 1000
+
+function describeLastActivity(account, now) {
+  const seen = account.last_seen_at ? new Date(account.last_seen_at).getTime() : NaN
+  const login = account.last_login_at ? new Date(account.last_login_at).getTime() : NaN
+  const latest = Math.max(Number.isNaN(seen) ? 0 : seen, Number.isNaN(login) ? 0 : login)
+  if (!latest) return { active: false, label: 'Belum pernah login' }
+  const diff = Math.max(0, now - latest)
+  if (diff < ACTIVE_WINDOW_MS) return { active: true, label: 'Sedang aktif' }
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  const months = Math.floor(days / 30)
+  let label
+  if (months >= 1) label = `${months} bulan yang lalu`
+  else if (days >= 1) label = `${days} hari yang lalu`
+  else if (hours >= 1) label = `${hours} jam yang lalu`
+  else label = `${minutes} menit yang lalu`
+  return { active: false, label, title: new Date(latest).toLocaleString('id-ID') }
+}
+
 function permissionsForRole(role) {
   return defaultAdminPermissions[role] || []
 }
@@ -87,6 +108,15 @@ function emptyAccountForm() {
 }
 
 
+function useNow(intervalMs = 30000) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs)
+    return () => window.clearInterval(timer)
+  }, [intervalMs])
+  return now
+}
+
 export function AccountListManager({
   accountType,
   currentAdminId,
@@ -99,6 +129,7 @@ export function AccountListManager({
   const accountsPath = isAdminAccount ? '/admin/admin-accounts' : '/admin/accounts'
   const accountKind = isAdminAccount ? 'admin' : 'pelamar'
   const minimumPasswordLength = 8
+  const now = useNow()
   const [accounts, setAccounts] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -156,6 +187,17 @@ export function AccountListManager({
       })
     return () => { active = false }
   }, [accountKind, accountsPath, refreshKey])
+
+  useEffect(() => {
+    // Quietly refresh so the "Sedang aktif" / last-login column stays current.
+    const timer = window.setInterval(() => {
+      if (document.hidden) return
+      apiRequest(accountsPath)
+        .then((response) => { if (Array.isArray(response.data)) setAccounts(response.data) })
+        .catch(() => {})
+    }, 60000)
+    return () => window.clearInterval(timer)
+  }, [accountsPath])
 
   function refreshAccounts() {
     setLoadError('')
@@ -682,7 +724,7 @@ export function AccountListManager({
           </div>
         ) : filteredAccounts.length ? (
           <table className="admin-table account-table">
-            <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <><th>DATA KARYAWAN</th><th>LAMARAN</th><th>KATA SANDI</th></>}<th>TERDAFTAR</th><th>STATUS</th><th className="admin-actions-head">AKSI</th></tr></thead>
+            <thead><tr><th>AKUN</th>{isAdminAccount && <th>PERAN / LINGKUP</th>}{!isAdminAccount && <><th>DATA KARYAWAN</th><th>LAMARAN</th><th>KATA SANDI</th></>}<th>TERDAFTAR</th><th>LOGIN TERAKHIR</th><th>STATUS</th><th className="admin-actions-head">AKSI</th></tr></thead>
             <tbody>
               {pageAccounts.map((account) => {
                 const isCurrentAdmin = isAdminAccount && account.id === currentAdminId
@@ -703,6 +745,10 @@ export function AccountListManager({
                   {!isAdminAccount && <td>{account.applications_count}</td>}
                   {!isAdminAccount && <td>{account.must_change_password ? 'Wajib diganti saat masuk' : 'Sudah diganti'}</td>}
                   <td>{new Date(account.created_at).toLocaleDateString('id-ID')}</td>
+                  <td>{(() => {
+                    const activity = describeLastActivity(account, now)
+                    return <span className={`account-activity${activity.active ? ' is-online' : ''}`} title={activity.title}>{activity.active && <i aria-hidden="true" />}{activity.label}</span>
+                  })()}</td>
                   <td>
                     <div className="account-status-control">
                       <span className={account.is_active ? 'account-status active' : 'account-status inactive'}>{account.is_active ? 'Aktif' : 'Nonaktif'}</span>
