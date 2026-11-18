@@ -699,6 +699,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .admin-table .position-code { color: var(--blue); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 800; }
 .admin-table .position-name { color: #172033; font-weight: 700; }
 .admin-table-empty { padding: 30px !important; color: #64748b !important; text-align: center; }
+.admin-table .admin-reg-cell { min-width: 190px; white-space: nowrap; }
+.admin-table .admin-reg-cell .admin-table-subtext { white-space: nowrap; }
+.admin-reg-id { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
 .admin-table-subtext { display: block; margin-top: 3px; color: #94a3b8; font-size: 11px; }
 .admin-audit-panel .section-kicker { display: inline-block; margin-bottom: 5px; }
 .admin-audit-panel .admin-table { min-width: 1080px; }

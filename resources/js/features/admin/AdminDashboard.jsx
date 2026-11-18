@@ -537,10 +537,12 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
                   <tbody>
                     {pageApplications.map((application) => {
                       const createdAt = new Date(application.created_at)
-                      const registrationId = `REG-${createdAt.getFullYear()}-${String(application.id).padStart(4, '0')}`
+                      const rawId = String(application.id)
+                      const isLongId = rawId.length > 8
+                      const registrationId = isLongId ? `REG-${createdAt.getFullYear()}` : `REG-${createdAt.getFullYear()}-${rawId.padStart(4, '0')}`
                       return (
                         <tr key={application.id}>
-                          <td className="position-code">{registrationId}<span className="admin-table-subtext">{createdAt.toLocaleString('id-ID')}</span></td>
+                          <td className="position-code admin-reg-cell">{registrationId}{isLongId && <small className="admin-reg-id" title={`${registrationId}-${rawId}`}>{rawId}</small>}<span className="admin-table-subtext">{createdAt.toLocaleString('id-ID')}</span></td>
                           <td className="position-name">
                             {application.applicant_name}
                             <span className="admin-table-subtext">NIP: {application.employee_number || '-'}</span>

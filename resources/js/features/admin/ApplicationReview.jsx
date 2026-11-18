@@ -112,7 +112,7 @@ export function ApplicationReview({
                 <h4>Kontak pelamar</h4>
                 <dl className="application-detail-grid">
                   <div><dt>Nama</dt><dd>{application.applicant_name}</dd></div>
-                  <div><dt>Email</dt><dd>{application.applicant_email ? <a href={`mailto:${application.applicant_email}`}><Mail aria-hidden="true" size={14} /> {application.applicant_email}</a> : 'Belum diisi'}</dd></div>
+                  <div className="application-detail-wide"><dt>Email</dt><dd>{application.applicant_email ? <a href={`mailto:${application.applicant_email}`}><Mail aria-hidden="true" size={14} /> <span>{application.applicant_email.split('@').map((part, index) => index === 0 ? part : <span key="domain"><wbr />@{part}</span>)}</span></a> : 'Belum diisi'}</dd></div>
                   {application.employee_number && <div><dt>NIP</dt><dd>{application.employee_number}</dd></div>}
                 </dl>
               </div>
