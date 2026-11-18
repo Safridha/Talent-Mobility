@@ -1571,7 +1571,7 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
 /* ===== Admin sidebar: search, grouped sections, count badge ===== */
 .admin-tabs.admin-sidebar { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 14px; padding: 14px 12px; border-radius: 18px; }
 .admin-sidebar-search { display: flex; min-height: 42px; align-items: center; gap: 8px; padding: 0 10px 0 12px; border: 1px solid #e2e8f0; border-radius: 999px; background: white; color: #64748b; transition: border-color .15s ease, box-shadow .15s ease; }
-.admin-sidebar-search:focus-within { border-color: #6b8df5; box-shadow: 0 0 0 3px #e3ebff; }
+.admin-sidebar-search:focus-within { border-color: #4a5f95; box-shadow: 0 0 0 3px #e4e9f6; }
 .admin-sidebar-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: #1e293b; font: inherit; font-size: 13px; }
 .admin-sidebar-search input::-webkit-search-cancel-button { display: none; }
 .admin-sidebar-search kbd { padding: 2px 6px; border-radius: 6px; background: #f1f5f9; color: #64748b; font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -1580,9 +1580,9 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
 .admin-tab.admin-sidebar-item { display: flex; min-height: 42px; align-items: center; gap: 11px; padding: 0 12px; border-radius: 999px; color: #475569; font-size: 13.5px; font-weight: 600; text-align: left; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
 .admin-sidebar-item svg { flex: none; }
 .admin-sidebar-item span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.admin-tab.admin-sidebar-item:hover { background: #eef3ff; color: #2f4fd1; }
-.admin-tab.admin-sidebar-item.active { background: linear-gradient(145deg, #4f7df3, #3b5de7); color: white; box-shadow: 0 8px 18px #3b5de74d; }
-.admin-sidebar-item em { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #e3ebff; color: #2f4fd1; font-size: 11px; font-style: normal; font-weight: 800; text-align: center; }
+.admin-tab.admin-sidebar-item:hover { background: #eef2fb; color: #1f3366; }
+.admin-tab.admin-sidebar-item.active { background: linear-gradient(135deg, #1b2a57, #22396f); color: white; box-shadow: 0 8px 18px #1b2a5740; }
+.admin-sidebar-item em { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #e4e9f6; color: #1f3366; font-size: 11px; font-style: normal; font-weight: 800; text-align: center; }
 .admin-sidebar-item.active em { background: white; }
 .admin-sidebar-empty { margin: 0; padding: 6px 10px; color: #64748b; font-size: 12px; }
 @media (max-width: 700px) { .admin-tabs.admin-sidebar { display: none; } }
