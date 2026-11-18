@@ -21,6 +21,7 @@ import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
 import { ApplicationDownloadMenu } from './ApplicationDownloadMenu'
 import { AdminBottomNav } from './AdminBottomNav'
+import { AdminSidebar } from './AdminSidebar'
 import { AdminAuditLog } from './AdminAuditLog'
 import { queryKeys } from '../../query/queryKeys'
 import { usePathRoute, readPath } from '../../usePathRoute'
@@ -459,15 +460,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
               <span aria-hidden="true" className="admin-heading-mark"><Shield size={30} /></span>
             </div>
             <div className="admin-workspace">
-              <nav aria-label="Navigasi dashboard admin" className="admin-tabs">
-                <div className="admin-tab-list" id="admin-navigation-menu-items">
-                  {views.map((view) => (
-                    <button aria-current={activeView === view.id ? 'page' : undefined} className={activeView === view.id ? 'admin-tab active' : 'admin-tab'} key={view.id} onClick={() => navigateView(view.id)} type="button">
-                      {view.icon} {view.label}
-                    </button>
-                  ))}
-                </div>
-              </nav>
+              <AdminSidebar activeView={activeView} badges={{ applications: unreadNotificationCount }} onNavigate={navigateView} views={views} />
               <div className="admin-main-content" key={activeView}>
         {isForbiddenView ? (
           <NotFoundPage embedded />

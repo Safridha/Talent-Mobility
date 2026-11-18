@@ -1567,3 +1567,22 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
   .admin-main-content { animation: none; }
   .admin-bottom-nav-bubble, .admin-bottom-nav-icon, .admin-more-backdrop, .admin-more-sheet { transition: none; }
 }
+
+/* ===== Admin sidebar: search, grouped sections, count badge ===== */
+.admin-tabs.admin-sidebar { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 14px; padding: 14px 12px; border-radius: 18px; }
+.admin-sidebar-search { display: flex; min-height: 42px; align-items: center; gap: 8px; padding: 0 10px 0 12px; border: 1px solid #e2e8f0; border-radius: 999px; background: white; color: #64748b; transition: border-color .15s ease, box-shadow .15s ease; }
+.admin-sidebar-search:focus-within { border-color: #7c6cf0; box-shadow: 0 0 0 3px #ede9fe; }
+.admin-sidebar-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: #1e293b; font: inherit; font-size: 13px; }
+.admin-sidebar-search input::-webkit-search-cancel-button { display: none; }
+.admin-sidebar-search kbd { padding: 2px 6px; border-radius: 6px; background: #f1f5f9; color: #64748b; font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.admin-sidebar-group { display: grid; gap: 4px; }
+.admin-sidebar-heading { padding: 0 8px 2px; color: #64748b; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.admin-tab.admin-sidebar-item { display: flex; min-height: 42px; align-items: center; gap: 11px; padding: 0 12px; border-radius: 999px; color: #475569; font-size: 13.5px; font-weight: 600; text-align: left; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
+.admin-sidebar-item svg { flex: none; }
+.admin-sidebar-item span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-tab.admin-sidebar-item:hover { background: #f1f0fd; color: #4c3fd0; }
+.admin-tab.admin-sidebar-item.active { background: #5b45e6; color: white; box-shadow: 0 8px 18px #5b45e64d; }
+.admin-sidebar-item em { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #ede9fe; color: #5b45e6; font-size: 11px; font-style: normal; font-weight: 800; text-align: center; }
+.admin-sidebar-item.active em { background: white; }
+.admin-sidebar-empty { margin: 0; padding: 6px 10px; color: #64748b; font-size: 12px; }
+@media (max-width: 700px) { .admin-tabs.admin-sidebar { display: none; } }
