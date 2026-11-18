@@ -1,13 +1,38 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Search } from 'lucide-react'
+import { Check, ChevronDown, Search, X } from 'lucide-react'
 
-// iOS Safari does not give buttons focus on tap and zooms/scrolls the page when a small input is focused,
-// which breaks the floating search menu. iOS therefore gets the native picker, which always works there.
+// Phones get a bottom sheet instead of the floating menu: iOS Safari does not focus buttons on tap and zooms or
+// scrolls the page when a small input gets focus, which breaks the floating menu, and the native <select> popup
+// looks out of place. The sheet is plain buttons, so it behaves the same on iOS and Android.
+const SHEET_QUERY = '(max-width: 700px)'
+const SEARCH_THRESHOLD = 7
+
 function isIOSDevice() {
   if (typeof navigator === 'undefined') return false
   return /iP(hone|ad|od)/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+function useSheetMode() {
+  const [isSheet, setIsSheet] = useState(() => isIOSDevice() || (typeof window !== 'undefined' && window.matchMedia?.(SHEET_QUERY).matches))
+  useEffect(() => {
+    const media = window.matchMedia?.(SHEET_QUERY)
+    if (!media) return undefined
+    const update = () => setIsSheet(isIOSDevice() || media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+  return isSheet
+}
+
+// Title for the sheet: the <label> the control sits in or points at, if any.
+function findFieldLabel(element, id) {
+  const wrapping = element?.closest('label')
+  const text = wrapping
+    ? [...wrapping.childNodes].find((node) => node.nodeType === 3 && node.textContent.trim())?.textContent
+    : id ? document.querySelector(`label[for="${id}"]`)?.textContent : ''
+  return text?.trim() || ''
 }
 
 export default function SearchableSelect({
@@ -22,7 +47,11 @@ export default function SearchableSelect({
   searchPlaceholder = 'Ketik untuk mencari...',
   value,
 }) {
-  const [useNativePicker] = useState(isIOSDevice)
+  const useSheet = useSheetMode()
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [sheetTitle, setSheetTitle] = useState('')
+  const [sheetQuery, setSheetQuery] = useState('')
+  const triggerRef = useRef(null)
   const [isOpen, setIsOpen] = useState(false)
   const menuInteractionRef = useRef(false)
   const [query, setQuery] = useState('')
@@ -109,6 +138,31 @@ export default function SearchableSelect({
     )
   }, [isOpen, query, required, selected])
 
+  useEffect(() => {
+    if (!isSheetOpen) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    function onKeyDown(event) {
+      if (event.key === 'Escape') setIsSheetOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [isSheetOpen])
+
+  useEffect(() => {
+    if (!useSheet) setIsSheetOpen(false)
+  }, [useSheet])
+
+  function openSheet() {
+    if (disabled) return
+    setSheetTitle(findFieldLabel(triggerRef.current, id) || placeholder)
+    setSheetQuery('')
+    setIsSheetOpen(true)
+  }
+
   function openDropdown() {
     if (disabled) return
     const selectedIndex = options.findIndex((option) => String(option.value) === String(value))
@@ -153,31 +207,72 @@ export default function SearchableSelect({
     }
   }
 
-  if (useNativePicker) {
-    const hasEmptyOption = options.some((option) => String(option.value) === '')
+  if (useSheet) {
+    const needle = sheetQuery.trim().toLocaleLowerCase('id')
+    const sheetOptions = needle ? options.filter((option) => option.label.toLocaleLowerCase('id').includes(needle)) : options
     return (
-      <div className={`searchable-select is-native${disabled ? ' is-disabled' : ''}`}>
-        <div className="searchable-select-control">
+      <div className={`searchable-select is-sheet${disabled ? ' is-disabled' : ''}`}>
+        <button
+          aria-expanded={isSheetOpen}
+          aria-haspopup="dialog"
+          className="searchable-select-control searchable-select-trigger"
+          disabled={disabled}
+          id={id}
+          onClick={openSheet}
+          ref={triggerRef}
+          type="button"
+        >
           <Search aria-hidden="true" className="searchable-select-search-icon" size={16} />
-          <select
-            className="searchable-select-native"
-            disabled={disabled}
-            id={id}
-            name={name}
-            onChange={(event) => {
-              const chosen = options.find((option) => String(option.value) === event.target.value)
-              if (chosen) onChange(chosen.value)
-            }}
-            required={required}
-            value={String(value ?? '')}
-          >
-            {!hasEmptyOption && <option value="">{placeholder}</option>}
-            {options.map((option) => (
-              <option key={option.value} value={String(option.value)}>{option.label}</option>
-            ))}
-          </select>
+          <span className={`searchable-select-value${selected ? '' : ' is-placeholder'}`}>{selected?.label ?? placeholder}</span>
           <ChevronDown aria-hidden="true" className="searchable-select-chevron" size={16} />
-        </div>
+        </button>
+        {name && <input name={name} type="hidden" value={String(value ?? '')} />}
+        {required && <input aria-hidden="true" className="searchable-select-required" onChange={() => {}} required tabIndex={-1} value={selected ? String(selected.value) : ''} />}
+        {isSheetOpen && createPortal(
+          <div className="ss-sheet-layer">
+            <button aria-label="Tutup" className="ss-sheet-backdrop" onClick={() => setIsSheetOpen(false)} type="button" />
+            <section aria-label={sheetTitle} aria-modal="true" className="ss-sheet" role="dialog">
+              <span aria-hidden="true" className="ss-sheet-grab" />
+              <header>
+                <strong>{sheetTitle}</strong>
+                <button aria-label="Tutup" onClick={() => setIsSheetOpen(false)} type="button"><X size={18} /></button>
+              </header>
+              {options.length > SEARCH_THRESHOLD && (
+                <label className="ss-sheet-search">
+                  <Search aria-hidden="true" size={16} />
+                  <input
+                    aria-label="Cari pilihan"
+                    autoComplete="off"
+                    onChange={(event) => setSheetQuery(event.target.value)}
+                    placeholder={searchPlaceholder}
+                    type="search"
+                    value={sheetQuery}
+                  />
+                </label>
+              )}
+              <div className="ss-sheet-list" role="listbox">
+                {sheetOptions.length ? sheetOptions.map((option) => {
+                  const isSelected = String(option.value) === String(value)
+                  return (
+                    <button
+                      aria-selected={isSelected}
+                      className={`ss-sheet-option${isSelected ? ' is-selected' : ''}`}
+                      key={option.value}
+                      onClick={() => { onChange(option.value); setIsSheetOpen(false) }}
+                      ref={isSelected ? (element) => element?.scrollIntoView({ block: 'center' }) : undefined}
+                      role="option"
+                      type="button"
+                    >
+                      <span>{option.label}</span>
+                      {isSelected && <Check aria-hidden="true" size={18} />}
+                    </button>
+                  )
+                }) : <p className="searchable-select-empty">Tidak ada pilihan yang cocok.</p>}
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
       </div>
     )
   }

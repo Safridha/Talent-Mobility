@@ -1586,3 +1586,30 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
 .admin-sidebar-item.active em { background: white; }
 .admin-sidebar-empty { margin: 0; padding: 6px 10px; color: #64748b; font-size: 12px; }
 @media (max-width: 700px) { .admin-tabs.admin-sidebar { display: none; } }
+
+/* ===== Select as a bottom sheet on phones ===== */
+.searchable-select-trigger { width: 100%; font: inherit; text-align: left; color: #1e293b; -webkit-appearance: none; appearance: none; }
+.searchable-select-value { min-width: 0; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.searchable-select-value.is-placeholder { color: #94a3b8; }
+.searchable-select-required { position: absolute; bottom: 0; left: 50%; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+.ss-sheet-layer { position: fixed; z-index: 1300; inset: 0; }
+.ss-sheet-backdrop { position: absolute; inset: 0; width: 100%; border: 0; background: #0f172a8c; animation: ss-fade .22s ease both; }
+.ss-sheet {
+  position: absolute; right: 0; bottom: 0; left: 0; display: flex; max-height: min(78dvh, 640px); flex-direction: column; gap: 6px;
+  padding: 8px 14px calc(14px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; background: white; box-shadow: 0 -12px 40px #0f172a40;
+  animation: ss-rise .32s cubic-bezier(.2, .8, .2, 1) both;
+}
+.ss-sheet-grab { width: 38px; height: 4px; align-self: center; border-radius: 2px; background: #cbd5e1; }
+.ss-sheet > header { display: flex; align-items: center; justify-content: space-between; padding: 6px 2px 4px; color: #172033; font-size: 16px; }
+.ss-sheet > header button { display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 50%; background: #f1f5f9; color: #475569; }
+.ss-sheet-search { display: flex; min-height: 44px; flex: none; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; color: #64748b; }
+.ss-sheet-search:focus-within { border-color: #4a5f95; box-shadow: 0 0 0 3px #e4e9f6; }
+.ss-sheet-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: #1e293b; font: inherit; font-size: 16px; }
+.ss-sheet-search input::-webkit-search-cancel-button { display: none; }
+.ss-sheet-list { display: grid; gap: 2px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 2px 0; }
+.ss-sheet-option { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: #334155; font: inherit; font-size: 15px; text-align: left; -webkit-tap-highlight-color: transparent; }
+.ss-sheet-option:active { background: #f1f5f9; }
+.ss-sheet-option.is-selected { background: #e8edf8; color: #1b2a57; font-weight: 600; }
+@keyframes ss-rise { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes ss-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ss-sheet, .ss-sheet-backdrop { animation: none; } }
