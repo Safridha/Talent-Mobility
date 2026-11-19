@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { useCloseOnBack } from './useCloseOnBack'
 
 export default function ModalBackdrop({
   children,
@@ -7,6 +8,7 @@ export default function ModalBackdrop({
   onDismiss,
 }) {
   const pointer = useRef(null)
+  useCloseOnBack(onDismiss, canDismiss && typeof onDismiss === 'function')
 
   function handlePointerDown(event) {
     pointer.current = event.target === event.currentTarget
