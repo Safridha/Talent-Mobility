@@ -28,7 +28,7 @@ export default function PdfJsViewer({ blob }) {
         loadingTask = pdfjs.getDocument({ data })
         const loaded = await loadingTask.promise
         if (cancelled) {
-          void loaded.destroy()
+          void loadingTask?.destroy()
           return
         }
         setPdf(loaded)
@@ -94,8 +94,6 @@ export default function PdfJsViewer({ blob }) {
       container.replaceChildren()
     }
   }, [pdf, zoomIndex])
-
-  useEffect(() => () => { void pdf?.destroy() }, [pdf])
 
   function changeZoom(step) {
     const next = Math.min(ZOOM_STEPS.length - 1, Math.max(0, zoomIndex + step))

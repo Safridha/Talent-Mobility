@@ -8,6 +8,7 @@ import '@fontsource/poppins/latin-700.css'
 import '@fontsource/poppins/latin-800.css'
 import '../css/index.css'
 import App from './App.jsx'
+import RootErrorBoundary from './components/RootErrorBoundary.jsx'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,8 +21,10 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
+    <RootErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </RootErrorBoundary>
   </StrictMode>,
 )
