@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, FileText, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
@@ -19,6 +19,20 @@ function canUseNativePdfViewer() {
  * Pop-up preview of one PDF. `loadBlob` fetches the file with the admin's session (same permission and
  * unit scope as downloading it), so nothing is exposed through a public URL.
  */
+// A failure inside the viewer must never take the whole page down with it.
+class PreviewBoundary extends Component {
+  state = { failed: false }
+
+  static getDerivedStateFromError() { return { failed: true } }
+
+  render() {
+    if (this.state.failed) {
+      return <p className="pdf-preview-message" role="alert">Dokumen tidak dapat ditampilkan. Gunakan tombol Unduh untuk membukanya.</p>
+    }
+    return this.props.children
+  }
+}
+
 export function PdfPreviewModal({ title, fileName, loadBlob, onDownload, onClose }) {
   const [blob, setBlob] = useState(null)
   const [error, setError] = useState('')
@@ -63,7 +77,7 @@ export function PdfPreviewModal({ title, fileName, loadBlob, onDownload, onClose
           <button className="admin-small-button pdf-preview-download" onClick={onDownload} type="button">
             <Download aria-hidden="true" size={15} /> <span>Unduh</span>
           </button>
-          <button aria-label="Tutup pratinjau" className="icon-button" onClick={onClose} ref={closeButtonRef} type="button"><X size={20} /></button>
+          <button aria-label="Tutup pratinjau" className="icon-button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onClose() }} ref={closeButtonRef} type="button"><X size={20} /></button>
         </header>
         <div className="pdf-preview-body">
           {error ? (
@@ -76,9 +90,11 @@ export function PdfPreviewModal({ title, fileName, loadBlob, onDownload, onClose
                 <iframe className="pdf-preview-frame" onLoad={() => setFrameReady(true)} src={objectUrl} title={`Pratinjau ${fileName}`} />
               )}
               {blob && !useNative && (
-                <Suspense fallback={<PdfLoadingPane label="Menyiapkan penampil PDF" value={null} />}>
-                  <PdfJsViewer blob={blob} />
-                </Suspense>
+                <PreviewBoundary>
+                  <Suspense fallback={<PdfLoadingPane label="Menyiapkan penampil PDF" value={null} />}>
+                    <PdfJsViewer blob={blob} />
+                  </Suspense>
+                </PreviewBoundary>
               )}
             </>
           )}

@@ -88,6 +88,10 @@ export default function PdfJsViewer({ blob }) {
     return () => {
       cancelled = true
       currentTask?.cancel()
+      // iOS Safari keeps canvas bitmaps alive after unmount; zeroing them frees the memory so
+      // closing the preview does not leave the page blank.
+      container.querySelectorAll('canvas').forEach((canvas) => { canvas.width = 0; canvas.height = 0 })
+      container.replaceChildren()
     }
   }, [pdf, zoomIndex])
 

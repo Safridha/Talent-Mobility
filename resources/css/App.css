@@ -1525,6 +1525,9 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
   .admin-header, .site-header { padding-top: env(safe-area-inset-top); }
   .admin-content { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
   .admin-tabs { display: none; }
+  /* Dialogs sit above the floating bottom nav so their action buttons are never covered. */
+  .modal-backdrop { z-index: 35; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .auth-backdrop, .admin-confirm-backdrop { z-index: 36; }
 
   .admin-bottom-nav {
     position: fixed; z-index: 30; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 12px;
