@@ -1645,3 +1645,10 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
 .account-activity { display: inline-flex; align-items: center; gap: 6px; color: #64748b; font-size: 12px; white-space: nowrap; }
 .account-activity.is-online { color: #047857; font-weight: 700; }
 .account-activity i { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 3px #d1fae5; }
+
+/* Admin: page heading banner removed — sidebar and content use the full height */
+.admin-shell { --admin-page-heading-height: 0px; }
+@media (min-width: 701px) {
+  .admin-content:not(.admin-account-content) { padding-top: calc(var(--admin-header-height) + 20px); }
+  .admin-tabs.admin-sidebar { top: calc(var(--admin-header-height) + 16px); height: calc(100vh - var(--admin-header-height) - 32px); max-height: none; }
+}

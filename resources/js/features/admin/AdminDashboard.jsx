@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Building2, CheckCheck, Eye, FileText, Gauge, LayoutGrid, Shield, ShieldCheck, Users, X } from 'lucide-react'
+import { Bell, Building2, CheckCheck, Eye, FileText, Gauge, LayoutGrid, ShieldCheck, Users, X } from 'lucide-react'
 import { apiDownload, apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -83,12 +83,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const canDownloadApplicationDocuments = hasPermission('applications.download_documents')
   const canManageApplicantAccounts = hasPermission('applicant_accounts.manage')
   const canViewOrganizationOptions = isSuperAdmin || canManageApplicantAccounts
-  const adminRoleLabel = {
-    super_admin: 'Super Admin',
-    admin: 'Admin Operasional',
-    division_head: 'Kepala Divisi (Kadiv)',
-    department_head: 'Kepala Departemen (Kadep)',
-  }[adminRole] || 'Administrator'
   const [avatarUrl, refreshAvatar] = useAccountAvatar(isAuthenticated)
   const adminSessionQuery = useQuery({
     queryKey: queryKeys.adminSession,
@@ -343,16 +337,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     navigate(section ? `admin/account/${section}` : `admin/${ADMIN_VIEW_ROUTES[activeView]}`)
   }
 
-  const activeViewDescription = {
-    dashboard: 'Pantau lamaran dan tindak lanjuti proses seleksi pada unit kerja Anda.',
-    applications: 'Tinjau lamaran, unduh dokumen, dan perbarui tahapan seleksi.',
-    accounts: 'Kelola akun pelamar dan akses portal.',
-    units: 'Kelola hierarki Divisi, Departemen, dan Biro/Bengkel beserta deskripsinya.',
-    'application-limit': 'Atur jumlah maksimal lamaran yang dapat dikirim setiap pelamar.',
-    audit: 'Tinjau perubahan akun, izin akses, dan data master.',
-  }[activeView]
-  const activeViewLabel = views.find((view) => view.id === activeView)?.label || 'Dashboard'
-
   return (
     <main className="admin-shell">
       <header className="admin-header">
@@ -451,14 +435,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
           />
         ) : (
           <>
-            <div className="admin-page-heading">
-              <div>
-                <span className="admin-heading-kicker">PANEL ADMINISTRATOR · {adminRoleLabel.toLocaleUpperCase('id')}</span>
-                <h1>{activeView === 'dashboard' ? 'Dashboard' : activeViewLabel}</h1>
-                <p>{activeViewDescription}</p>
-              </div>
-              <span aria-hidden="true" className="admin-heading-mark"><Shield size={30} /></span>
-            </div>
             <div className="admin-workspace">
               <AdminSidebar activeView={activeView} badges={{ applications: unreadNotificationCount }} onNavigate={navigateView} views={views} />
               <div className="admin-main-content" key={activeView}>
