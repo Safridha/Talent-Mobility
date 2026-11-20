@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
-const CHECK_INTERVAL_MS = 60_000
 const COUNTDOWN_SECONDS = 5
-const SNOOZE_MS = 5 * 60_000
 const RING_LENGTH = 2 * Math.PI * 14
 
 function getBuildAssetSignature(documentNode) {
@@ -14,12 +12,12 @@ function getBuildAssetSignature(documentNode) {
 }
 
 /**
- * Watches for a newer deployed build. When one is found a small toast counts down from 5 and then
- * reloads; "Tunda" pauses it for a few minutes so nobody loses what they are typing.
+ * Tells people when a newer build has been deployed: a small toast counts down from 5 and reloads.
+ * There is no polling. The server keeps one open event stream; a deploy restarts the server, the stream
+ * reconnects to the new version, and that reconnect (plus returning to the tab) triggers one check.
  */
 export default function AppUpdateNotice() {
   const [secondsLeft, setSecondsLeft] = useState(null)
-  const snoozeUntil = useRef(0)
 
   useEffect(() => {
     const currentBuild = getBuildAssetSignature(document)
@@ -27,7 +25,7 @@ export default function AppUpdateNotice() {
 
     let isChecking = false
     async function checkForUpdate() {
-      if (isChecking || document.visibilityState === 'hidden' || Date.now() < snoozeUntil.current) return
+      if (isChecking || document.visibilityState === 'hidden') return
       isChecking = true
       try {
         const response = await fetch(`/?__app_build_check=${Date.now()}`, {
@@ -47,14 +45,19 @@ export default function AppUpdateNotice() {
       }
     }
 
-    const intervalId = window.setInterval(checkForUpdate, CHECK_INTERVAL_MS)
+    let stream = null
+    if (typeof EventSource !== 'undefined') {
+      stream = new EventSource('/api/app-updates')
+      // Fires on the first connection and on every reconnect after the server restarts.
+      stream.onopen = () => void checkForUpdate()
+    }
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') void checkForUpdate()
     }
     window.addEventListener('focus', checkForUpdate)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
-      window.clearInterval(intervalId)
+      stream?.close()
       window.removeEventListener('focus', checkForUpdate)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
@@ -71,11 +74,6 @@ export default function AppUpdateNotice() {
   }, [secondsLeft])
 
   if (secondsLeft === null) return null
-
-  function snooze() {
-    snoozeUntil.current = Date.now() + SNOOZE_MS
-    setSecondsLeft(null)
-  }
 
   const progress = Math.max(0, secondsLeft) / COUNTDOWN_SECONDS
 
@@ -97,10 +95,7 @@ export default function AppUpdateNotice() {
       <div className="app-update-text">
         <strong><RefreshCw aria-hidden="true" size={12} /> Pembaruan tersedia</strong>
         <small>Dimuat ulang otomatis dalam {secondsLeft} detik.</small>
-        <div className="app-update-actions">
-          <button className="app-update-primary" onClick={() => window.location.reload()} type="button">Muat ulang</button>
-          <button className="app-update-secondary" onClick={snooze} type="button">Tunda</button>
-        </div>
+        <button className="app-update-primary" onClick={() => window.location.reload()} type="button">Muat ulang sekarang</button>
       </div>
     </div>
   )

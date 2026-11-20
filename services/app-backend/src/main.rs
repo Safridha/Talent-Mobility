@@ -862,6 +862,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/api/login", post(login))
         .route("/api/session", get(current_session))
+        .route("/api/app-updates", get(app_updates_stream))
         .route("/api/logout", post(logout))
         .route(
             "/api/account/profile",
@@ -1175,6 +1176,25 @@ async fn authorized_account_identity(
         token_hash,
         must_change_password,
     })
+}
+
+/// Open connection the web app keeps while it is in use. It carries no data: when a deploy restarts the
+/// server the connection drops and reconnects to the new version, which is the signal to check for an
+/// update. The periodic message keeps proxies from closing an idle connection.
+async fn app_updates_stream() -> axum::response::sse::Sse<
+    tokio_stream::wrappers::ReceiverStream<Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
+    let (sender, receiver) = tokio::sync::mpsc::channel(1);
+    tokio::spawn(async move {
+        loop {
+            let event = axum::response::sse::Event::default().event("hello").data("ok");
+            if sender.send(Ok(event)).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(25)).await;
+        }
+    });
+    axum::response::sse::Sse::new(tokio_stream::wrappers::ReceiverStream::new(receiver))
 }
 
 async fn touch_last_seen(pool: &PgPool, table: &'static str, id: i64) {
