@@ -9,6 +9,7 @@ import '@fontsource/poppins/latin-800.css'
 import '../css/index.css'
 import App from './App.jsx'
 import RootErrorBoundary from './components/RootErrorBoundary.jsx'
+import AppUpdateNotice from './components/AppUpdateNotice.jsx'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +25,7 @@ createRoot(document.getElementById('root')).render(
     <RootErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <App />
+        <AppUpdateNotice />
       </QueryClientProvider>
     </RootErrorBoundary>
   </StrictMode>,

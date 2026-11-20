@@ -1652,3 +1652,21 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
   .admin-content:not(.admin-account-content) { padding-top: calc(var(--admin-header-height) + 20px); }
   .admin-tabs.admin-sidebar { top: calc(var(--admin-header-height) + 16px); height: calc(100vh - var(--admin-header-height) - 32px); max-height: none; }
 }
+
+.app-update-notice { position: fixed; z-index: 2100; right: 14px; bottom: 14px; display: flex; max-width: min(300px, calc(100vw - 28px)); align-items: center; gap: 11px; padding: 10px 12px; border: 1px solid #e8edf5; border-radius: 14px; background: #fff; box-shadow: 0 12px 28px #0f172a2e; animation: app-update-in .28s ease-out; }
+.app-update-ring { position: relative; width: 34px; height: 34px; flex: none; }
+.app-update-ring svg { width: 34px; height: 34px; transform: rotate(-90deg); fill: none; stroke-width: 3; }
+.app-update-ring-track { stroke: #e5ecfb; }
+.app-update-ring-fill { stroke: #2563eb; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.app-update-ring b { position: absolute; inset: 0; display: grid; place-items: center; color: #1e3a8a; font-size: 13px; font-weight: 700; }
+.app-update-text { min-width: 0; }
+.app-update-text strong { display: flex; align-items: center; gap: 5px; color: #0f172a; font-size: 12px; font-weight: 600; }
+.app-update-text strong svg { color: #2563eb; }
+.app-update-text small { display: block; margin-top: 1px; color: #64748b; font-size: 10.5px; line-height: 1.35; }
+.app-update-actions { display: flex; gap: 6px; margin-top: 6px; }
+.app-update-actions button { min-height: 26px; padding: 0 10px; border: 0; border-radius: 7px; font-size: 10.5px; font-weight: 600; }
+.app-update-primary { background: #2563eb; color: #fff; }
+.app-update-secondary { background: #f1f5f9; color: #475569; }
+@keyframes app-update-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (max-width: 700px) { .app-update-notice { bottom: calc(92px + env(safe-area-inset-bottom)); right: 12px; } }
+@media (prefers-reduced-motion: reduce) { .app-update-notice { animation: none; } .app-update-ring-fill { transition: none; } }
