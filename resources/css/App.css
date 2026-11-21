@@ -1867,4 +1867,5 @@ button.batch-chip:hover { background: #e2e8f0; }
 .date-popover-day.is-blocked { background: repeating-linear-gradient(135deg, #f1f5f9 0 4px, #e9eef5 4px 8px); color: #b6c0cf; cursor: not-allowed; text-decoration: line-through; }
 .date-popover-note { margin: 8px 0 0; color: #64748b; font-size: 10.5px; line-height: 1.45; }
 
-.turnstile-box { display: flex; min-height: 65px; justify-content: center; margin: 6px 0 2px; }
+.turnstile-box { display: block; width: 100%; min-height: 65px; margin: 6px 0 2px; }
+.turnstile-box > div, .turnstile-box iframe { width: 100% !important; max-width: 100%; }

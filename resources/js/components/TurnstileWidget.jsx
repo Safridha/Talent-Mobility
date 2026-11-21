@@ -47,6 +47,7 @@ export default function TurnstileWidget({ onToken, onError, resetKey = 0 }) {
         widgetIdRef.current = turnstile.render(containerRef.current, {
           sitekey: SITE_KEY,
           theme: 'light',
+          size: 'flexible',
           language: 'id',
           callback: (token) => callbacksRef.current.onToken(token),
           'expired-callback': () => callbacksRef.current.onToken(''),
