@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Building2, CheckCheck, Eye, FileText, Gauge, LayoutGrid, ShieldCheck, Users, X } from 'lucide-react'
+import { Bell, Building2, CheckCheck, Eye, FileText, CalendarRange, Gauge, LayoutGrid, ShieldCheck, Users, X } from 'lucide-react'
 import { apiDownload, apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -17,6 +17,7 @@ import SuccessPopup from '../../components/SuccessPopup'
 import PushNotificationControl from '../../components/PushNotificationControl'
 import { UnitWorkManager } from './OrganizationManagers'
 import ApplicationLimitManager from './ApplicationLimitManager'
+import BatchManager from './BatchManager'
 import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
 import { ApplicationDownloadMenu } from './ApplicationDownloadMenu'
@@ -34,6 +35,7 @@ const ADMIN_VIEW_PRESENTATION = {
   applications: { label: 'Lamaran Masuk', shortLabel: 'Lamaran', icon: FileText },
   accounts: { label: 'Manajemen Akun', shortLabel: 'Akun', icon: Users },
   units: { label: 'Unit Kerja', shortLabel: 'Unit', icon: Building2 },
+  batches: { label: 'Batch Periode', shortLabel: 'Batch', icon: CalendarRange },
   'application-limit': { label: 'Batas Lamaran', shortLabel: 'Batas', icon: Gauge },
   audit: { label: 'Riwayat Audit', shortLabel: 'Audit', icon: ShieldCheck },
 }
@@ -66,6 +68,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
   const [applicationSearch, setApplicationSearch] = useState('')
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('all')
   const [applicationTargetFilter, setApplicationTargetFilter] = useState('all')
+  // null = not chosen yet: show the batch that is running now (or every batch when none is).
+  const [applicationBatchChoice, setApplicationBatchChoice] = useState(null)
   const [selectedApplication, setSelectedApplication] = useState(null)
   const [downloadingApplicationId, setDownloadingApplicationId] = useState(null)
   const [exportingApplicationId, setExportingApplicationId] = useState(null)
@@ -284,6 +288,14 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     }
   }
 
+  const activeBatchQuery = useQuery({ queryKey: queryKeys.publicBatch, queryFn: () => apiRequest('/batches/current'), enabled: canViewApplications })
+  const activeBatchId = activeBatchQuery.data?.batch ? String(activeBatchQuery.data.batch.id) : null
+  const applicationBatchOptions = [...new Map(applications.filter((application) => application.batch_id).map((application) => [
+    String(application.batch_id),
+    { value: String(application.batch_id), label: application.batch_name },
+  ])).values()].sort((left, right) => Number(right.value) - Number(left.value))
+  const applicationBatchFilter = applicationBatchChoice
+    ?? (activeBatchId && applicationBatchOptions.some((option) => option.value === activeBatchId) ? activeBatchId : 'all')
   const applicationTargetOptions = [...new Map(applications.map((application) => [
     application.target_key || (application.job_id ? `job:${application.job_id}` : `direct:${application.id}`),
     {
@@ -299,7 +311,8 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
     const matchesStatus = applicationStatusFilter === 'all' || application.status === applicationStatusFilter
     const targetKey = application.target_key || (application.job_id ? `job:${application.job_id}` : `direct:${application.id}`)
     const matchesTarget = applicationTargetFilter === 'all' || targetKey === applicationTargetFilter
-    return matchesSearch && matchesStatus && matchesTarget
+    const matchesBatch = applicationBatchFilter === 'all' || String(application.batch_id) === applicationBatchFilter
+    return matchesSearch && matchesStatus && matchesTarget && matchesBatch
   })
   const { items: pageApplications, page: applicationsPage, setPage: setApplicationsPage } = useAdminPagination(filteredApplications)
 
@@ -309,6 +322,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       applications: canViewApplications,
       accounts: canManageApplicantAccounts || isSuperAdmin,
       units: isSuperAdmin,
+      batches: isSuperAdmin,
       'application-limit': isSuperAdmin,
       audit: isSuperAdmin,
     }
@@ -481,11 +495,17 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
         )}
         {activeView === 'applications' && (
           <section className="admin-table-panel">
-            <div className="admin-table-heading"><div><h2>Lamaran masuk</h2><p>{applications.length} lamaran</p></div></div>
+            <div className="admin-table-heading"><div><h2>Lamaran masuk</h2><p>{filteredApplications.length === applications.length ? `${applications.length} lamaran` : `${filteredApplications.length} dari ${applications.length} lamaran`}</p></div></div>
             {!isLoading && (
               <AdminTableToolbar
                 onPageChange={setApplicationsPage}
                 filters={[
+                  {
+                    label: 'Batch',
+                    value: applicationBatchFilter,
+                    onChange: setApplicationBatchChoice,
+                    options: applicationBatchOptions,
+                  },
                   {
                     label: 'Status lamaran',
                     value: applicationStatusFilter,
@@ -562,6 +582,7 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
             organization={organization}
           />
         )}
+        {activeView === 'batches' && isSuperAdmin && <BatchManager />}
         {activeView === 'application-limit' && isSuperAdmin && (
           <ApplicationLimitManager />
         )}

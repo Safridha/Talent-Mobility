@@ -21,6 +21,7 @@ const entityLabels = {
   job_type: 'Jenis pekerjaan',
   employee: 'Direktori karyawan',
   application_limit: 'Batas lamaran',
+  application_batch: 'Batch periode',
 }
 
 export function AdminAuditLog() {

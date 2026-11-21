@@ -14,6 +14,7 @@ import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
 import { AccountSettingsPage } from '../account/AccountSettings'
 import { useAccountAvatar } from '../account/useAccountAvatar.ts'
 import ApplicantApplicationProgress from './ApplicantApplicationProgress'
+import BatchBanner from '../batches/BatchBanner'
 import AuthDialog from '../auth/AuthDialog'
 import { applicationStatusOptions, getApplicationStatusDescription } from '../applications/status'
 import { usePathRoute } from '../../usePathRoute'
@@ -92,10 +93,23 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   })
   const currentUserApplications = applicationsQuery.data?.data ?? []
   // The server counts every submitted application (any status) against the admin-set limit.
+  const batchQuery = useQuery({
+    queryKey: queryKeys.publicBatch,
+    queryFn: () => apiRequest('/batches/current'),
+    refetchInterval: 60_000,
+  })
+  const batchData = batchQuery.data
+  // Applying is only possible while a batch is open for registration, and only for the units it activates.
+  const isRegistrationOpen = batchData?.phase === 'registration'
+  const openBatch = isRegistrationOpen ? batchData.batch : null
+  function isUnitOpen(target) {
+    return Boolean(openBatch) && (openBatch.all_units || openBatch.department_ids.includes(target.target_department_id))
+  }
+  const batchApplicationCount = applicationsQuery.data?.batch_application_count ?? 0
   const maxApplications = applicationsQuery.data?.max_applications ?? null
   const remainingApplications = maxApplications === null
     ? null
-    : Math.max(0, maxApplications - currentUserApplications.length)
+    : Math.max(0, maxApplications - batchApplicationCount)
   const isApplyLimitReached = remainingApplications === 0
   const selectedApplication = currentUserApplications.find((application) => application.id === selectedApplicationId)
   const selectedApplicationJob = selectedApplication ? {
@@ -294,6 +308,10 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
     if (!session) {
       setPendingDirectTarget(directTarget)
       setAuthMode('login')
+      return
+    }
+    if (!isUnitOpen(directTarget)) {
+      setApplicationActionError(isRegistrationOpen ? 'Unit tujuan ini tidak dibuka pada batch yang sedang berlangsung.' : 'Pendaftaran belum dibuka atau sudah ditutup.')
       return
     }
     if (isApplyLimitReached) {
@@ -523,6 +541,8 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
               </div>
             </section>
 
+            <BatchBanner data={batchData} />
+
             <section aria-label="Pilih tujuan lamaran langsung" className="direct-application-picker">
               <header className="direct-application-picker-heading">
                 <div>
@@ -592,13 +612,13 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
 
             {applicationsError && <p className="login-error" role="alert">{applicationsError}</p>}
             <SuccessPopup message={applicationNotice} onClose={setApplicationNotice} />
-            {isAuthenticated && remainingApplications !== null && (
+            {isAuthenticated && isRegistrationOpen && remainingApplications !== null && (
               <p
                 className={`apply-quota${isApplyLimitReached ? ' apply-quota-empty' : remainingApplications <= 1 ? ' apply-quota-low' : ''}`}
                 role="status"
               >
                 {isApplyLimitReached
-                  ? `Batas lamaran habis (${currentUserApplications.length}/${maxApplications}). Anda tidak dapat melamar lagi.`
+                  ? `Batas lamaran habis (${batchApplicationCount}/${maxApplications}). Anda tidak dapat melamar lagi.`
                   : `Sisa kesempatan melamar: ${remainingApplications} dari ${maxApplications}`}
               </p>
             )}
@@ -615,6 +635,7 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                 <div className="job-grid public-job-grid direct-application-grid">
                   {visibleTargets.map((target) => {
                     const hasApplied = appliedDirectTargetKeys.has(target.key)
+                    const unitOpen = isUnitOpen(target)
                     const isApplying = applyingJobId === target.key
                     const kind = targetKind(target)
                     return (
@@ -642,11 +663,12 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
                           </button>
                           <button
                             className="apply-button"
-                            disabled={hasApplied || isApplyLimitReached || Boolean(applyingJobId)}
+                            disabled={hasApplied || !unitOpen || isApplyLimitReached || Boolean(applyingJobId)}
+                            title={!unitOpen ? (isRegistrationOpen ? 'Unit ini tidak dibuka pada batch yang sedang berlangsung' : 'Pendaftaran belum dibuka atau sudah ditutup') : undefined}
                             onClick={() => handleDirectApply(target)}
                             type="button"
                           >
-                            {isApplying ? 'Mengirim...' : hasApplied ? 'Sudah melamar' : isApplyLimitReached ? 'Batas habis' : 'Apply'}
+                            {isApplying ? 'Mengirim...' : hasApplied ? 'Sudah melamar' : !unitOpen ? (isRegistrationOpen ? 'Tidak dibuka' : 'Pendaftaran ditutup') : isApplyLimitReached ? 'Batas habis' : 'Apply'}
                           </button>
                         </div>
                       </article>

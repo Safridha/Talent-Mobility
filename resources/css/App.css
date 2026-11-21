@@ -1667,3 +1667,59 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
 @keyframes app-update-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (max-width: 700px) { .app-update-notice { bottom: calc(92px + env(safe-area-inset-bottom)); right: 12px; } }
 @media (prefers-reduced-motion: reduce) { .app-update-notice { animation: none; } .app-update-ring-fill { transition: none; } }
+
+/* ===== Batch banner (job page) ===== */
+.batch-banner { --batch-accent: #1d4ed8; --batch-soft: #eff6ff; margin: 18px 0; padding: 16px 20px; border: 1px solid #dbe3ef; border-left: 4px solid var(--batch-accent); border-radius: 14px; background: white; box-shadow: 0 6px 18px #0f172a0d; }
+.batch-banner.is-open { --batch-accent: #0f766e; --batch-soft: #ecfdf5; }
+.batch-banner.is-selection { --batch-accent: #b45309; --batch-soft: #fffbeb; }
+.batch-banner.is-idle { --batch-accent: #64748b; --batch-soft: #f1f5f9; }
+.batch-banner-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.batch-banner-icon { display: grid; width: 36px; height: 36px; flex: none; place-items: center; border-radius: 10px; background: var(--batch-soft); color: var(--batch-accent); }
+.batch-banner-head h2 { flex: 1; min-width: 0; margin: 0; color: #172033; font-size: 16px; line-height: 1.35; }
+.batch-banner-badge { padding: 4px 11px; border-radius: 999px; background: var(--batch-soft); color: var(--batch-accent); font-size: 11px; font-weight: 800; white-space: nowrap; }
+.batch-banner-steps { display: flex; align-items: flex-start; margin: 16px 0 10px; padding: 0; list-style: none; }
+.batch-banner-steps li { position: relative; display: flex; min-width: 0; flex: 1; flex-direction: column; align-items: center; gap: 6px; color: #64748b; font-size: 11px; font-weight: 600; text-align: center; }
+.batch-banner-steps li + li::before { content: ''; position: absolute; top: 6px; right: 50%; width: 100%; height: 2px; background: #dbe3ef; }
+.batch-banner-steps li.is-done + li::before, .batch-banner-steps li.is-current::before { background: var(--batch-accent); }
+.batch-banner-dot { position: relative; z-index: 1; width: 14px; height: 14px; border: 2px solid #cbd5e1; border-radius: 50%; background: white; }
+.batch-banner-steps li.is-done .batch-banner-dot { border-color: var(--batch-accent); background: var(--batch-accent); }
+.batch-banner-steps li.is-current .batch-banner-dot { border-color: var(--batch-accent); background: var(--batch-accent); box-shadow: 0 0 0 4px var(--batch-soft); }
+.batch-banner-steps li.is-done, .batch-banner-steps li.is-current { color: #1e293b; }
+.batch-banner-copy { display: grid; gap: 3px; }
+.batch-banner-copy p { margin: 0; color: #52627b; font-size: 13px; line-height: 1.5; }
+.batch-banner-copy p:first-child { color: #334155; font-weight: 600; }
+@media (max-width: 600px) { .batch-banner { padding: 14px 14px; } .batch-banner-steps li { font-size: 10px; } }
+
+/* ===== Admin: batch periode ===== */
+.admin-batch-panel .admin-table-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.admin-batch-add { display: inline-flex; align-items: center; gap: 6px; }
+.admin-batch-list { display: grid; gap: 12px; margin: 0; padding: 0 0 4px; list-style: none; }
+.admin-batch-card { padding: 14px 16px; border: 1px solid #dbe3ef; border-left: 4px solid #94a3b8; border-radius: 12px; background: white; }
+.admin-batch-card.is-registration { border-left-color: #0f766e; }
+.admin-batch-card.is-selection { border-left-color: #b45309; }
+.admin-batch-card.is-upcoming { border-left-color: #1d4ed8; }
+.admin-batch-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.admin-batch-head > div:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.admin-batch-head strong { color: #172033; font-size: 15px; }
+.admin-batch-phase { padding: 3px 10px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 800; }
+.admin-batch-phase.is-registration { background: #ecfdf5; color: #047857; }
+.admin-batch-phase.is-selection { background: #fffbeb; color: #b45309; }
+.admin-batch-phase.is-upcoming { background: #eff6ff; color: #1d4ed8; }
+.admin-batch-actions { display: flex; align-items: center; gap: 8px; }
+.admin-batch-card dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 18px; margin: 12px 0 0; }
+.admin-batch-card dt { color: #64748b; font-size: 11px; font-weight: 700; }
+.admin-batch-card dd { margin: 2px 0 0; color: #1e293b; font-size: 13px; font-weight: 600; }
+.admin-batch-form { display: grid; gap: 14px; }
+.admin-batch-form label { display: grid; gap: 5px; color: #334155; font-size: 12px; font-weight: 700; }
+.admin-batch-form input[type='text'], .admin-batch-form input:not([type]), .admin-batch-form input[type='date'] { min-height: 40px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 9px; font: inherit; font-size: 14px; }
+.admin-batch-form fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; margin: 0; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 12px; }
+.admin-batch-form legend { display: inline-flex; align-items: center; gap: 6px; padding: 0 6px; color: #172033; font-size: 12px; font-weight: 800; }
+.admin-batch-form fieldset:last-of-type { display: block; }
+.admin-batch-hint { margin: -4px 0 0; color: #64748b; font-size: 12px; line-height: 1.5; }
+.admin-batch-check { display: flex !important; align-items: center; gap: 8px !important; font-weight: 600 !important; }
+.admin-batch-check.is-division { margin-top: 6px; color: #172033 !important; font-weight: 800 !important; }
+.admin-batch-units { display: grid; max-height: 260px; gap: 4px; overflow-y: auto; margin-top: 10px; padding-right: 4px; }
+.admin-batch-division { display: grid; gap: 4px; }
+.admin-batch-division > .admin-batch-check:not(.is-division) { padding-left: 24px; }
+.admin-batch-actions-row { display: flex; justify-content: flex-end; gap: 10px; }
+@media (max-width: 600px) { .admin-batch-form fieldset { grid-template-columns: minmax(0, 1fr); } }

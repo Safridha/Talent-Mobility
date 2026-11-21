@@ -6,6 +6,8 @@ export const queryKeys = {
   adminNotifications: ['admin', 'notifications'],
   adminOrganization: ['admin', 'organization'],
   adminApplicationLimit: ['admin', 'application-limit'],
+  adminBatches: ['admin', 'batches'],
+  publicBatch: ['public', 'batch'],
   applicantApplications: ['applicant', 'applications'],
   applicantNotifications: ['applicant', 'notifications'],
   publicOrganization: ['public', 'organization'],

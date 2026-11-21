@@ -42,6 +42,7 @@ mod applications;
 mod employee_master;
 mod idempotency;
 mod auth;
+mod batches;
 mod jobs;
 mod push;
 mod zip_archive;
@@ -50,6 +51,7 @@ use admin_accounts::*;
 use admin_applications::*;
 use admin_audit::*;
 use admin_permissions::*;
+use batches::*;
 use applications::*;
 use employee_master::*;
 use idempotency::*;
@@ -487,6 +489,7 @@ struct ApplicationStatusHistory {
 struct ApplicationsResponse {
     data: Vec<ApplicationSummary>,
     max_applications: Option<i32>,
+    batch_application_count: i64,
 }
 
 #[derive(FromRow, Serialize)]
@@ -714,6 +717,8 @@ struct ApplicationStatusRequest {
 #[derive(FromRow, Serialize)]
 struct AdminApplication {
     id: String,
+    batch_id: Option<i64>,
+    batch_name: Option<String>,
     applicant_name: String,
     applicant_email: String,
     job_id: Option<String>,
@@ -851,6 +856,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     seed_admin(&pool).await?;
     {
         let pool = pool.clone();
+        let push_service = push_service.clone();
+        tokio::spawn(async move {
+            loop {
+                reject_expired_applications(&pool, push_service.clone()).await;
+                tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+            }
+        });
+    }
+    {
+        let pool = pool.clone();
         tokio::spawn(async move {
             loop {
                 purge_expired_idempotency_keys(&pool).await;
@@ -887,6 +902,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             put(upsert_push_subscription).delete(delete_push_subscription),
         )
         .route("/api/organization", get(public_list_organization))
+        .route("/api/batches/current", get(public_current_batch))
+        .route("/api/admin/batches", get(admin_list_batches).post(admin_create_batch))
+        .route(
+            "/api/admin/batches/{id}",
+            put(admin_update_batch).delete(admin_delete_batch),
+        )
         .route("/api/admin/login", post(admin_login))
         .route("/api/admin/logout", post(admin_logout))
         .route("/api/admin/session", get(admin_session_check))

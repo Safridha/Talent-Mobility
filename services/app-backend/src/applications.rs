@@ -18,9 +18,17 @@ pub(super) async fn list_applications(
     .fetch_optional(&state.pool)
     .await
     .map_err(internal_error)?;
+    let batch_application_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM applications WHERE applicant_id = $1 AND batch_id = (SELECT id FROM application_batches WHERE (NOW() AT TIME ZONE 'Asia/Jakarta')::date BETWEEN registration_start AND registration_end)",
+    )
+    .bind(applicant_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(internal_error)?;
     Ok(Json(ApplicationsResponse {
         data,
         max_applications,
+        batch_application_count,
     }))
 }
 
@@ -427,20 +435,18 @@ pub(super) async fn create_application(
         .as_ref()
         .map(|_| application_fingerprint(&fields, &documents));
 
-    let position_description = if let Some(job_id) = &fields.job_id {
-        let is_open: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM job_postings WHERE id = $1 AND status = 'open')",
+    let (position_description, target_department_id) = if let Some(job_id) = &fields.job_id {
+        let job_department_id = sqlx::query_scalar::<_, i64>(
+            "SELECT department_id FROM job_postings WHERE id = $1 AND status = 'open'",
         )
         .bind(job_id)
-        .fetch_one(&state.pool)
+        .fetch_optional(&state.pool)
         .await
-        .map_err(internal_error)?;
-        if !is_open {
-            return Err(ApiError::NotFound(
-                "Lowongan tidak ditemukan atau sudah ditutup.",
-            ));
-        }
-        None
+        .map_err(internal_error)?
+        .ok_or(ApiError::NotFound(
+            "Lowongan tidak ditemukan atau sudah ditutup.",
+        ))?;
+        (None, job_department_id)
     } else {
         let description = sqlx::query_scalar::<_, Option<String>>(
             "SELECT CASE WHEN $2::BIGINT IS NULL THEN departments.description ELSE bureaus.description END FROM departments LEFT JOIN bureaus ON bureaus.id = $2 AND bureaus.department_id = departments.id WHERE departments.id = $1 AND ($2::BIGINT IS NULL OR bureaus.id IS NOT NULL)",
@@ -451,11 +457,20 @@ pub(super) async fn create_application(
         .await
         .map_err(internal_error)?
         .ok_or(ApiError::BadRequest("Unit tujuan tidak ditemukan."))?;
-        description.and_then(|description| {
+        let description = description.and_then(|description| {
             let description = description.trim();
             (!description.is_empty()).then(|| description.to_owned())
-        })
+        });
+        (
+            description,
+            fields
+                .target_department_id
+                .ok_or(ApiError::BadRequest("Unit tujuan tidak ditemukan."))?,
+        )
     };
+    // Applications are only accepted while a batch is open for registration, and only for the work
+    // units that batch activates.
+    let batch_id = registration_batch_for_department(&state.pool, target_department_id).await?;
 
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     // Idempotency: a retry or double click with the same key replays the first response. A concurrent
@@ -481,9 +496,10 @@ pub(super) async fn create_application(
             .await
             .map_err(internal_error)?;
         let application_count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM applications WHERE applicant_id = $1",
+            "SELECT COUNT(*) FROM applications WHERE applicant_id = $1 AND batch_id = $2",
         )
         .bind(applicant_id)
+        .bind(batch_id)
         .fetch_one(&mut *transaction)
         .await
         .map_err(internal_error)?;
@@ -495,7 +511,7 @@ pub(super) async fn create_application(
     }
     let public_id = Ulid::new().to_string();
     let application = sqlx::query_as::<_, (i64, String, String)>(
-        "INSERT INTO applications (applicant_id, job_id, target_department_id, target_bureau_id, position_description, public_id, employee_number, applicant_full_name, origin_division, origin_unit, education_level, study_field, motivation) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT DO NOTHING RETURNING id, public_id, created_at::text",
+        "INSERT INTO applications (applicant_id, job_id, target_department_id, target_bureau_id, position_description, public_id, employee_number, applicant_full_name, origin_division, origin_unit, education_level, study_field, motivation, batch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) ON CONFLICT DO NOTHING RETURNING id, public_id, created_at::text",
     )
     .bind(applicant_id)
     .bind(&fields.job_id)
@@ -510,6 +526,7 @@ pub(super) async fn create_application(
     .bind(fields.education_level)
     .bind(fields.study_field)
     .bind(fields.motivation)
+    .bind(batch_id)
     .fetch_optional(&mut *transaction)
     .await
     .map_err(internal_error)?;

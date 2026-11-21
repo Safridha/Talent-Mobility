@@ -4,6 +4,7 @@ export const ADMIN_VIEW_ROUTES = {
   applications: 'lamaran',
   accounts: 'manajemen-akun',
   units: 'unit-kerja',
+  batches: 'batch-periode',
   'application-limit': 'batas-lamaran',
   audit: 'audit-log',
 }
