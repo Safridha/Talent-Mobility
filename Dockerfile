@@ -21,6 +21,10 @@ COPY services/app-backend/migrations services/app-backend/migrations
 COPY services/app-backend/src services/app-backend/src
 RUN cargo build --release -p app-backend
 
+# Only used by compose.staging.yaml (profile "test"): the compile stage plus the integration tests.
+FROM backend-build AS backend-test
+COPY services/app-backend/tests services/app-backend/tests
+
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \

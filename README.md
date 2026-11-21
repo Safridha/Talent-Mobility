@@ -41,6 +41,12 @@ Pada deployment `4connectivity`, Cloudflare Tunnel dijalankan terpusat oleh serv
 
 PWA tersedia melalui manifest dan service worker dengan cache shell dasar untuk akses offline. Web Push memerlukan HTTPS (localhost untuk pengembangan) dan pasangan VAPID. Buat pasangan dengan `npx --yes web-push generate-vapid-keys`, lalu isi `VAPID_PUBLIC_KEY` dan `VAPID_PRIVATE_KEY` di `.env.docker`; `VAPID_SUBJECT` boleh berupa `mailto:...` atau URL HTTPS (nilai contoh pada `.env.docker.example` harus diganti dengan kontak Anda). Kunci privat hanya disimpan di server. Pengguna dapat mengaktifkan atau menonaktifkan push dari panel notifikasi; admin menerima push untuk lamaran baru dan pelamar menerima push saat status lamaran berubah.
 
+Login dapat dilindungi Cloudflare Turnstile: isi `VITE_TURNSTILE_SITE_KEY` (kunci situs, ikut tertanam saat build image) dan `TURNSTILE_SECRET_KEY` (rahasia server) di `.env.docker`. Biarkan keduanya kosong untuk mematikannya. Karena kunci situs dipakai saat build, selalu jalankan compose dengan `--env-file .env.docker`.
+
+## Staging
+
+Staging permanen di `https://emtopro-staging.4connectivity.my.id` adalah stack Docker terpisah (DB sendiri, Turnstile dimatikan, tanpa VAPID) berisi salinan data produksi dengan semua kata sandi diganti kata sandi uji. Jalankan `.\scripts\deploy-staging.ps1`, `.\scripts\staging-refresh.ps1` untuk menyalin data produksi, dan `.\scripts\staging-test.ps1` untuk tes Rust penuh serta tes alur batch. Panduan lengkap di [`docs/staging-docker-cloudflare.md`](docs/staging-docker-cloudflare.md).
+
 ## Pemeriksaan sebelum pull request
 
 Jalankan `npm run check` untuk lint, typecheck, dan build frontend. Untuk backend, jalankan `cargo fmt --all -- --check` dan `cargo test --workspace`. Pengujian backend tidak memerlukan database lokal.

@@ -1,0 +1,18 @@
+# Menghubungkan staging ke jaringan tunnel Cloudflare (4connectivity-net) agar bisa dijangkau lewat
+# https://emtopro-staging.4connectivity.my.id. Hanya dipakai oleh staging permanen, BUKAN oleh tumpukan tes
+# yang terisolasi (agar alias di bawah tidak pernah menunjuk ke container tes).
+#
+# Di dashboard Cloudflare (Zero Trust > Networks > Tunnels > tunnel ini > Public Hostname) tambahkan:
+#   Hostname : emtopro-staging.4connectivity.my.id
+#   Service  : HTTP  talent-mobility-staging:8000
+services:
+  app:
+    networks:
+      default: {}
+      4connectivity-net:
+        aliases:
+          - talent-mobility-staging
+
+networks:
+  4connectivity-net:
+    external: true

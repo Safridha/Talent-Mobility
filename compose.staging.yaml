@@ -1,0 +1,74 @@
+# Staging: tumpukan terpisah penuh untuk menguji perubahan sebelum menyentuh produksi.
+# DB sendiri (volume sendiri), salinan data produksi lewat `scripts/staging-refresh.ps1`, tanpa rahasia produksi.
+# Port hanya di 127.0.0.1; akses publik lewat tunnel memakai compose.staging.tunnel.yaml.
+# Pakai:  .\scripts\deploy-staging.ps1 (build + up)  |  .\scripts\staging-refresh.ps1 (salin data produksi)
+#         .\scripts\staging-test.ps1 (tes pada tumpukan terisolasi).  Panduan: docs/staging-docker-cloudflare.md
+# Aturan: jangan pernah `docker compose down -v` pada staging (menghapus salinan data).
+name: talent-mobility-staging
+
+services:
+  db:
+    image: postgres:16-alpine
+    # Batas memori supaya staging tidak mengganggu produksi di server yang sama.
+    mem_limit: 768m
+    environment:
+      POSTGRES_DB: staging
+      POSTGRES_USER: staging
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Jalankan scripts/deploy-staging.ps1 agar .env.staging dibuat}"
+    volumes:
+      - staging-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U staging -d staging"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Kosong = Turnstile dimatikan di staging (tidak ada widget di form login).
+        VITE_TURNSTILE_SITE_KEY: "${VITE_TURNSTILE_SITE_KEY:-}"
+    image: talent-mobility-staging-app
+    mem_limit: 512m
+    environment:
+      DATABASE_URL: "postgres://staging:${POSTGRES_PASSWORD}@db:5432/staging"
+      APP_ADDR: 0.0.0.0:8000
+      APP_PUBLIC_URL: "${STAGING_PUBLIC_URL:-http://127.0.0.1:8010}"
+      RUST_LOG: "info,tower_http=info"
+      ADMIN_NAME: Admin Staging
+      ADMIN_EMAIL: "${ADMIN_EMAIL:?}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?}"
+      DEFAULT_APPLICANT_PASSWORD: "${DEFAULT_APPLICANT_PASSWORD:?}"
+      # Kosong = verifikasi Turnstile dilewati. Sengaja tanpa VAPID_*: staging tidak boleh mengirim
+      # push ke perangkat pelamar sungguhan walau datanya salinan produksi.
+      TURNSTILE_SECRET_KEY: "${TURNSTILE_SECRET_KEY:-}"
+    ports:
+      - "127.0.0.1:${STAGING_PORT:-8010}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Tes Rust penuh (unit + tes database sqlx) terhadap Postgres staging.
+  # Dijalankan oleh scripts/staging-test.ps1 pada tumpukan tes yang terisolasi.
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend-test
+    environment:
+      DATABASE_URL: "postgres://staging:${POSTGRES_PASSWORD}@db:5432/staging"
+      RUST_BACKTRACE: "1"
+    command: ["cargo", "test", "-p", "app-backend", "--features", "postgres-migration-tests"]
+    volumes:
+      - staging-cargo-target:/workspace/target
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  staging-data:
+  staging-cargo-target:
