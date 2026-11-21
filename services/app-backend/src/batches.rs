@@ -369,6 +369,28 @@ pub(super) async fn admin_create_batch(
     ))
 }
 
+/// A batch whose selection and interview period is over is history: it can no longer be edited.
+/// Locks the row so the check and the update below cannot race.
+async fn ensure_batch_editable(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    batch_id: i64,
+) -> Result<(), ApiError> {
+    let finished: bool = sqlx::query_scalar(&format!(
+        "SELECT interview_end < {JAKARTA_TODAY} FROM application_batches WHERE id = $1 FOR UPDATE"
+    ))
+    .bind(batch_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(internal_error)?
+    .ok_or(ApiError::NotFound("Batch tidak ditemukan."))?;
+    if finished {
+        return Err(ApiError::Conflict(
+            "Batch yang sudah selesai tidak dapat diubah.",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) async fn admin_update_batch(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -378,6 +400,7 @@ pub(super) async fn admin_update_batch(
     let admin = authorized_super_admin(&state.pool, &headers).await?;
     let batch = validate_batch(request)?;
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
+    ensure_batch_editable(&mut transaction, batch_id).await?;
     ensure_no_overlap(&mut transaction, &batch, Some(batch_id)).await?;
     ensure_departments_exist(&mut transaction, &batch.department_ids).await?;
     ensure_bureaus_exist(&mut transaction, &batch.bureau_ids).await?;
@@ -999,6 +1022,33 @@ mod tests {
                     .await
                     .is_ok()
             );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn a_finished_batch_can_no_longer_be_edited(pool: PgPool) {
+            let batch_id = seeded_batch_id(&pool).await;
+
+            // Still running (interview period ends today): editable.
+            place_batch(&pool, batch_id, [-60, -40, -39, 0]).await;
+            let mut transaction = pool.begin().await.unwrap();
+            assert!(ensure_batch_editable(&mut transaction, batch_id).await.is_ok());
+            transaction.rollback().await.unwrap();
+
+            // The day after the interview period ended: locked.
+            place_batch(&pool, batch_id, [-60, -40, -39, -1]).await;
+            let mut transaction = pool.begin().await.unwrap();
+            assert!(matches!(
+                ensure_batch_editable(&mut transaction, batch_id).await,
+                Err(ApiError::Conflict(_))
+            ));
+            transaction.rollback().await.unwrap();
+
+            // Unknown batch.
+            let mut transaction = pool.begin().await.unwrap();
+            assert!(matches!(
+                ensure_batch_editable(&mut transaction, batch_id + 999).await,
+                Err(ApiError::NotFound(_))
+            ));
         }
 
         #[sqlx::test(migrations = "./migrations")]

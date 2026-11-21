@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarRange, Check, ChevronDown, ChevronRight, Minus, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { CalendarRange, Check, ChevronDown, ChevronRight, Lock, Minus, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { apiRequest } from '../../api'
 import DateField from '../../components/DateField'
 import SuccessPopup from '../../components/SuccessPopup'
@@ -287,6 +287,7 @@ export default function BatchManager() {
     setUnitQuery('')
   }
   function openEdit(batch) {
+    if (batchPhase(batch, today) === 'finished') return
     setEditingId(batch.id)
     setError('')
     setForm({
@@ -379,7 +380,14 @@ export default function BatchManager() {
                         <td>{batch.max_applications === null ? 'Tidak dibatasi' : `${batch.max_applications} lamaran`}</td>
                         <td>{batch.application_count}</td>
                         <td className="admin-row-actions">
-                          <button aria-label={`Ubah ${batch.name}`} className="admin-small-button admin-icon-button" onClick={() => openEdit(batch)} title={`Ubah ${batch.name}`} type="button"><Pencil aria-hidden="true" size={15} /></button>
+                          <button
+                            aria-label={`Ubah ${batch.name}`}
+                            className="admin-small-button admin-icon-button"
+                            disabled={phase === 'finished'}
+                            onClick={() => openEdit(batch)}
+                            title={phase === 'finished' ? 'Batch yang sudah selesai tidak dapat diubah' : `Ubah ${batch.name}`}
+                            type="button"
+                          >{phase === 'finished' ? <Lock aria-hidden="true" size={15} /> : <Pencil aria-hidden="true" size={15} />}</button>
                           <button
                             aria-label={`Hapus ${batch.name}`}
                             className="admin-small-button admin-icon-button danger"
