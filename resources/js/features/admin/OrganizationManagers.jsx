@@ -179,6 +179,24 @@ export function OrganizationManager({ level, organization, isLoading, onRefresh 
           <span>{definition.label} <em>*</em></span>
           <input maxLength={160} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required value={form.name} />
         </label>
+        {definition.parentField && (
+          <label>
+            <span>{definition.parentLabel} {!editingId && <em>*</em>}</span>
+            <SearchableSelect
+              disabled={Boolean(editingId) || !parents.length}
+              onChange={setParentId}
+              options={editingId
+                ? [{
+                    value: getParentName(items.find((item) => item.id === editingId)),
+                    label: getParentName(items.find((item) => item.id === editingId)),
+                  }]
+                : parents.map((parent) => ({ value: String(parent.id), label: getParentOptionName(parent) }))}
+              placeholder={`Pilih ${definition.parentLabel.toLocaleLowerCase('id')}`}
+              required={!editingId}
+              value={editingId ? getParentName(items.find((item) => item.id === editingId)) : parentId}
+            />
+          </label>
+        )}
         {level === 'bureaus' && (
           <label>
             <span>Jenis unit <em>*</em></span>
@@ -205,24 +223,6 @@ export function OrganizationManager({ level, organization, isLoading, onRefresh 
               <textarea maxLength={4000} onChange={(event) => setForm((current) => ({ ...current, secretariat_description: event.target.value }))} rows={4} value={form.secretariat_description} />
             </label>
           </>
-        )}
-        {definition.parentField && (
-          <label>
-            <span>{definition.parentLabel} {!editingId && <em>*</em>}</span>
-            <SearchableSelect
-              disabled={Boolean(editingId) || !parents.length}
-              onChange={setParentId}
-              options={editingId
-                ? [{
-                    value: getParentName(items.find((item) => item.id === editingId)),
-                    label: getParentName(items.find((item) => item.id === editingId)),
-                  }]
-                : parents.map((parent) => ({ value: String(parent.id), label: getParentOptionName(parent) }))}
-              placeholder={`Pilih ${definition.parentLabel.toLocaleLowerCase('id')}`}
-              required={!editingId}
-              value={editingId ? getParentName(items.find((item) => item.id === editingId)) : parentId}
-            />
-          </label>
         )}
         {definition.parentField && !parents.length && (
           <p className="organization-help">Tambahkan {definition.parentLabel.toLocaleLowerCase('id')} terlebih dahulu agar dapat menghubungkan data ini.</p>
