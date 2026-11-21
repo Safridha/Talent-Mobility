@@ -1841,6 +1841,7 @@ mod tests {
             let result = login(
                 State(state.clone()),
                 Json(LoginRequest {
+                    turnstile_token: None,
                     email: "5551234".to_owned(),
                     password: "wrong-password".to_owned(),
                 }),
@@ -1864,6 +1865,7 @@ mod tests {
             login(
                 State(state.clone()),
                 Json(LoginRequest {
+                    turnstile_token: None,
                     email: "5551234".to_owned(),
                     password: "Correct!Password123".to_owned(),
                 }),
@@ -1883,6 +1885,7 @@ mod tests {
             login(
                 State(state.clone()),
                 Json(LoginRequest {
+                    turnstile_token: None,
                     email: "5551234".to_owned(),
                     password: "wrong-password".to_owned(),
                 }),
@@ -1893,6 +1896,7 @@ mod tests {
         let (headers, _) = login(
             State(state.clone()),
             Json(LoginRequest {
+                turnstile_token: None,
                 email: "5551234".to_owned(),
                 password: "Correct!Password123".to_owned(),
             }),
@@ -1917,6 +1921,7 @@ mod tests {
             let result = admin_login(
                 State(state.clone()),
                 Json(AdminLoginRequest {
+                    turnstile_token: None,
                     email: "lockout-admin@example.test".to_owned(),
                     password: "wrong-password".to_owned(),
                 }),
@@ -1940,6 +1945,7 @@ mod tests {
             admin_login(
                 State(state.clone()),
                 Json(AdminLoginRequest {
+                    turnstile_token: None,
                     email: "lockout-admin@example.test".to_owned(),
                     password: "Correct!Password123".to_owned(),
                 }),
@@ -1957,6 +1963,7 @@ mod tests {
         let (_, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
+                turnstile_token: None,
                 email: "lockout-admin@example.test".to_owned(),
                 password: "Correct!Password123".to_owned(),
             }),
@@ -2049,6 +2056,7 @@ mod tests {
         let (super_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
+                turnstile_token: None,
                 email: "super@example.com".to_owned(),
                 password: super_password.to_owned(),
             }),
@@ -2402,6 +2410,7 @@ mod tests {
         let (kadep_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
+                turnstile_token: None,
                 email: "kadep@example.com".to_owned(),
                 password: "Admin!Pass123".to_owned(),
             }),
@@ -2421,6 +2430,7 @@ mod tests {
         let (kadiv_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
+                turnstile_token: None,
                 email: "kadiv@example.com".to_owned(),
                 password: "Admin!Pass123".to_owned(),
             }),
@@ -2440,6 +2450,7 @@ mod tests {
         let (operational_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
+                turnstile_token: None,
                 email: "operational@example.com".to_owned(),
                 password: "Admin!Pass123".to_owned(),
             }),
@@ -2550,6 +2561,7 @@ mod tests {
         let (applicant_login_headers, applicant_login_response) = login(
             State(state.clone()),
             Json(LoginRequest {
+                turnstile_token: None,
                 email: "900001".to_owned(),
                 password: initial_applicant_password.to_owned(),
             }),
@@ -2691,6 +2703,7 @@ mod tests {
             let (admin_login_headers, _) = admin_login(
                 State(state.clone()),
                 Json(AdminLoginRequest {
+                    turnstile_token: None,
                     email: email.to_owned(),
                     password: "Matrix!Pass123".to_owned(),
                 }),
@@ -3195,6 +3208,7 @@ mod tests {
         let (refreshed_super_login_headers, _) = admin_login(
             State(state.clone()),
             Json(AdminLoginRequest {
+                turnstile_token: None,
                 email: "super@example.com".to_owned(),
                 password: "Admin!Pass456".to_owned(),
             }),
@@ -3590,6 +3604,7 @@ mod tests {
             let (headers, _) = admin_login(
                 State(state.clone()),
                 Json(AdminLoginRequest {
+                    turnstile_token: None,
                     email: email.to_owned(),
                     password: "Admin!Pass123".to_owned(),
                 }),

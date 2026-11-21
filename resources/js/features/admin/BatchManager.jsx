@@ -60,9 +60,9 @@ function ScheduleTimeline({ form }) {
   return (
     <div aria-label="Linimasa batch" className="batch-timeline">
       <div className="batch-timeline-bar">
-        <span className="is-registration" style={{ width: share(registrationDays) }}>Pendaftaran · {registrationDays} hari</span>
+        <span className="is-registration" style={{ width: share(registrationDays) }} title={`Pendaftaran · ${registrationDays} hari`}>{registrationDays / total < 0.3 ? `${registrationDays} hari` : `Pendaftaran · ${registrationDays} hari`}</span>
         {gapDays > 0 && <span className="is-gap" style={{ width: share(gapDays) }} title={`${gapDays} hari jeda`} />}
-        <span className="is-interview" style={{ width: share(interviewDays) }}>Seleksi &amp; wawancara · {interviewDays} hari</span>
+        <span className="is-interview" style={{ width: share(interviewDays) }} title={`Seleksi & wawancara · ${interviewDays} hari`}>{interviewDays / total < 0.3 ? `${interviewDays} hari` : `Seleksi & wawancara · ${interviewDays} hari`}</span>
       </div>
       <div className="batch-timeline-dates">
         <span>{formatBatchDate(rs, short)}</span>
