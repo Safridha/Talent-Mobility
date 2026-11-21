@@ -35,3 +35,15 @@ export const batchPhaseLabels = {
   selection: 'Seleksi dan wawancara',
   finished: 'Selesai',
 }
+
+// Local calendar day as YYYY-MM-DD (never shifted by the time zone).
+export function toBatchIso(date) {
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+export function addBatchDays(iso, days) {
+  const date = parseBatchDate(iso)
+  date.setDate(date.getDate() + days)
+  return toBatchIso(date)
+}

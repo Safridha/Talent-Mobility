@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarRange, Check, ChevronDown, ChevronRight, Minus, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { apiRequest } from '../../api'
+import DateField from '../../components/DateField'
 import SuccessPopup from '../../components/SuccessPopup'
 import { queryKeys } from '../../query/queryKeys'
-import { batchPhase, batchPhaseLabels, daysBetween, formatBatchDate, formatBatchRange } from '../batches/batchFormat'
+import { addBatchDays, batchPhase, batchPhaseLabels, daysBetween, formatBatchDate, formatBatchRange } from '../batches/batchFormat'
 import { AdminFormDialog, ConfirmDialog } from './AdminPrimitives'
 import { AdminTablePagination } from './AdminPagination'
 import { useAdminPagination } from './useAdminPagination'
@@ -71,6 +72,28 @@ function ScheduleTimeline({ form }) {
       </div>
     </div>
   )
+}
+
+
+// Days other batches already occupy (registration start .. interview end) can never be picked, and a
+// batch cannot stretch across the next one. Returns the blocked ranges plus per-field min / max.
+function dateRules(form, otherBatches) {
+  const blocked = otherBatches.map((batch) => ({ start: batch.registration_start, end: batch.interview_end, name: batch.name }))
+  const { registration_start: rs, registration_end: re, interview_start: is, interview_end: ie } = form
+  const valid = (value) => isValidDate(value)
+  const nextStart = valid(rs) ? otherBatches.map((batch) => batch.registration_start).filter((start) => start > rs).sort()[0] : undefined
+  const ceiling = nextStart ? addBatchDays(nextStart, -1) : ''
+  const previousEnd = valid(ie) ? otherBatches.map((batch) => batch.interview_end).filter((end) => end < ie).sort().pop() : undefined
+  const floor = previousEnd ? addBatchDays(previousEnd, 1) : ''
+  const earliest = (...values) => values.filter(Boolean).sort()[0] || ''
+  const latest = (...values) => values.filter(Boolean).sort().pop() || ''
+  return {
+    blocked,
+    registration_start: { min: floor, max: earliest(valid(re) ? re : '', valid(is) ? addBatchDays(is, -1) : '', valid(ie) ? addBatchDays(ie, -2) : '') },
+    registration_end: { min: latest(valid(rs) ? rs : '', floor), max: earliest(valid(is) ? addBatchDays(is, -1) : '', ceiling) },
+    interview_start: { min: latest(valid(re) ? addBatchDays(re, 1) : '', valid(rs) ? addBatchDays(rs, 1) : '', floor), max: earliest(valid(ie) ? ie : '', ceiling) },
+    interview_end: { min: latest(valid(is) ? is : '', valid(re) ? addBatchDays(re, 1) : '', valid(rs) ? addBatchDays(rs, 1) : '', floor), max: ceiling },
+  }
 }
 
 function TreeCheck({ state }) {
@@ -224,6 +247,7 @@ export default function BatchManager() {
   const organizationQuery = useQuery({ queryKey: queryKeys.adminOrganization, queryFn: () => apiRequest('/admin/organization') })
   const batches = useMemo(() => batchesQuery.data?.data ?? [], [batchesQuery.data])
   const today = batchesQuery.data?.today ?? ''
+  const rules = useMemo(() => (form ? dateRules(form, batches.filter((batch) => batch.id !== editingId)) : null), [batches, editingId, form])
   const newestFirst = useMemo(() => [...batches].reverse(), [batches])
   const { items: pageBatches, page, setPage } = useAdminPagination(newestFirst)
   const divisions = organizationQuery.data?.divisions ?? []
@@ -389,12 +413,12 @@ export default function BatchManager() {
                   <section className="batch-card">
                     <h3><CalendarRange aria-hidden="true" size={15} /> Jadwal</h3>
                     <div className="batch-field-row">
-                      <label className="batch-field"><span>Pendaftaran mulai</span><input onChange={(event) => setField('registration_start', event.target.value)} required type="date" value={form.registration_start} /></label>
-                      <label className="batch-field"><span>Pendaftaran berakhir</span><input min={form.registration_start} onChange={(event) => setField('registration_end', event.target.value)} required type="date" value={form.registration_end} /></label>
+                      <div className="batch-field"><span>Pendaftaran mulai</span><DateField ariaLabel="Pendaftaran mulai" blocked={rules.blocked} max={rules.registration_start.max} min={rules.registration_start.min} onChange={(day) => setField('registration_start', day)} value={form.registration_start} /></div>
+                      <div className="batch-field"><span>Pendaftaran berakhir</span><DateField ariaLabel="Pendaftaran berakhir" blocked={rules.blocked} max={rules.registration_end.max} min={rules.registration_end.min} onChange={(day) => setField('registration_end', day)} value={form.registration_end} /></div>
                     </div>
                     <div className="batch-field-row">
-                      <label className="batch-field"><span>Seleksi &amp; wawancara mulai</span><input min={form.registration_end} onChange={(event) => setField('interview_start', event.target.value)} required type="date" value={form.interview_start} /></label>
-                      <label className="batch-field"><span>Seleksi &amp; wawancara berakhir</span><input min={form.interview_start} onChange={(event) => setField('interview_end', event.target.value)} required type="date" value={form.interview_end} /></label>
+                      <div className="batch-field"><span>Seleksi &amp; wawancara mulai</span><DateField ariaLabel="Seleksi dan wawancara mulai" blocked={rules.blocked} max={rules.interview_start.max} min={rules.interview_start.min} onChange={(day) => setField('interview_start', day)} value={form.interview_start} /></div>
+                      <div className="batch-field"><span>Seleksi &amp; wawancara berakhir</span><DateField ariaLabel="Seleksi dan wawancara berakhir" blocked={rules.blocked} max={rules.interview_end.max} min={rules.interview_end.min} onChange={(day) => setField('interview_end', day)} value={form.interview_end} /></div>
                     </div>
                     <ScheduleTimeline form={form} />
                   </section>
