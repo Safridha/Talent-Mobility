@@ -6,6 +6,8 @@ import SuccessPopup from '../../components/SuccessPopup'
 import { queryKeys } from '../../query/queryKeys'
 import { batchPhase, batchPhaseLabels, daysBetween, formatBatchDate, formatBatchRange } from '../batches/batchFormat'
 import { AdminFormDialog, ConfirmDialog } from './AdminPrimitives'
+import { AdminTablePagination } from './AdminPagination'
+import { useAdminPagination } from './useAdminPagination'
 
 const EMPTY_FORM = {
   name: '',
@@ -222,6 +224,8 @@ export default function BatchManager() {
   const organizationQuery = useQuery({ queryKey: queryKeys.adminOrganization, queryFn: () => apiRequest('/admin/organization') })
   const batches = useMemo(() => batchesQuery.data?.data ?? [], [batchesQuery.data])
   const today = batchesQuery.data?.today ?? ''
+  const newestFirst = useMemo(() => [...batches].reverse(), [batches])
+  const { items: pageBatches, page, setPage } = useAdminPagination(newestFirst)
   const divisions = organizationQuery.data?.divisions ?? []
   const departments = organizationQuery.data?.departments ?? []
   const bureaus = organizationQuery.data?.bureaus ?? []
@@ -330,39 +334,46 @@ export default function BatchManager() {
       ) : !batches.length ? (
         <div className="admin-loading">Belum ada batch. Pelamar tidak dapat mendaftar sampai ada batch yang dibuka.</div>
       ) : (
-        <ul className="admin-batch-list">
-          {[...batches].reverse().map((batch) => {
-            const phase = batchPhase(batch, today)
-            return (
-              <li className={`admin-batch-card is-${phase}`} key={batch.id}>
-                <div className="admin-batch-head">
-                  <div>
-                    <strong>{batch.name}</strong>
-                    <span className={`admin-batch-phase is-${phase}`}>{batchPhaseLabels[phase]}</span>
-                  </div>
-                  <div className="admin-batch-actions">
-                    <button aria-label={`Ubah ${batch.name}`} className="admin-small-button" onClick={() => openEdit(batch)} type="button"><Pencil aria-hidden="true" size={14} /> Ubah</button>
-                    <button
-                      aria-label={`Hapus ${batch.name}`}
-                      className="admin-small-button danger"
-                      disabled={batch.application_count > 0}
-                      onClick={() => { setError(''); setDeleting(batch) }}
-                      title={batch.application_count > 0 ? 'Batch yang sudah memiliki lamaran tidak dapat dihapus' : 'Hapus batch'}
-                      type="button"
-                    ><Trash2 aria-hidden="true" size={14} /></button>
-                  </div>
-                </div>
-                <dl>
-                  <div><dt>Pendaftaran</dt><dd>{formatBatchRange(batch.registration_start, batch.registration_end)}</dd></div>
-                  <div><dt>Seleksi dan wawancara</dt><dd>{formatBatchRange(batch.interview_start, batch.interview_end)}</dd></div>
-                  <div><dt>Unit kerja aktif</dt><dd>{describeUnits(batch)}</dd></div>
-                  <div><dt>Batas lamaran per pelamar</dt><dd>{batch.max_applications === null ? 'Tidak dibatasi' : `${batch.max_applications} lamaran`}</dd></div>
-                  <div><dt>Lamaran masuk</dt><dd>{batch.application_count}</dd></div>
-                </dl>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="admin-batch-body">
+          <div className="batch-table-card">
+            <div className="admin-table-scroll">
+              <table className="admin-table batch-table">
+                <thead>
+                  <tr><th>BATCH</th><th>PENDAFTARAN</th><th>SELEKSI &amp; WAWANCARA</th><th>UNIT KERJA AKTIF</th><th>BATAS LAMARAN</th><th>LAMARAN</th><th className="admin-actions-head">AKSI</th></tr>
+                </thead>
+                <tbody>
+                  {pageBatches.map((batch) => {
+                    const phase = batchPhase(batch, today)
+                    return (
+                      <tr className={`is-${phase}`} key={batch.id}>
+                        <td>
+                          <span className="batch-name">{batch.name}<span className={`admin-batch-phase is-${phase}`}>{batchPhaseLabels[phase]}</span></span>
+                        </td>
+                        <td>{formatBatchRange(batch.registration_start, batch.registration_end)}</td>
+                        <td>{formatBatchRange(batch.interview_start, batch.interview_end)}</td>
+                        <td>{describeUnits(batch)}</td>
+                        <td>{batch.max_applications === null ? 'Tidak dibatasi' : `${batch.max_applications} lamaran`}</td>
+                        <td>{batch.application_count}</td>
+                        <td className="admin-row-actions">
+                          <button aria-label={`Ubah ${batch.name}`} className="admin-small-button admin-icon-button" onClick={() => openEdit(batch)} title={`Ubah ${batch.name}`} type="button"><Pencil aria-hidden="true" size={15} /></button>
+                          <button
+                            aria-label={`Hapus ${batch.name}`}
+                            className="admin-small-button admin-icon-button danger"
+                            disabled={batch.application_count > 0}
+                            onClick={() => { setError(''); setDeleting(batch) }}
+                            title={batch.application_count > 0 ? 'Batch yang sudah memiliki lamaran tidak dapat dihapus' : 'Hapus batch'}
+                            type="button"
+                          ><Trash2 aria-hidden="true" size={14} /></button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <AdminTablePagination onPageChange={setPage} page={page} total={batches.length} />
+          </div>
+        </div>
       )}
       <SuccessPopup message={notice} onClose={setNotice} />
       {form && (
