@@ -1,7 +1,7 @@
 use super::*;
 
 const JAKARTA_TODAY: &str = "(NOW() AT TIME ZONE 'Asia/Jakarta')::date";
-const BATCH_SELECT: &str = "SELECT b.id, b.name, b.registration_start::text AS registration_start, b.registration_end::text AS registration_end, b.interview_start::text AS interview_start, b.interview_end::text AS interview_end, b.all_units, b.max_applications, ARRAY(SELECT d.department_id FROM application_batch_departments d WHERE d.batch_id = b.id ORDER BY d.department_id) AS department_ids, (SELECT COUNT(*) FROM applications a WHERE a.batch_id = b.id) AS application_count FROM application_batches b";
+const BATCH_SELECT: &str = "SELECT b.id, b.name, b.registration_start::text AS registration_start, b.registration_end::text AS registration_end, b.interview_start::text AS interview_start, b.interview_end::text AS interview_end, b.all_units, b.max_applications, ARRAY(SELECT d.department_id FROM application_batch_departments d WHERE d.batch_id = b.id ORDER BY d.department_id) AS department_ids, ARRAY(SELECT bu.bureau_id FROM application_batch_bureaus bu WHERE bu.batch_id = b.id ORDER BY bu.bureau_id) AS bureau_ids, (SELECT COUNT(*) FROM applications a WHERE a.batch_id = b.id) AS application_count FROM application_batches b";
 const OVERLAP_MESSAGE: &str =
     "Tanggal batch bentrok dengan batch lain. Pilih rentang tanggal yang tidak tumpang tindih.";
 
@@ -16,6 +16,7 @@ pub(super) struct BatchRecord {
     all_units: bool,
     max_applications: Option<i32>,
     department_ids: Vec<i64>,
+    bureau_ids: Vec<i64>,
     application_count: i64,
 }
 
@@ -30,6 +31,7 @@ struct PublicBatch {
     all_units: bool,
     max_applications: Option<i32>,
     department_ids: Vec<i64>,
+    bureau_ids: Vec<i64>,
 }
 
 impl From<&BatchRecord> for PublicBatch {
@@ -44,6 +46,7 @@ impl From<&BatchRecord> for PublicBatch {
             all_units: batch.all_units,
             max_applications: batch.max_applications,
             department_ids: batch.department_ids.clone(),
+            bureau_ids: batch.bureau_ids.clone(),
         }
     }
 }
@@ -60,6 +63,8 @@ pub(super) struct BatchRequest {
     max_applications: Option<i32>,
     #[serde(default)]
     department_ids: Vec<i64>,
+    #[serde(default)]
+    bureau_ids: Vec<i64>,
 }
 
 struct ValidBatch {
@@ -71,6 +76,7 @@ struct ValidBatch {
     all_units: bool,
     max_applications: Option<i32>,
     department_ids: Vec<i64>,
+    bureau_ids: Vec<i64>,
 }
 
 fn validate_application_limit(value: i32) -> Result<i32, ApiError> {
@@ -149,13 +155,17 @@ fn validate_batch(request: BatchRequest) -> Result<ValidBatch, ApiError> {
     let mut department_ids = request.department_ids;
     department_ids.sort_unstable();
     department_ids.dedup();
-    if !request.all_units && department_ids.is_empty() {
+    let mut bureau_ids = request.bureau_ids;
+    bureau_ids.sort_unstable();
+    bureau_ids.dedup();
+    if !request.all_units && department_ids.is_empty() && bureau_ids.is_empty() {
         return Err(ApiError::BadRequest(
             "Pilih minimal satu unit kerja atau aktifkan semua unit kerja.",
         ));
     }
     if request.all_units {
         department_ids.clear();
+        bureau_ids.clear();
     }
     Ok(ValidBatch {
         name,
@@ -166,6 +176,7 @@ fn validate_batch(request: BatchRequest) -> Result<ValidBatch, ApiError> {
         all_units: request.all_units,
         max_applications,
         department_ids,
+        bureau_ids,
     })
 }
 
@@ -207,6 +218,47 @@ async fn ensure_departments_exist(
         .map_err(internal_error)?;
     if usize::try_from(found).ok() != Some(department_ids.len()) {
         return Err(ApiError::BadRequest("Ada unit kerja yang tidak ditemukan."));
+    }
+    Ok(())
+}
+
+async fn ensure_bureaus_exist(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    bureau_ids: &[i64],
+) -> Result<(), ApiError> {
+    if bureau_ids.is_empty() {
+        return Ok(());
+    }
+    let found: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bureaus WHERE id = ANY($1)")
+        .bind(bureau_ids)
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(internal_error)?;
+    if usize::try_from(found).ok() != Some(bureau_ids.len()) {
+        return Err(ApiError::BadRequest("Ada unit kerja yang tidak ditemukan."));
+    }
+    Ok(())
+}
+
+async fn replace_batch_bureaus(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    batch_id: i64,
+    bureau_ids: &[i64],
+) -> Result<(), ApiError> {
+    sqlx::query("DELETE FROM application_batch_bureaus WHERE batch_id = $1")
+        .bind(batch_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_error)?;
+    if !bureau_ids.is_empty() {
+        sqlx::query(
+            "INSERT INTO application_batch_bureaus (batch_id, bureau_id) SELECT $1, UNNEST($2::BIGINT[])",
+        )
+        .bind(batch_id)
+        .bind(bureau_ids)
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_error)?;
     }
     Ok(())
 }
@@ -270,6 +322,7 @@ pub(super) async fn admin_create_batch(
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     ensure_no_overlap(&mut transaction, &batch, None).await?;
     ensure_departments_exist(&mut transaction, &batch.department_ids).await?;
+    ensure_bureaus_exist(&mut transaction, &batch.bureau_ids).await?;
     let result = sqlx::query_scalar::<_, i64>(
         "INSERT INTO application_batches (name, registration_start, registration_end, interview_start, interview_end, all_units, max_applications, created_by, updated_by) VALUES ($1, $2::date, $3::date, $4::date, $5::date, $6, $7, $8, $8) RETURNING id",
     )
@@ -291,6 +344,7 @@ pub(super) async fn admin_create_batch(
         Err(error) => return Err(internal_error(error)),
     };
     replace_batch_departments(&mut transaction, batch_id, &batch.department_ids).await?;
+    replace_batch_bureaus(&mut transaction, batch_id, &batch.bureau_ids).await?;
     record_admin_audit(
         &mut transaction,
         admin.id,
@@ -304,6 +358,7 @@ pub(super) async fn admin_create_batch(
             "all_units": batch.all_units,
             "max_applications": batch.max_applications,
             "department_ids": batch.department_ids,
+            "bureau_ids": batch.bureau_ids,
         }),
     )
     .await
@@ -325,6 +380,7 @@ pub(super) async fn admin_update_batch(
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     ensure_no_overlap(&mut transaction, &batch, Some(batch_id)).await?;
     ensure_departments_exist(&mut transaction, &batch.department_ids).await?;
+    ensure_bureaus_exist(&mut transaction, &batch.bureau_ids).await?;
     let result = sqlx::query(
         "UPDATE application_batches SET name = $2, registration_start = $3::date, registration_end = $4::date, interview_start = $5::date, interview_end = $6::date, all_units = $7, max_applications = $8, updated_by = $9, updated_at = NOW() WHERE id = $1",
     )
@@ -350,6 +406,7 @@ pub(super) async fn admin_update_batch(
         Err(error) => return Err(internal_error(error)),
     }
     replace_batch_departments(&mut transaction, batch_id, &batch.department_ids).await?;
+    replace_batch_bureaus(&mut transaction, batch_id, &batch.bureau_ids).await?;
     record_admin_audit(
         &mut transaction,
         admin.id,
@@ -363,6 +420,7 @@ pub(super) async fn admin_update_batch(
             "all_units": batch.all_units,
             "max_applications": batch.max_applications,
             "department_ids": batch.department_ids,
+            "bureau_ids": batch.bureau_ids,
         }),
     )
     .await
@@ -469,11 +527,13 @@ pub(super) async fn public_current_batch(
     })))
 }
 
-/// The batch accepting applications today (id and per-applicant limit), if `department_id` may apply
-/// in it. Jobs without a department can only apply while the batch covers every unit.
+/// The batch accepting applications today (id and per-applicant limit), if the target may apply in it.
+/// A target is open when its department was opened as a whole, or its own biro / bengkel was opened.
+/// Jobs without a department can only apply while the batch covers every unit.
 pub(super) async fn registration_batch_for_department(
     pool: &PgPool,
     department_id: Option<i64>,
+    bureau_id: Option<i64>,
 ) -> Result<(i64, Option<i32>), ApiError> {
     let (batch_id, all_units, max_applications) = sqlx::query_as::<_, (i64, bool, Option<i32>)>(
         &format!(
@@ -488,10 +548,11 @@ pub(super) async fn registration_batch_for_department(
     ))?;
     if !all_units {
         let allowed: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM application_batch_departments WHERE batch_id = $1 AND department_id = $2)",
+            "SELECT EXISTS(SELECT 1 FROM application_batch_departments WHERE batch_id = $1 AND department_id = $2) OR EXISTS(SELECT 1 FROM application_batch_bureaus WHERE batch_id = $1 AND bureau_id = $3)",
         )
         .bind(batch_id)
         .bind(department_id)
+        .bind(bureau_id)
         .fetch_one(pool)
         .await
         .map_err(internal_error)?;
@@ -548,6 +609,7 @@ mod tests {
             all_units: true,
             max_applications: None,
             department_ids: Vec::new(),
+            bureau_ids: Vec::new(),
             application_count: 0,
         }
     }
@@ -562,7 +624,28 @@ mod tests {
             all_units: true,
             max_applications: None,
             department_ids: Vec::new(),
+            bureau_ids: Vec::new(),
         }
+    }
+
+    #[test]
+    fn units_can_be_chosen_by_department_or_bureau() {
+        let mut only_bureaus = request("2027-01-01", "2027-01-31", "2027-02-01", "2027-02-28");
+        only_bureaus.all_units = false;
+        only_bureaus.bureau_ids = vec![9, 3, 9];
+        let valid = validate_batch(only_bureaus).unwrap();
+        assert_eq!(valid.bureau_ids, vec![3, 9]);
+        assert!(valid.department_ids.is_empty());
+
+        let mut nothing = request("2027-01-01", "2027-01-31", "2027-02-01", "2027-02-28");
+        nothing.all_units = false;
+        assert!(validate_batch(nothing).is_err());
+
+        let mut everything = request("2027-01-01", "2027-01-31", "2027-02-01", "2027-02-28");
+        everything.department_ids = vec![1];
+        everything.bureau_ids = vec![2];
+        let valid = validate_batch(everything).unwrap();
+        assert!(valid.department_ids.is_empty() && valid.bureau_ids.is_empty());
     }
 
     #[test]
@@ -808,12 +891,12 @@ mod tests {
                 .execute(&pool)
                 .await
                 .unwrap();
-            let (found, limit) = registration_batch_for_department(&pool, Some(open_unit))
+            let (found, limit) = registration_batch_for_department(&pool, Some(open_unit), None)
                 .await
                 .unwrap();
             assert_eq!((found, limit), (batch_id, Some(3)));
             // Jobs without a department are fine while every unit is open.
-            assert!(registration_batch_for_department(&pool, None).await.is_ok());
+            assert!(registration_batch_for_department(&pool, None, None).await.is_ok());
 
             sqlx::query("UPDATE application_batches SET all_units = FALSE WHERE id = $1")
                 .bind(batch_id)
@@ -828,34 +911,94 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-            assert!(registration_batch_for_department(&pool, Some(open_unit))
+            assert!(registration_batch_for_department(&pool, Some(open_unit), None)
                 .await
                 .is_ok());
             assert!(matches!(
-                registration_batch_for_department(&pool, Some(closed_unit)).await,
+                registration_batch_for_department(&pool, Some(closed_unit), None).await,
                 Err(ApiError::Conflict(_))
             ));
             assert!(matches!(
-                registration_batch_for_department(&pool, None).await,
+                registration_batch_for_department(&pool, None, None).await,
                 Err(ApiError::Conflict(_))
             ));
 
             // Registration closed (selection period) and not yet open: nothing can be submitted.
             place_batch(&pool, batch_id, [-10, -1, 0, 20]).await;
             assert!(matches!(
-                registration_batch_for_department(&pool, Some(open_unit)).await,
+                registration_batch_for_department(&pool, Some(open_unit), None).await,
                 Err(ApiError::Conflict(_))
             ));
             place_batch(&pool, batch_id, [1, 5, 6, 20]).await;
             assert!(matches!(
-                registration_batch_for_department(&pool, Some(open_unit)).await,
+                registration_batch_for_department(&pool, Some(open_unit), None).await,
                 Err(ApiError::Conflict(_))
             ));
             // The last registration day still counts as open.
             place_batch(&pool, batch_id, [-5, 0, 1, 20]).await;
-            assert!(registration_batch_for_department(&pool, Some(open_unit))
+            assert!(registration_batch_for_department(&pool, Some(open_unit), None)
                 .await
                 .is_ok());
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn a_single_biro_can_be_opened_without_opening_its_whole_department(pool: PgPool) {
+            let batch_id = seeded_batch_id(&pool).await;
+            place_batch(&pool, batch_id, [-2, 5, 6, 30]).await;
+            let unit = department(&pool, "Dept Biro").await;
+            let open_bureau: i64 = sqlx::query_scalar(
+                "INSERT INTO bureaus (department_id, name) VALUES ($1, 'Biro Buka') RETURNING id",
+            )
+            .bind(unit)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let closed_bureau: i64 = sqlx::query_scalar(
+                "INSERT INTO bureaus (department_id, name) VALUES ($1, 'Biro Tutup') RETURNING id",
+            )
+            .bind(unit)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            sqlx::query("UPDATE application_batches SET all_units = FALSE WHERE id = $1")
+                .bind(batch_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO application_batch_bureaus (batch_id, bureau_id) VALUES ($1, $2)")
+                .bind(batch_id)
+                .bind(open_bureau)
+                .execute(&pool)
+                .await
+                .unwrap();
+
+            // Only the chosen biro is open; the department itself and its other biro are not.
+            assert!(
+                registration_batch_for_department(&pool, Some(unit), Some(open_bureau))
+                    .await
+                    .is_ok()
+            );
+            assert!(matches!(
+                registration_batch_for_department(&pool, Some(unit), Some(closed_bureau)).await,
+                Err(ApiError::Conflict(_))
+            ));
+            assert!(matches!(
+                registration_batch_for_department(&pool, Some(unit), None).await,
+                Err(ApiError::Conflict(_))
+            ));
+
+            // Opening the whole department opens every biro under it.
+            sqlx::query("INSERT INTO application_batch_departments (batch_id, department_id) VALUES ($1, $2)")
+                .bind(batch_id)
+                .bind(unit)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                registration_batch_for_department(&pool, Some(unit), Some(closed_bureau))
+                    .await
+                    .is_ok()
+            );
         }
 
         #[sqlx::test(migrations = "./migrations")]

@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarRange, Pencil, Plus, Trash2 } from 'lucide-react'
+import { CalendarRange, Check, ChevronDown, ChevronRight, Minus, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { apiRequest } from '../../api'
 import SuccessPopup from '../../components/SuccessPopup'
 import { queryKeys } from '../../query/queryKeys'
-import { batchPhase, batchPhaseLabels, formatBatchRange } from '../batches/batchFormat'
+import { batchPhase, batchPhaseLabels, daysBetween, formatBatchDate, formatBatchRange } from '../batches/batchFormat'
 import { AdminFormDialog, ConfirmDialog } from './AdminPrimitives'
 
 const EMPTY_FORM = {
@@ -16,6 +16,7 @@ const EMPTY_FORM = {
   all_units: true,
   max_applications: '',
   department_ids: [],
+  bureau_ids: [],
 }
 
 // Returns a message when the dates are invalid or collide with another batch, otherwise ''.
@@ -30,12 +31,184 @@ function validateForm(form, batches, editingId) {
     const limit = Number(form.max_applications)
     if (!Number.isInteger(limit) || limit < 1 || limit > 10000) return 'Batas lamaran harus bilangan bulat antara 1 dan 10000, atau dikosongkan jika tidak dibatasi.'
   }
-  if (!form.all_units && !form.department_ids.length) return 'Pilih minimal satu unit kerja atau aktifkan semua unit kerja.'
+  if (!form.all_units && !form.department_ids.length && !form.bureau_ids.length) return 'Pilih minimal satu unit kerja atau aktifkan semua unit kerja.'
   const clash = batches.find((batch) => batch.id !== editingId && batch.registration_start <= ie && batch.interview_end >= rs)
   if (clash) {
     return `Tanggal bentrok dengan ${clash.name} (${formatBatchRange(clash.registration_start, clash.interview_end)}). Pilih rentang yang tidak tumpang tindih.`
   }
   return ''
+}
+
+
+function isValidDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+// Proportional bar of the whole cycle: registration, the gap (if any) and selection / interviews.
+function ScheduleTimeline({ form }) {
+  const { registration_start: rs, registration_end: re, interview_start: is, interview_end: ie } = form
+  if (![rs, re, is, ie].every(isValidDate) || rs > re || is <= re || is > ie) return null
+  const registrationDays = daysBetween(rs, re) + 1
+  const gapDays = Math.max(0, daysBetween(re, is) - 1)
+  const interviewDays = daysBetween(is, ie) + 1
+  const total = registrationDays + gapDays + interviewDays
+  const share = (days) => `${(days / total) * 100}%`
+  const short = { day: 'numeric', month: 'short' }
+  return (
+    <div aria-label="Linimasa batch" className="batch-timeline">
+      <div className="batch-timeline-bar">
+        <span className="is-registration" style={{ width: share(registrationDays) }}>Pendaftaran · {registrationDays} hari</span>
+        {gapDays > 0 && <span className="is-gap" style={{ width: share(gapDays) }} title={`${gapDays} hari jeda`} />}
+        <span className="is-interview" style={{ width: share(interviewDays) }}>Seleksi &amp; wawancara · {interviewDays} hari</span>
+      </div>
+      <div className="batch-timeline-dates">
+        <span>{formatBatchDate(rs, short)}</span>
+        <span>{formatBatchDate(re, short)}</span>
+        <span>{formatBatchDate(is, short)}</span>
+        <span>{formatBatchDate(ie, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+      </div>
+    </div>
+  )
+}
+
+function TreeCheck({ state }) {
+  return (
+    <span aria-hidden="true" className={`batch-tree-check is-${state}`}>
+      {state === 'on' && <Check size={11} strokeWidth={3.4} />}
+      {state === 'mid' && <Minus size={11} strokeWidth={3.4} />}
+    </span>
+  )
+}
+
+const BUREAU_LABEL = { biro: 'BIRO', bengkel: 'BENGKEL' }
+
+function UnitTree({ bureaus, departments, divisions, form, onChange, query }) {
+  const [collapsed, setCollapsed] = useState(() => new Set())
+  const needle = query.trim().toLowerCase()
+  const departmentIds = useMemo(() => new Set(form.department_ids), [form.department_ids])
+  const bureauIds = useMemo(() => new Set(form.bureau_ids), [form.bureau_ids])
+
+  const tree = useMemo(() => divisions.map((division) => {
+    const divisionMatch = !needle || division.name.toLowerCase().includes(needle)
+    const children = departments.filter((department) => department.division_id === division.id).map((department) => {
+      const departmentMatch = divisionMatch || department.name.toLowerCase().includes(needle)
+      const items = bureaus.filter((bureau) => bureau.department_id === department.id)
+      const visible = departmentMatch ? items : items.filter((bureau) => bureau.name.toLowerCase().includes(needle))
+      return { department, bureaus: items, visibleBureaus: visible, show: departmentMatch || visible.length > 0 }
+    }).filter((entry) => entry.show)
+    return { division, departments: children }
+  }).filter((entry) => entry.departments.length), [bureaus, departments, divisions, needle])
+
+  function update(nextDepartments, nextBureaus) {
+    onChange({ department_ids: [...nextDepartments], bureau_ids: [...nextBureaus] })
+  }
+  function toggleDepartment(department, items, checked) {
+    const nextDepartments = new Set(departmentIds)
+    const nextBureaus = new Set(bureauIds)
+    if (checked) nextDepartments.add(department.id)
+    else nextDepartments.delete(department.id)
+    // A whole department already covers every biro / bengkel under it.
+    items.forEach((bureau) => nextBureaus.delete(bureau.id))
+    update(nextDepartments, nextBureaus)
+  }
+  function toggleBureau(department, items, bureau, checked) {
+    const nextDepartments = new Set(departmentIds)
+    const nextBureaus = new Set(bureauIds)
+    if (departmentIds.has(department.id)) {
+      // Unticking one unit under an opened department: keep the others open one by one.
+      nextDepartments.delete(department.id)
+      items.forEach((item) => nextBureaus.add(item.id))
+    }
+    if (checked) nextBureaus.add(bureau.id)
+    else nextBureaus.delete(bureau.id)
+    update(nextDepartments, nextBureaus)
+  }
+  function toggleDivision(entry, checked) {
+    const nextDepartments = new Set(departmentIds)
+    const nextBureaus = new Set(bureauIds)
+    entry.departments.forEach(({ department, bureaus: items }) => {
+      if (checked) nextDepartments.add(department.id)
+      else nextDepartments.delete(department.id)
+      items.forEach((bureau) => nextBureaus.delete(bureau.id))
+    })
+    update(nextDepartments, nextBureaus)
+  }
+  function toggleCollapsed(id) {
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  if (!tree.length) return <p className="batch-tree-empty">Tidak ada unit kerja yang cocok dengan pencarian.</p>
+  return (
+    <div className="batch-tree" role="tree">
+      {tree.map((entry) => {
+        const isOpen = ({ department, bureaus: items }) => departmentIds.has(department.id) || items.some((bureau) => bureauIds.has(bureau.id))
+        const allDepartmentsOpen = entry.departments.every(({ department }) => departmentIds.has(department.id))
+        const openCount = entry.departments.filter(isOpen).length
+        const divisionState = allDepartmentsOpen ? 'on' : openCount > 0 ? 'mid' : 'off'
+        const isCollapsed = !needle && collapsed.has(entry.division.id)
+        return (
+          <div className="batch-tree-group" key={entry.division.id}>
+            <div aria-expanded={!isCollapsed} className={`batch-tree-row is-level-1${divisionState !== 'off' ? ' is-selected' : ''}`} role="treeitem">
+              <button aria-label={isCollapsed ? 'Buka' : 'Ciutkan'} className="batch-tree-toggle" onClick={() => toggleCollapsed(entry.division.id)} type="button">
+                {isCollapsed ? <ChevronRight aria-hidden="true" size={15} /> : <ChevronDown aria-hidden="true" size={15} />}
+              </button>
+              <label>
+                <input checked={divisionState === 'on'} onChange={(event) => toggleDivision(entry, event.target.checked)} ref={(node) => { if (node) node.indeterminate = divisionState === 'mid' }} type="checkbox" />
+                <TreeCheck state={divisionState} />
+                <span className="batch-tree-level is-division">DIVISI</span>
+                <span className="batch-tree-name">{entry.division.name}</span>
+              </label>
+              <span className="batch-tree-count">{openCount} dari {entry.departments.length} departemen</span>
+            </div>
+            {!isCollapsed && entry.departments.map(({ department, bureaus: items, visibleBureaus }) => {
+              const wholeDepartment = departmentIds.has(department.id)
+              const someBureaus = items.some((bureau) => bureauIds.has(bureau.id))
+              const departmentState = wholeDepartment ? 'on' : someBureaus ? 'mid' : 'off'
+              return (
+                <div key={department.id}>
+                  <div className={`batch-tree-row is-level-2${departmentState !== 'off' ? ' is-selected' : ''}`} role="treeitem">
+                    <label>
+                      <input checked={wholeDepartment} onChange={(event) => toggleDepartment(department, items, event.target.checked)} ref={(node) => { if (node) node.indeterminate = departmentState === 'mid' }} type="checkbox" />
+                      <TreeCheck state={departmentState} />
+                      <span className="batch-tree-level is-department">DEPARTEMEN</span>
+                      <span className="batch-tree-name">{department.name}</span>
+                    </label>
+                    {items.length > 0 && <span className="batch-tree-count">{items.length} unit</span>}
+                  </div>
+                  {visibleBureaus.map((bureau) => {
+                    const checked = wholeDepartment || bureauIds.has(bureau.id)
+                    return (
+                      <div className={`batch-tree-row is-level-3${checked ? ' is-selected' : ''}`} key={bureau.id} role="treeitem">
+                        <label>
+                          <input checked={checked} onChange={(event) => toggleBureau(department, items, bureau, event.target.checked)} type="checkbox" />
+                          <TreeCheck state={checked ? 'on' : 'off'} />
+                          <span className={`batch-tree-level is-${bureau.unit_type === 'bengkel' ? 'bengkel' : 'biro'}`}>{BUREAU_LABEL[bureau.unit_type] || 'BIRO'}</span>
+                          <span className="batch-tree-name">{bureau.name}</span>
+                        </label>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function describeUnits(batch) {
+  if (batch.all_units) return 'Semua unit kerja'
+  const parts = []
+  if (batch.department_ids.length) parts.push(`${batch.department_ids.length} departemen`)
+  if (batch.bureau_ids?.length) parts.push(`${batch.bureau_ids.length} biro / bengkel`)
+  return parts.join(' + ') || '-'
 }
 
 export default function BatchManager() {
@@ -51,6 +224,8 @@ export default function BatchManager() {
   const today = batchesQuery.data?.today ?? ''
   const divisions = organizationQuery.data?.divisions ?? []
   const departments = organizationQuery.data?.departments ?? []
+  const bureaus = organizationQuery.data?.bureaus ?? []
+  const [unitQuery, setUnitQuery] = useState('')
 
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: queryKeys.adminBatches })
@@ -81,6 +256,7 @@ export default function BatchManager() {
     setEditingId(null)
     setError('')
     setForm({ ...EMPTY_FORM })
+    setUnitQuery('')
   }
   function openEdit(batch) {
     setEditingId(batch.id)
@@ -94,7 +270,9 @@ export default function BatchManager() {
       all_units: batch.all_units,
       max_applications: batch.max_applications === null ? '' : String(batch.max_applications),
       department_ids: batch.department_ids,
+      bureau_ids: batch.bureau_ids ?? [],
     })
+    setUnitQuery('')
   }
   function closeForm() {
     setForm(null)
@@ -104,12 +282,8 @@ export default function BatchManager() {
   function setField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
   }
-  function toggleDepartment(ids, checked) {
-    setForm((current) => {
-      const next = new Set(current.department_ids)
-      ids.forEach((id) => (checked ? next.add(id) : next.delete(id)))
-      return { ...current, department_ids: [...next] }
-    })
+  function setUnits(patch) {
+    setForm((current) => ({ ...current, ...patch }))
   }
   async function submit(event) {
     event.preventDefault()
@@ -125,6 +299,7 @@ export default function BatchManager() {
         name: form.name.trim(),
         max_applications: form.max_applications === '' ? null : Number(form.max_applications),
         department_ids: form.all_units ? [] : form.department_ids,
+        bureau_ids: form.all_units ? [] : form.bureau_ids,
       })
     } catch (requestError) {
       setError(requestError.message)
@@ -180,7 +355,7 @@ export default function BatchManager() {
                 <dl>
                   <div><dt>Pendaftaran</dt><dd>{formatBatchRange(batch.registration_start, batch.registration_end)}</dd></div>
                   <div><dt>Seleksi dan wawancara</dt><dd>{formatBatchRange(batch.interview_start, batch.interview_end)}</dd></div>
-                  <div><dt>Unit kerja aktif</dt><dd>{batch.all_units ? 'Semua unit kerja' : `${batch.department_ids.length} departemen`}</dd></div>
+                  <div><dt>Unit kerja aktif</dt><dd>{describeUnits(batch)}</dd></div>
                   <div><dt>Batas lamaran per pelamar</dt><dd>{batch.max_applications === null ? 'Tidak dibatasi' : `${batch.max_applications} lamaran`}</dd></div>
                   <div><dt>Lamaran masuk</dt><dd>{batch.application_count}</dd></div>
                 </dl>
@@ -191,68 +366,70 @@ export default function BatchManager() {
       )}
       <SuccessPopup message={notice} onClose={setNotice} />
       {form && (
-        <AdminFormDialog className="admin-batch-modal" fullScreen onClose={closeForm} title={editingId ? 'Ubah batch' : 'Tambah batch'}>
-          <form className="admin-batch-form" onSubmit={submit}>
-            <label>
-              <span>Nama batch</span>
-              <input maxLength={80} onChange={(event) => setField('name', event.target.value)} placeholder="Contoh: Batch 2027" required value={form.name} />
-            </label>
-            <fieldset>
-              <legend><CalendarRange aria-hidden="true" size={15} /> Pendaftaran</legend>
-              <label><span>Mulai</span><input onChange={(event) => setField('registration_start', event.target.value)} required type="date" value={form.registration_start} /></label>
-              <label><span>Berakhir</span><input min={form.registration_start} onChange={(event) => setField('registration_end', event.target.value)} required type="date" value={form.registration_end} /></label>
-            </fieldset>
-            <fieldset>
-              <legend><CalendarRange aria-hidden="true" size={15} /> Seleksi dan wawancara</legend>
-              <label><span>Mulai</span><input min={form.registration_end} onChange={(event) => setField('interview_start', event.target.value)} required type="date" value={form.interview_start} /></label>
-              <label><span>Berakhir</span><input min={form.interview_start} onChange={(event) => setField('interview_end', event.target.value)} required type="date" value={form.interview_end} /></label>
-            </fieldset>
-            <label>
-              <span>Batas lamaran per pelamar (opsional)</span>
-              <input max={10000} min={1} onChange={(event) => setField('max_applications', event.target.value)} placeholder="Kosongkan jika tidak dibatasi" step={1} type="number" value={form.max_applications} />
-            </label>
-            <p className="admin-batch-hint">Batas dihitung dari semua lamaran pelamar di batch ini, termasuk yang ditolak.</p>
-            <p className="admin-batch-hint">Lamaran yang belum ditindaklanjuti sampai tanggal berakhir seleksi dan wawancara otomatis dianggap ditolak.</p>
-            <fieldset>
-              <legend>Unit kerja yang dibuka</legend>
-              <label className="admin-batch-check">
-                <input checked={form.all_units} onChange={(event) => setField('all_units', event.target.checked)} type="checkbox" />
-                <span>Semua unit kerja (termasuk yang ditambahkan kemudian)</span>
-              </label>
-              {!form.all_units && (
-                <div className="admin-batch-units">
-                  {divisions.map((division) => {
-                    const items = departments.filter((department) => department.division_id === division.id)
-                    if (!items.length) return null
-                    const ids = items.map((department) => department.id)
-                    const selected = ids.filter((id) => form.department_ids.includes(id)).length
-                    return (
-                      <div className="admin-batch-division" key={division.id}>
-                        <label className="admin-batch-check is-division">
-                          <input
-                            checked={selected === ids.length}
-                            onChange={(event) => toggleDepartment(ids, event.target.checked)}
-                            ref={(node) => { if (node) node.indeterminate = selected > 0 && selected < ids.length }}
-                            type="checkbox"
-                          />
-                          <span>{division.name}</span>
-                        </label>
-                        {items.map((department) => (
-                          <label className="admin-batch-check" key={department.id}>
-                            <input checked={form.department_ids.includes(department.id)} onChange={(event) => toggleDepartment([department.id], event.target.checked)} type="checkbox" />
-                            <span>{department.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )
-                  })}
+        <AdminFormDialog className="admin-batch-modal" description="Atur jadwal, batas lamaran, dan unit kerja yang dibuka" fullScreen onClose={closeForm} title={editingId ? 'Ubah batch' : 'Tambah batch'}>
+          <form className="batch-form" onSubmit={submit}>
+            <div className="batch-form-body">
+              <div className="batch-form-grid">
+                <div className="batch-col">
+                  <label className="batch-field">
+                    <span>Nama batch</span>
+                    <input maxLength={80} onChange={(event) => setField('name', event.target.value)} placeholder="Contoh: Batch 2027" required value={form.name} />
+                  </label>
+                  <section className="batch-card">
+                    <h3><CalendarRange aria-hidden="true" size={15} /> Jadwal</h3>
+                    <div className="batch-field-row">
+                      <label className="batch-field"><span>Pendaftaran mulai</span><input onChange={(event) => setField('registration_start', event.target.value)} required type="date" value={form.registration_start} /></label>
+                      <label className="batch-field"><span>Pendaftaran berakhir</span><input min={form.registration_start} onChange={(event) => setField('registration_end', event.target.value)} required type="date" value={form.registration_end} /></label>
+                    </div>
+                    <div className="batch-field-row">
+                      <label className="batch-field"><span>Seleksi &amp; wawancara mulai</span><input min={form.registration_end} onChange={(event) => setField('interview_start', event.target.value)} required type="date" value={form.interview_start} /></label>
+                      <label className="batch-field"><span>Seleksi &amp; wawancara berakhir</span><input min={form.interview_start} onChange={(event) => setField('interview_end', event.target.value)} required type="date" value={form.interview_end} /></label>
+                    </div>
+                    <ScheduleTimeline form={form} />
+                  </section>
+                  <section className="batch-card">
+                    <h3>Batas lamaran per pelamar <small>(opsional)</small></h3>
+                    <label className="batch-field">
+                      <input aria-label="Batas lamaran per pelamar" max={10000} min={1} onChange={(event) => setField('max_applications', event.target.value)} placeholder="Kosongkan jika tidak dibatasi" step={1} type="number" value={form.max_applications} />
+                    </label>
+                    <p className="batch-hint">Dihitung dari semua lamaran pelamar di batch ini, termasuk yang ditolak. Lamaran yang belum ditindaklanjuti sampai seleksi &amp; wawancara berakhir otomatis dianggap ditolak.</p>
+                  </section>
                 </div>
-              )}
-            </fieldset>
-            {error && <p className="admin-alert error" role="alert">{error}</p>}
-            <div className="admin-batch-actions-row">
-              <button className="admin-small-button" onClick={closeForm} type="button">Batal</button>
-              <button className="apply-button" disabled={saveMutation.isPending} type="submit">{saveMutation.isPending ? 'Menyimpan...' : 'Simpan batch'}</button>
+                <section className="batch-card batch-units-card">
+                  <div className="batch-units-head">
+                    <h3>Unit kerja yang dibuka</h3>
+                    <div aria-label="Cakupan unit kerja" className="batch-segment" role="group">
+                      <button className={form.all_units ? 'is-active' : ''} onClick={() => setField('all_units', true)} type="button">Semua unit</button>
+                      <button className={!form.all_units ? 'is-active' : ''} onClick={() => setField('all_units', false)} type="button">Pilih manual</button>
+                    </div>
+                  </div>
+                  {form.all_units ? (
+                    <p className="batch-hint batch-units-all">Semua divisi, departemen, biro, dan bengkel dibuka, termasuk yang ditambahkan kemudian. Pilih &ldquo;Pilih manual&rdquo; untuk membatasi sampai tingkat biro atau bengkel.</p>
+                  ) : (
+                    <>
+                      <label className="batch-search">
+                        <Search aria-hidden="true" size={15} />
+                        <input aria-label="Cari unit kerja" onChange={(event) => setUnitQuery(event.target.value)} placeholder="Cari divisi, departemen, biro, atau bengkel..." type="search" value={unitQuery} />
+                        {unitQuery && <button aria-label="Hapus pencarian" onClick={() => setUnitQuery('')} type="button"><X aria-hidden="true" size={14} /></button>}
+                      </label>
+                      <div className="batch-units-summary">
+                        <span className="batch-chip is-count">{form.department_ids.length} departemen &middot; {form.bureau_ids.length} biro / bengkel dipilih</span>
+                        <button className="batch-chip" onClick={() => setUnits({ department_ids: departments.map((item) => item.id), bureau_ids: [] })} type="button">Pilih semua</button>
+                        <button className="batch-chip" onClick={() => setUnits({ department_ids: [], bureau_ids: [] })} type="button">Kosongkan</button>
+                      </div>
+                      <UnitTree bureaus={bureaus} departments={departments} divisions={divisions} form={form} onChange={setUnits} query={unitQuery} />
+                    </>
+                  )}
+                </section>
+              </div>
+              {error && <p className="admin-alert error" role="alert">{error}</p>}
+            </div>
+            <div className="batch-form-actions">
+              <small>Perubahan berlaku setelah disimpan</small>
+              <div>
+                <button className="admin-small-button" onClick={closeForm} type="button">Batal</button>
+                <button className="apply-button" disabled={saveMutation.isPending} type="submit">{saveMutation.isPending ? 'Menyimpan...' : 'Simpan batch'}</button>
+              </div>
             </div>
           </form>
         </AdminFormDialog>

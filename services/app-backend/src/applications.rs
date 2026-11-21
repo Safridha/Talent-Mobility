@@ -436,9 +436,9 @@ pub(super) async fn create_application(
         .as_ref()
         .map(|_| application_fingerprint(&fields, &documents));
 
-    let (position_description, target_department_id) = if let Some(job_id) = &fields.job_id {
-        let job_department_id = sqlx::query_scalar::<_, Option<i64>>(
-            "SELECT department_id FROM job_postings WHERE id = $1 AND status = 'open'",
+    let (position_description, target_department_id, target_bureau_id) = if let Some(job_id) = &fields.job_id {
+        let (job_department_id, job_bureau_id) = sqlx::query_as::<_, (Option<i64>, Option<i64>)>(
+            "SELECT department_id, bureau_id FROM job_postings WHERE id = $1 AND status = 'open'",
         )
         .bind(job_id)
         .fetch_optional(&state.pool)
@@ -447,7 +447,7 @@ pub(super) async fn create_application(
         .ok_or(ApiError::NotFound(
             "Lowongan tidak ditemukan atau sudah ditutup.",
         ))?;
-        (None, job_department_id)
+        (None, job_department_id, job_bureau_id)
     } else {
         let description = sqlx::query_scalar::<_, Option<String>>(
             "SELECT CASE WHEN $2::BIGINT IS NULL THEN departments.description ELSE bureaus.description END FROM departments LEFT JOIN bureaus ON bureaus.id = $2 AND bureaus.department_id = departments.id WHERE departments.id = $1 AND ($2::BIGINT IS NULL OR bureaus.id IS NOT NULL)",
@@ -462,12 +462,12 @@ pub(super) async fn create_application(
             let description = description.trim();
             (!description.is_empty()).then(|| description.to_owned())
         });
-        (description, fields.target_department_id)
+        (description, fields.target_department_id, fields.target_bureau_id)
     };
     // Applications are only accepted while a batch is open for registration, and only for the work
     // units that batch activates.
     let (batch_id, max_applications) =
-        registration_batch_for_department(&state.pool, target_department_id).await?;
+        registration_batch_for_department(&state.pool, target_department_id, target_bureau_id).await?;
 
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     // Idempotency: a retry or double click with the same key replays the first response. A concurrent

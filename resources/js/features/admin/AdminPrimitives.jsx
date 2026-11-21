@@ -147,7 +147,7 @@ export function ConfirmDialog({ title, message, details, error, isBusy, onCancel
   )
 }
 
-export function AdminFormDialog({ title, onClose, children, className = '', fullScreen = false }) {
+export function AdminFormDialog({ title, description = '', onClose, children, className = '', fullScreen = false }) {
   // Rendered next to the page shell instead of inside the panel that opened it, so a parent's overflow
   // or stacking context can never clip or shrink the dialog.
   const host = (typeof document !== 'undefined' && document.querySelector('.admin-shell')) || document.body
@@ -161,7 +161,10 @@ export function AdminFormDialog({ title, onClose, children, className = '', full
         role="dialog"
       >
         <div className="modal-heading">
-          <h2 id="admin-form-dialog-title">{title}</h2>
+          <div>
+            <h2 id="admin-form-dialog-title">{title}</h2>
+            {description && <p className="admin-form-dialog-subtitle">{description}</p>}
+          </div>
           <button aria-label="Tutup form" className="icon-button" onClick={onClose} type="button"><X size={20} /></button>
         </div>
         {children}

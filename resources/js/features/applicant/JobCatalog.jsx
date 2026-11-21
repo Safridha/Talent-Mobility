@@ -103,7 +103,10 @@ export default function JobCatalog({ session, onLogin, onLogout, onProfileUpdate
   const isRegistrationOpen = batchData?.phase === 'registration'
   const openBatch = isRegistrationOpen ? batchData.batch : null
   function isUnitOpen(target) {
-    return Boolean(openBatch) && (openBatch.all_units || openBatch.department_ids.includes(target.target_department_id))
+    if (!openBatch) return false
+    if (openBatch.all_units || openBatch.department_ids.includes(target.target_department_id)) return true
+    // A single biro / bengkel can be opened without opening its whole department.
+    return target.target_bureau_id != null && (openBatch.bureau_ids ?? []).includes(target.target_bureau_id)
   }
   const batchApplicationCount = applicationsQuery.data?.batch_application_count ?? 0
   const maxApplications = applicationsQuery.data?.max_applications ?? null
