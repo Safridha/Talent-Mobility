@@ -5,6 +5,9 @@ RUN npm ci
 COPY index.html vite.config.js ./
 COPY resources ./resources
 COPY pwa-assets ./pwa-assets
+# Public Cloudflare Turnstile site key, baked into the bundle at build time.
+ARG VITE_TURNSTILE_SITE_KEY=
+ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
 RUN npm run build
 
 FROM rust:1.99-bookworm AS backend-build

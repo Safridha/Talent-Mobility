@@ -15,6 +15,8 @@ pub(super) async fn login(
             "NIP dan kata sandi tidak sesuai.",
         ));
     }
+    // Before any account lookup, so bots never reach (or lock out) a real account.
+    verify_turnstile(credentials.turnstile_token.as_deref()).await?;
 
     let applicant = sqlx::query_as::<_, ApplicantRecord>(
         "SELECT id, name, COALESCE(email, '') AS email, COALESCE(employee_number, '') AS employee_number, password_hash, must_change_password, COALESCE(locked_until > NOW(), FALSE) AS login_locked FROM applicants WHERE employee_number = $1 AND is_active = TRUE",
@@ -137,6 +139,7 @@ pub(super) async fn admin_login(
             "NIP admin dan kata sandi tidak sesuai.",
         ));
     }
+    verify_turnstile(credentials.turnstile_token.as_deref()).await?;
 
     let admin = sqlx::query_as::<_, AdminRecord>(
         "SELECT admins.id, admins.name, admins.email, admins.password_hash, COALESCE(admins.locked_until > NOW(), FALSE) AS login_locked, admins.admin_role, admins.division_id, admins.department_id, admins.bureau_id, COALESCE((SELECT array_agg(admin_permissions.permission_key ORDER BY admin_permissions.permission_key) FROM admin_permissions WHERE admin_permissions.admin_id = admins.id), ARRAY[]::TEXT[]) AS permissions FROM admins WHERE (admins.employee_number = $1 OR admins.email = $2) AND admins.is_active = TRUE ORDER BY (admins.employee_number = $1) DESC LIMIT 1",

@@ -45,6 +45,7 @@ mod auth;
 mod batches;
 mod jobs;
 mod push;
+mod turnstile;
 mod zip_archive;
 
 use admin_accounts::*;
@@ -52,6 +53,7 @@ use admin_applications::*;
 use admin_audit::*;
 use admin_permissions::*;
 use batches::*;
+use turnstile::verify_turnstile;
 use applications::*;
 use employee_master::*;
 use idempotency::*;
@@ -200,6 +202,9 @@ struct LoginRequest {
     #[serde(alias = "identifier")]
     email: String,
     password: String,
+    /// Cloudflare Turnstile token; required whenever TURNSTILE_SECRET_KEY is configured.
+    #[serde(default)]
+    turnstile_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -208,6 +213,9 @@ struct AdminLoginRequest {
     #[serde(alias = "identifier")]
     email: String,
     password: String,
+    /// Cloudflare Turnstile token; required whenever TURNSTILE_SECRET_KEY is configured.
+    #[serde(default)]
+    turnstile_token: Option<String>,
 }
 
 #[derive(Deserialize)]

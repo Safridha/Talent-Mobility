@@ -19,6 +19,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_TURNSTILE_SITE_KEY: "${VITE_TURNSTILE_SITE_KEY:-}"
     env_file:
       - .env.docker
     environment:
