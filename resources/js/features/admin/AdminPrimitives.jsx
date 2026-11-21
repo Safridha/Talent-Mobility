@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useState } from 'react'
 import { Search, Trash2, X } from 'lucide-react'
 import ModalBackdrop from '../../components/ModalBackdrop'
@@ -146,13 +147,16 @@ export function ConfirmDialog({ title, message, details, error, isBusy, onCancel
   )
 }
 
-export function AdminFormDialog({ title, onClose, children, className = '' }) {
-  return (
-    <ModalBackdrop onDismiss={onClose}>
+export function AdminFormDialog({ title, onClose, children, className = '', fullScreen = false }) {
+  // Rendered next to the page shell instead of inside the panel that opened it, so a parent's overflow
+  // or stacking context can never clip or shrink the dialog.
+  const host = (typeof document !== 'undefined' && document.querySelector('.admin-shell')) || document.body
+  return createPortal(
+    <ModalBackdrop className={fullScreen ? 'modal-backdrop admin-fullscreen-backdrop' : 'modal-backdrop'} onDismiss={onClose}>
       <section
         aria-labelledby="admin-form-dialog-title"
         aria-modal="true"
-        className={`detail-modal admin-editor-modal ${className}`}
+        className={`detail-modal admin-editor-modal ${fullScreen ? 'admin-fullscreen-modal' : ''} ${className}`}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
@@ -162,6 +166,7 @@ export function AdminFormDialog({ title, onClose, children, className = '' }) {
         </div>
         {children}
       </section>
-    </ModalBackdrop>
+    </ModalBackdrop>,
+    host,
   )
 }

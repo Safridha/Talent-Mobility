@@ -191,7 +191,7 @@ export default function BatchManager() {
       )}
       <SuccessPopup message={notice} onClose={setNotice} />
       {form && (
-        <AdminFormDialog className="admin-batch-modal" onClose={closeForm} title={editingId ? 'Ubah batch' : 'Tambah batch'}>
+        <AdminFormDialog className="admin-batch-modal" fullScreen onClose={closeForm} title={editingId ? 'Ubah batch' : 'Tambah batch'}>
           <form className="admin-batch-form" onSubmit={submit}>
             <label>
               <span>Nama batch</span>

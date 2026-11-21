@@ -1737,3 +1737,20 @@ button, a, .admin-tab, .admin-bottom-nav-item { -webkit-tap-highlight-color: tra
   .admin-editor-modal { padding: 18px 16px 20px; }
   .admin-compact-editor-modal .organization-form { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ===== Popups dim the page softly but leave the header untouched; they open right below it ===== */
+:root { --modal-top-offset: 80px; }
+@media (max-width: 900px) { :root { --modal-top-offset: 72px; } }
+@media (max-width: 700px) { :root { --modal-top-offset: 64px; } }
+.admin-shell { --modal-top-offset: var(--admin-header-height); }
+.modal-backdrop, .confirm-dialog-backdrop, .success-popup-backdrop { top: var(--modal-top-offset); background: #0f172a80; }
+.modal-backdrop { padding-top: clamp(12px, 3vh, 28px); }
+.detail-modal, .application-review-modal, .application-progress-modal { max-height: min(860px, calc(100dvh - var(--modal-top-offset) - 44px)); }
+.job-detail-modal { height: min(780px, calc(100dvh - var(--modal-top-offset) - 44px)); max-height: min(780px, calc(100dvh - var(--modal-top-offset) - 44px)); }
+
+/* Batch editor: fills the whole area under the header instead of a small centred card */
+.modal-backdrop.admin-fullscreen-backdrop { padding: 0; background: #f7f9fc; }
+.detail-modal.admin-fullscreen-modal { width: 100%; max-width: none; height: 100%; max-height: none; padding: 24px clamp(16px, 5vw, 72px) 40px; border: 0; border-radius: 0; box-shadow: none; }
+.admin-fullscreen-modal > .modal-heading, .admin-fullscreen-modal > .admin-batch-form { width: 100%; max-width: 960px; margin-right: auto; margin-left: auto; }
+.admin-fullscreen-modal .admin-batch-units { max-height: none; }
+@media (max-width: 700px) { .detail-modal.admin-fullscreen-modal { padding: 16px 14px 28px; } }
