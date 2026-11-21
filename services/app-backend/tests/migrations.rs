@@ -17,7 +17,8 @@ async fn all_migrations_apply_to_a_fresh_postgres_database(pool: PgPool) {
         "SELECT to_regclass('public.admin_permissions') IS NOT NULL
             AND to_regclass('public.applications') IS NOT NULL
             AND to_regclass('public.job_postings') IS NOT NULL
-            AND to_regclass('public.applicant_application_limit') IS NOT NULL
+            AND to_regclass('public.application_batches') IS NOT NULL
+            AND to_regclass('public.applicant_application_limit') IS NULL
             AND EXISTS (
                 SELECT 1 FROM information_schema.columns
                 WHERE table_schema = 'public'
@@ -76,25 +77,43 @@ async fn existing_applicants_do_not_require_a_password_change_by_default(pool: P
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn applicant_application_limit_is_singleton_and_positive(pool: PgPool) {
-    sqlx::query("INSERT INTO applicant_application_limit (max_applications) VALUES (3)")
-        .execute(&pool)
-        .await
-        .expect("a positive applicant limit should be insertable");
-
-    let duplicate =
-        sqlx::query("INSERT INTO applicant_application_limit (max_applications) VALUES (4)")
-            .execute(&pool)
-            .await;
-    assert!(
-        duplicate.is_err(),
-        "only one shared limit should be allowed"
+async fn seeded_batch_covers_all_units_and_existing_applications(pool: PgPool) {
+    let seeded: (String, String, String, String, String, bool, Option<i32>) = sqlx::query_as(
+        "SELECT name, registration_start::text, registration_end::text, interview_start::text, interview_end::text, all_units, max_applications FROM application_batches",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("the migration should seed exactly one batch");
+    assert_eq!(
+        seeded,
+        (
+            "Batch 2026".to_owned(),
+            "2026-11-10".to_owned(),
+            "2026-11-30".to_owned(),
+            "2026-12-01".to_owned(),
+            "2026-12-31".to_owned(),
+            true,
+            None,
+        )
     );
+}
 
-    let invalid = sqlx::query("UPDATE applicant_application_limit SET max_applications = 0")
+#[sqlx::test(migrations = "./migrations")]
+async fn batch_limit_must_be_positive_and_dates_must_be_ordered(pool: PgPool) {
+    let zero_limit = sqlx::query("UPDATE application_batches SET max_applications = 0")
         .execute(&pool)
         .await;
-    assert!(invalid.is_err(), "the limit must remain positive");
+    assert!(zero_limit.is_err(), "the limit must remain positive");
+
+    let interview_before_registration_end = sqlx::query(
+        "UPDATE application_batches SET interview_start = registration_end",
+    )
+    .execute(&pool)
+    .await;
+    assert!(
+        interview_before_registration_end.is_err(),
+        "interviews must start after registration closes"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

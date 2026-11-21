@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, Building2, CheckCheck, Eye, FileText, CalendarRange, Gauge, LayoutGrid, ShieldCheck, Users, X } from 'lucide-react'
+import { Bell, Building2, CheckCheck, Eye, FileText, CalendarRange, LayoutGrid, ShieldCheck, Users, X } from 'lucide-react'
 import { apiDownload, apiRequest } from '../../api'
 import Brand from '../../components/Brand'
 import AccountSettingsMenu from '../../components/account/AccountSettingsMenu'
@@ -16,7 +16,6 @@ import { buildApplicationsExport } from './exportSpecs'
 import SuccessPopup from '../../components/SuccessPopup'
 import PushNotificationControl from '../../components/PushNotificationControl'
 import { UnitWorkManager } from './OrganizationManagers'
-import ApplicationLimitManager from './ApplicationLimitManager'
 import BatchManager from './BatchManager'
 import { AccountManager } from './AccountManagers'
 import { ApplicationReview } from './ApplicationReview'
@@ -36,7 +35,6 @@ const ADMIN_VIEW_PRESENTATION = {
   accounts: { label: 'Manajemen Akun', shortLabel: 'Akun', icon: Users },
   units: { label: 'Unit Kerja', shortLabel: 'Unit', icon: Building2 },
   batches: { label: 'Batch Periode', shortLabel: 'Batch', icon: CalendarRange },
-  'application-limit': { label: 'Batas Lamaran', shortLabel: 'Batas', icon: Gauge },
   audit: { label: 'Riwayat Audit', shortLabel: 'Audit', icon: ShieldCheck },
 }
 // Excel gets every column; the PDF folds them into a few readable ones (name + NIP + email, etc.).
@@ -323,7 +321,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
       accounts: canManageApplicantAccounts || isSuperAdmin,
       units: isSuperAdmin,
       batches: isSuperAdmin,
-      'application-limit': isSuperAdmin,
       audit: isSuperAdmin,
     }
     return Object.keys(ADMIN_VIEW_ROUTES).filter((view) => access[view])
@@ -583,9 +580,6 @@ export default function AdminDashboard({ session, onLogout, onProfileUpdated }) 
           />
         )}
         {activeView === 'batches' && isSuperAdmin && <BatchManager />}
-        {activeView === 'application-limit' && isSuperAdmin && (
-          <ApplicationLimitManager />
-        )}
         </>}
               </div>
             </div>

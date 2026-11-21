@@ -991,13 +991,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             put(admin_update_bureau).delete(admin_delete_bureau),
         )
         .route("/api/admin/applications", get(admin_list_applications))
-        .route(
-            "/api/admin/application-limit",
-            get(admin_get_application_limit)
-                .post(admin_create_application_limit)
-                .put(admin_update_application_limit)
-                .delete(admin_delete_application_limit),
-        )
         .route("/api/admin/notifications", get(admin_list_notifications))
         .route(
             "/api/admin/notifications/{id}/read",
@@ -2028,6 +2021,14 @@ mod tests {
             pool,
             push_service: None,
         };
+        // Applications need an open batch; keep the seeded one open around today so the test does not
+        // depend on the calendar.
+        sqlx::query(
+            "UPDATE application_batches SET registration_start = (NOW() AT TIME ZONE 'Asia/Jakarta')::date - 1, registration_end = (NOW() AT TIME ZONE 'Asia/Jakarta')::date + 30, interview_start = (NOW() AT TIME ZONE 'Asia/Jakarta')::date + 31, interview_end = (NOW() AT TIME ZONE 'Asia/Jakarta')::date + 60",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
         let super_password = "Admin!Pass123";
         insert_bootstrap_admin(
             &state.pool,
@@ -2724,7 +2725,7 @@ mod tests {
         assert!(matches!(
             admin_set_application_status(
                 State(state.clone()),
-                view_only_headers,
+                view_only_headers.clone(),
                 Path(application_id.clone()),
                 Json(ApplicationStatusRequest {
                     status: "screening".to_owned(),
@@ -2792,7 +2793,7 @@ mod tests {
         ));
         let _ = admin_set_application_status(
             State(state.clone()),
-            status_only_headers,
+            status_only_headers.clone(),
             Path(application_id.clone()),
             Json(ApplicationStatusRequest {
                 status: "screening".to_owned(),
@@ -3890,5 +3891,184 @@ mod tests {
         let public_id = id.to_string();
         assert_eq!(public_id.len(), 26);
         assert_eq!(Ulid::from_string(&public_id).unwrap(), id);
+    }
+
+    #[cfg(feature = "postgres-migration-tests")]
+    #[sqlx::test(migrations = "./migrations")]
+    async fn application_submission_follows_batch_window_units_and_limit(pool: PgPool) {
+        use axum::extract::FromRequest;
+
+        async fn submit(
+            state: &AppState,
+            headers: &HeaderMap,
+            department_id: i64,
+        ) -> Result<serde_json::Value, ApiError> {
+            let boundary = "batch-limit-boundary";
+            let body = format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"target_department_id\"\r\n\r\n{department_id}\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"employee_number\"\r\n\r\nEMP-777\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"applicant_full_name\"\r\n\r\nBatch Applicant\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"origin_division\"\r\n\r\nAsal\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"origin_unit\"\r\n\r\nAsal / Unit\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"education_level\"\r\n\r\nD4/S1\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"study_field\"\r\n\r\nTeknik\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"motivation\"\r\n\r\nPengembangan karier\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"cv\"; filename=\"cv.pdf\"\r\nContent-Type: application/pdf\r\n\r\n%PDF-1.7\nDocument\r\n\
+                 --{boundary}--\r\n"
+            );
+            let request = Request::builder()
+                .header(
+                    CONTENT_TYPE,
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(body))
+                .unwrap();
+            let multipart = Multipart::from_request(request, state).await.unwrap();
+            create_application(State(state.clone()), headers.clone(), multipart)
+                .await
+                .map(|response| response.1 .0)
+        }
+
+        async fn place(pool: &PgPool, batch_id: i64, offsets: [i32; 4]) {
+            sqlx::query(
+                "UPDATE application_batches SET registration_start = (NOW() AT TIME ZONE 'Asia/Jakarta')::date + $2::int, registration_end = (NOW() AT TIME ZONE 'Asia/Jakarta')::date + $3::int, interview_start = (NOW() AT TIME ZONE 'Asia/Jakarta')::date + $4::int, interview_end = (NOW() AT TIME ZONE 'Asia/Jakarta')::date + $5::int WHERE id = $1",
+            )
+            .bind(batch_id)
+            .bind(offsets[0])
+            .bind(offsets[1])
+            .bind(offsets[2])
+            .bind(offsets[3])
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+
+        let first_batch: i64 =
+            sqlx::query_scalar("SELECT id FROM application_batches WHERE name = 'Batch 2026'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let division_id: i64 =
+            sqlx::query_scalar("INSERT INTO divisions (name) VALUES ('Divisi Uji') RETURNING id")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let mut departments = Vec::new();
+        for name in ["Dept 1", "Dept 2", "Dept 3", "Dept 4"] {
+            departments.push(
+                sqlx::query_scalar::<_, i64>(
+                    "INSERT INTO departments (division_id, name) VALUES ($1, $2) RETURNING id",
+                )
+                .bind(division_id)
+                .bind(name)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            );
+        }
+        let applicant_id: i64 = sqlx::query_scalar(
+            "INSERT INTO applicants (name, email, password_hash) VALUES ('Pelamar', 'batch@example.test', 'hash') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let token = "ab".repeat(32);
+        sqlx::query(
+            "INSERT INTO applicant_tokens (token_hash, applicant_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 day')",
+        )
+        .bind(hash_token(&token))
+        .bind(applicant_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            HeaderValue::from_str(&format!("{SESSION_COOKIE_NAME}={token}")).unwrap(),
+        );
+        let state = AppState {
+            pool: pool.clone(),
+            push_service: None,
+        };
+
+        // 1. Registration closed: the selection period is running.
+        place(&pool, first_batch, [-20, -5, -4, 20]).await;
+        assert!(matches!(
+            submit(&state, &headers, departments[0]).await,
+            Err(ApiError::Conflict(_))
+        ));
+
+        // 2. Registration open with a limit of one application per applicant.
+        place(&pool, first_batch, [-2, 10, 11, 40]).await;
+        sqlx::query("UPDATE application_batches SET max_applications = 1 WHERE id = $1")
+            .bind(first_batch)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let accepted = submit(&state, &headers, departments[0]).await.unwrap();
+        assert_eq!(accepted["status"], "submitted");
+        let stored_batch: i64 = sqlx::query_scalar(
+            "SELECT batch_id FROM applications WHERE public_id = $1",
+        )
+        .bind(accepted["application_id"].as_str().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored_batch, first_batch);
+        assert!(matches!(
+            submit(&state, &headers, departments[1]).await,
+            Err(ApiError::Conflict(_))
+        ));
+        let counted: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM applications")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(counted, 1);
+
+        // 3. A unit the batch does not activate is refused.
+        sqlx::query("UPDATE application_batches SET max_applications = NULL, all_units = FALSE WHERE id = $1")
+            .bind(first_batch)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO application_batch_departments (batch_id, department_id) VALUES ($1, $2)")
+            .bind(first_batch)
+            .bind(departments[1])
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(matches!(
+            submit(&state, &headers, departments[2]).await,
+            Err(ApiError::Conflict(_))
+        ));
+        assert!(submit(&state, &headers, departments[1]).await.is_ok());
+
+        // 4. The limit restarts with the next batch: the first batch has ended, a new one is open.
+        place(&pool, first_batch, [-60, -40, -39, -20]).await;
+        sqlx::query("UPDATE application_batches SET max_applications = 1, all_units = TRUE WHERE id = $1")
+            .bind(first_batch)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let second_batch: i64 = sqlx::query_scalar(
+            "INSERT INTO application_batches (name, registration_start, registration_end, interview_start, interview_end, max_applications) VALUES ('Batch Kedua', (NOW() AT TIME ZONE 'Asia/Jakarta')::date, (NOW() AT TIME ZONE 'Asia/Jakarta')::date + 5, (NOW() AT TIME ZONE 'Asia/Jakarta')::date + 6, (NOW() AT TIME ZONE 'Asia/Jakarta')::date + 30, 1) RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let next = submit(&state, &headers, departments[2]).await.unwrap();
+        let next_batch: i64 = sqlx::query_scalar(
+            "SELECT batch_id FROM applications WHERE public_id = $1",
+        )
+        .bind(next["application_id"].as_str().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(next_batch, second_batch);
+        // A fresh unit, so the refusal can only come from the second batch's limit.
+        assert!(matches!(
+            submit(&state, &headers, departments[3]).await,
+            Err(ApiError::Conflict(_))
+        ));
     }
 }

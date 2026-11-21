@@ -3,7 +3,7 @@ import { Search } from 'lucide-react'
 
 const GROUPS = [
   { label: 'Utama', ids: ['dashboard', 'applications'] },
-  { label: 'Pengaturan', ids: ['accounts', 'units', 'batches', 'application-limit'] },
+  { label: 'Pengaturan', ids: ['accounts', 'units', 'batches'] },
   { label: 'Keamanan', ids: ['audit'] },
 ]
 

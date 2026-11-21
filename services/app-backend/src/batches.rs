@@ -1,7 +1,7 @@
 use super::*;
 
 const JAKARTA_TODAY: &str = "(NOW() AT TIME ZONE 'Asia/Jakarta')::date";
-const BATCH_SELECT: &str = "SELECT b.id, b.name, b.registration_start::text AS registration_start, b.registration_end::text AS registration_end, b.interview_start::text AS interview_start, b.interview_end::text AS interview_end, b.all_units, ARRAY(SELECT d.department_id FROM application_batch_departments d WHERE d.batch_id = b.id ORDER BY d.department_id) AS department_ids, (SELECT COUNT(*) FROM applications a WHERE a.batch_id = b.id) AS application_count FROM application_batches b";
+const BATCH_SELECT: &str = "SELECT b.id, b.name, b.registration_start::text AS registration_start, b.registration_end::text AS registration_end, b.interview_start::text AS interview_start, b.interview_end::text AS interview_end, b.all_units, b.max_applications, ARRAY(SELECT d.department_id FROM application_batch_departments d WHERE d.batch_id = b.id ORDER BY d.department_id) AS department_ids, (SELECT COUNT(*) FROM applications a WHERE a.batch_id = b.id) AS application_count FROM application_batches b";
 const OVERLAP_MESSAGE: &str =
     "Tanggal batch bentrok dengan batch lain. Pilih rentang tanggal yang tidak tumpang tindih.";
 
@@ -14,6 +14,7 @@ pub(super) struct BatchRecord {
     interview_start: String,
     interview_end: String,
     all_units: bool,
+    max_applications: Option<i32>,
     department_ids: Vec<i64>,
     application_count: i64,
 }
@@ -27,6 +28,7 @@ struct PublicBatch {
     interview_start: String,
     interview_end: String,
     all_units: bool,
+    max_applications: Option<i32>,
     department_ids: Vec<i64>,
 }
 
@@ -40,6 +42,7 @@ impl From<&BatchRecord> for PublicBatch {
             interview_start: batch.interview_start.clone(),
             interview_end: batch.interview_end.clone(),
             all_units: batch.all_units,
+            max_applications: batch.max_applications,
             department_ids: batch.department_ids.clone(),
         }
     }
@@ -54,6 +57,8 @@ pub(super) struct BatchRequest {
     interview_end: String,
     all_units: bool,
     #[serde(default)]
+    max_applications: Option<i32>,
+    #[serde(default)]
     department_ids: Vec<i64>,
 }
 
@@ -64,7 +69,18 @@ struct ValidBatch {
     interview_start: String,
     interview_end: String,
     all_units: bool,
+    max_applications: Option<i32>,
     department_ids: Vec<i64>,
+}
+
+fn validate_application_limit(value: i32) -> Result<i32, ApiError> {
+    if (1..=10_000).contains(&value) {
+        Ok(value)
+    } else {
+        Err(ApiError::BadRequest(
+            "Batas maksimal lamaran harus berupa bilangan bulat antara 1 dan 10000.",
+        ))
+    }
 }
 
 fn parse_date(value: &str) -> Result<String, ApiError> {
@@ -126,6 +142,10 @@ fn validate_batch(request: BatchRequest) -> Result<ValidBatch, ApiError> {
             "Tanggal akhir wawancara tidak boleh sebelum tanggal mulai.",
         ));
     }
+    let max_applications = request
+        .max_applications
+        .map(validate_application_limit)
+        .transpose()?;
     let mut department_ids = request.department_ids;
     department_ids.sort_unstable();
     department_ids.dedup();
@@ -144,6 +164,7 @@ fn validate_batch(request: BatchRequest) -> Result<ValidBatch, ApiError> {
         interview_start,
         interview_end,
         all_units: request.all_units,
+        max_applications,
         department_ids,
     })
 }
@@ -250,7 +271,7 @@ pub(super) async fn admin_create_batch(
     ensure_no_overlap(&mut transaction, &batch, None).await?;
     ensure_departments_exist(&mut transaction, &batch.department_ids).await?;
     let result = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO application_batches (name, registration_start, registration_end, interview_start, interview_end, all_units, created_by, updated_by) VALUES ($1, $2::date, $3::date, $4::date, $5::date, $6, $7, $7) RETURNING id",
+        "INSERT INTO application_batches (name, registration_start, registration_end, interview_start, interview_end, all_units, max_applications, created_by, updated_by) VALUES ($1, $2::date, $3::date, $4::date, $5::date, $6, $7, $8, $8) RETURNING id",
     )
     .bind(&batch.name)
     .bind(&batch.registration_start)
@@ -258,6 +279,7 @@ pub(super) async fn admin_create_batch(
     .bind(&batch.interview_start)
     .bind(&batch.interview_end)
     .bind(batch.all_units)
+    .bind(batch.max_applications)
     .bind(admin.id)
     .fetch_one(&mut *transaction)
     .await;
@@ -280,6 +302,7 @@ pub(super) async fn admin_create_batch(
             "registration": [batch.registration_start, batch.registration_end],
             "interview": [batch.interview_start, batch.interview_end],
             "all_units": batch.all_units,
+            "max_applications": batch.max_applications,
             "department_ids": batch.department_ids,
         }),
     )
@@ -303,7 +326,7 @@ pub(super) async fn admin_update_batch(
     ensure_no_overlap(&mut transaction, &batch, Some(batch_id)).await?;
     ensure_departments_exist(&mut transaction, &batch.department_ids).await?;
     let result = sqlx::query(
-        "UPDATE application_batches SET name = $2, registration_start = $3::date, registration_end = $4::date, interview_start = $5::date, interview_end = $6::date, all_units = $7, updated_by = $8, updated_at = NOW() WHERE id = $1",
+        "UPDATE application_batches SET name = $2, registration_start = $3::date, registration_end = $4::date, interview_start = $5::date, interview_end = $6::date, all_units = $7, max_applications = $8, updated_by = $9, updated_at = NOW() WHERE id = $1",
     )
     .bind(batch_id)
     .bind(&batch.name)
@@ -312,6 +335,7 @@ pub(super) async fn admin_update_batch(
     .bind(&batch.interview_start)
     .bind(&batch.interview_end)
     .bind(batch.all_units)
+    .bind(batch.max_applications)
     .bind(admin.id)
     .execute(&mut *transaction)
     .await;
@@ -337,6 +361,7 @@ pub(super) async fn admin_update_batch(
             "registration": [batch.registration_start, batch.registration_end],
             "interview": [batch.interview_start, batch.interview_end],
             "all_units": batch.all_units,
+            "max_applications": batch.max_applications,
             "department_ids": batch.department_ids,
         }),
     )
@@ -444,21 +469,23 @@ pub(super) async fn public_current_batch(
     })))
 }
 
-/// The batch accepting applications today, if any, and whether `department_id` may apply in it.
+/// The batch accepting applications today (id and per-applicant limit), if `department_id` may apply
+/// in it. Jobs without a department can only apply while the batch covers every unit.
 pub(super) async fn registration_batch_for_department(
     pool: &PgPool,
-    department_id: i64,
-) -> Result<i64, ApiError> {
-    let batch = sqlx::query_as::<_, (i64, bool)>(&format!(
-        "SELECT id, all_units FROM application_batches WHERE {JAKARTA_TODAY} BETWEEN registration_start AND registration_end"
-    ))
+    department_id: Option<i64>,
+) -> Result<(i64, Option<i32>), ApiError> {
+    let (batch_id, all_units, max_applications) = sqlx::query_as::<_, (i64, bool, Option<i32>)>(
+        &format!(
+            "SELECT id, all_units, max_applications FROM application_batches WHERE {JAKARTA_TODAY} BETWEEN registration_start AND registration_end"
+        ),
+    )
     .fetch_optional(pool)
     .await
     .map_err(internal_error)?
     .ok_or(ApiError::Conflict(
         "Pendaftaran belum dibuka atau sudah ditutup.",
     ))?;
-    let (batch_id, all_units) = batch;
     if !all_units {
         let allowed: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM application_batch_departments WHERE batch_id = $1 AND department_id = $2)",
@@ -474,7 +501,7 @@ pub(super) async fn registration_batch_for_department(
             ));
         }
     }
-    Ok(batch_id)
+    Ok((batch_id, max_applications))
 }
 
 /// Applications still undecided when their batch's selection and interview period ends count as
@@ -503,5 +530,412 @@ pub(super) async fn reject_expired_applications(
             }
         }
         Err(error) => tracing::warn!(?error, "Could not reject applications of ended batches"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(name: &str, rs: &str, re: &str, is: &str, ie: &str) -> BatchRecord {
+        BatchRecord {
+            id: 1,
+            name: name.to_owned(),
+            registration_start: rs.to_owned(),
+            registration_end: re.to_owned(),
+            interview_start: is.to_owned(),
+            interview_end: ie.to_owned(),
+            all_units: true,
+            max_applications: None,
+            department_ids: Vec::new(),
+            application_count: 0,
+        }
+    }
+
+    fn request(rs: &str, re: &str, is: &str, ie: &str) -> BatchRequest {
+        BatchRequest {
+            name: "Batch Uji".to_owned(),
+            registration_start: rs.to_owned(),
+            registration_end: re.to_owned(),
+            interview_start: is.to_owned(),
+            interview_end: ie.to_owned(),
+            all_units: true,
+            max_applications: None,
+            department_ids: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn dates_must_be_real_calendar_days() {
+        assert!(parse_date("2026-11-10").is_ok());
+        assert!(parse_date("2028-02-29").is_ok());
+        for invalid in [
+            "2026-02-29",
+            "2026-13-01",
+            "2026-00-10",
+            "2026-11-31",
+            "10-11-2026",
+            "2026/11/10",
+            "1999-01-01",
+            "",
+        ] {
+            assert!(parse_date(invalid).is_err(), "{invalid} should be rejected");
+        }
+    }
+
+    #[test]
+    fn batch_dates_and_limits_are_validated() {
+        assert!(validate_batch(request(
+            "2027-01-01",
+            "2027-01-31",
+            "2027-02-01",
+            "2027-02-28"
+        ))
+        .is_ok());
+        // Registration may not end before it starts; interviews must start after registration closes.
+        assert!(validate_batch(request(
+            "2027-01-31",
+            "2027-01-01",
+            "2027-02-01",
+            "2027-02-28"
+        ))
+        .is_err());
+        assert!(validate_batch(request(
+            "2027-01-01",
+            "2027-01-31",
+            "2027-01-31",
+            "2027-02-28"
+        ))
+        .is_err());
+        assert!(validate_batch(request(
+            "2027-01-01",
+            "2027-01-31",
+            "2027-02-10",
+            "2027-02-01"
+        ))
+        .is_err());
+        let base = || request("2027-01-01", "2027-01-31", "2027-02-01", "2027-02-28");
+        let mut unnamed = base();
+        unnamed.name = "   ".to_owned();
+        assert!(validate_batch(unnamed).is_err());
+        let mut zero_limit = base();
+        zero_limit.max_applications = Some(0);
+        assert!(validate_batch(zero_limit).is_err());
+        let mut max_limit = base();
+        max_limit.max_applications = Some(10_000);
+        assert_eq!(
+            validate_batch(max_limit).unwrap().max_applications,
+            Some(10_000)
+        );
+        // Picking specific units without choosing any is an error; "all units" ignores stale picks.
+        let mut empty_selection = base();
+        empty_selection.all_units = false;
+        assert!(validate_batch(empty_selection).is_err());
+        let mut stale = base();
+        stale.department_ids = vec![3, 3, 1];
+        assert!(validate_batch(stale).unwrap().department_ids.is_empty());
+        let mut picked = base();
+        picked.all_units = false;
+        picked.department_ids = vec![3, 3, 1];
+        assert_eq!(validate_batch(picked).unwrap().department_ids, vec![1, 3]);
+    }
+
+    #[test]
+    fn phase_follows_registration_selection_and_idle_periods() {
+        let first = record(
+            "Batch 2026",
+            "2026-11-10",
+            "2026-11-30",
+            "2026-12-01",
+            "2026-12-31",
+        );
+        let second = record(
+            "Batch 2027",
+            "2027-02-01",
+            "2027-02-28",
+            "2027-03-01",
+            "2027-03-31",
+        );
+        let batches = vec![first, second];
+        let phase = |today: &str| resolve_phase(today, &batches).0;
+        assert_eq!(phase("2026-11-09"), "upcoming");
+        assert_eq!(phase("2026-11-10"), "registration");
+        assert_eq!(phase("2026-11-30"), "registration");
+        assert_eq!(phase("2026-12-01"), "selection");
+        assert_eq!(phase("2026-12-31"), "selection");
+        assert_eq!(phase("2027-01-01"), "upcoming");
+        assert_eq!(phase("2027-02-01"), "registration");
+        let (final_phase, current, previous, next) = resolve_phase("2027-04-01", &batches);
+        assert_eq!(final_phase, "closed");
+        assert!(current.is_none() && next.is_none());
+        assert_eq!(previous.unwrap().name, "Batch 2027");
+        assert_eq!(resolve_phase("2026-01-01", &[]).0, "closed");
+    }
+
+    #[cfg(feature = "postgres-migration-tests")]
+    mod database {
+        use super::*;
+
+        // Moves a batch relative to today's date in Jakarta so tests do not depend on the calendar.
+        async fn place_batch(pool: &PgPool, batch_id: i64, offsets: [i32; 4]) {
+            sqlx::query(&format!(
+                "UPDATE application_batches SET registration_start = {JAKARTA_TODAY} + $2::int, registration_end = {JAKARTA_TODAY} + $3::int, interview_start = {JAKARTA_TODAY} + $4::int, interview_end = {JAKARTA_TODAY} + $5::int WHERE id = $1"
+            ))
+            .bind(batch_id)
+            .bind(offsets[0])
+            .bind(offsets[1])
+            .bind(offsets[2])
+            .bind(offsets[3])
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+
+        async fn seeded_batch_id(pool: &PgPool) -> i64 {
+            sqlx::query_scalar("SELECT id FROM application_batches WHERE name = 'Batch 2026'")
+                .fetch_one(pool)
+                .await
+                .unwrap()
+        }
+
+        async fn department(pool: &PgPool, name: &str) -> i64 {
+            let division_id: i64 =
+                sqlx::query_scalar("INSERT INTO divisions (name) VALUES ($1) RETURNING id")
+                    .bind(format!("Divisi {name}"))
+                    .fetch_one(pool)
+                    .await
+                    .unwrap();
+            sqlx::query_scalar(
+                "INSERT INTO departments (division_id, name) VALUES ($1, $2) RETURNING id",
+            )
+            .bind(division_id)
+            .bind(name)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+        }
+
+        async fn applicant(pool: &PgPool, email: &str) -> i64 {
+            sqlx::query_scalar(
+                "INSERT INTO applicants (name, email, password_hash) VALUES ('Pelamar', $1, 'hash') RETURNING id",
+            )
+            .bind(email)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+        }
+
+        async fn application(
+            pool: &PgPool,
+            applicant_id: i64,
+            department_id: i64,
+            batch_id: i64,
+            status: &str,
+        ) -> i64 {
+            sqlx::query_scalar(
+                "INSERT INTO applications (applicant_id, job_id, target_department_id, position_description, public_id, status, batch_id) VALUES ($1, NULL, $2, 'Uji', $3, $4, $5) RETURNING id",
+            )
+            .bind(applicant_id)
+            .bind(department_id)
+            .bind(Ulid::new().to_string())
+            .bind(status)
+            .bind(batch_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+        }
+
+        fn valid(rs: &str, re: &str, is: &str, ie: &str) -> ValidBatch {
+            validate_batch(request(rs, re, is, ie)).unwrap()
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn overlapping_batches_are_rejected(pool: PgPool) {
+            // The seeded batch spans 2026-11-10 .. 2026-12-31.
+            let cases = [
+                ("2026-11-01", "2026-11-12", "2026-11-13", "2026-11-20", true),
+                ("2026-12-31", "2027-01-05", "2027-01-06", "2027-01-10", true),
+                ("2026-10-01", "2026-10-31", "2027-01-01", "2027-01-31", true),
+                ("2026-11-15", "2026-11-16", "2026-11-17", "2026-11-18", true),
+                (
+                    "2026-10-01",
+                    "2026-10-15",
+                    "2026-10-16",
+                    "2026-11-09",
+                    false,
+                ),
+                (
+                    "2027-01-01",
+                    "2027-01-31",
+                    "2027-02-01",
+                    "2027-02-28",
+                    false,
+                ),
+            ];
+            for (rs, re, is, ie, overlaps) in cases {
+                let mut transaction = pool.begin().await.unwrap();
+                let result =
+                    ensure_no_overlap(&mut transaction, &valid(rs, re, is, ie), None).await;
+                assert_eq!(
+                    matches!(result, Err(ApiError::Conflict(_))),
+                    overlaps,
+                    "{rs}..{ie} overlap expectation"
+                );
+            }
+            // A batch never conflicts with itself when it is edited.
+            let mut transaction = pool.begin().await.unwrap();
+            let seeded = seeded_batch_id(&pool).await;
+            assert!(ensure_no_overlap(
+                &mut transaction,
+                &valid("2026-11-12", "2026-11-28", "2026-12-02", "2026-12-30"),
+                Some(seeded)
+            )
+            .await
+            .is_ok());
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn applications_are_only_accepted_in_the_registration_window_for_active_units(
+            pool: PgPool,
+        ) {
+            let batch_id = seeded_batch_id(&pool).await;
+            let open_unit = department(&pool, "Dept Buka").await;
+            let closed_unit = department(&pool, "Dept Tutup").await;
+
+            place_batch(&pool, batch_id, [-2, 5, 6, 30]).await;
+            sqlx::query("UPDATE application_batches SET max_applications = 3 WHERE id = $1")
+                .bind(batch_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+            let (found, limit) = registration_batch_for_department(&pool, Some(open_unit))
+                .await
+                .unwrap();
+            assert_eq!((found, limit), (batch_id, Some(3)));
+            // Jobs without a department are fine while every unit is open.
+            assert!(registration_batch_for_department(&pool, None).await.is_ok());
+
+            sqlx::query("UPDATE application_batches SET all_units = FALSE WHERE id = $1")
+                .bind(batch_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query(
+                "INSERT INTO application_batch_departments (batch_id, department_id) VALUES ($1, $2)",
+            )
+            .bind(batch_id)
+            .bind(open_unit)
+            .execute(&pool)
+            .await
+            .unwrap();
+            assert!(registration_batch_for_department(&pool, Some(open_unit))
+                .await
+                .is_ok());
+            assert!(matches!(
+                registration_batch_for_department(&pool, Some(closed_unit)).await,
+                Err(ApiError::Conflict(_))
+            ));
+            assert!(matches!(
+                registration_batch_for_department(&pool, None).await,
+                Err(ApiError::Conflict(_))
+            ));
+
+            // Registration closed (selection period) and not yet open: nothing can be submitted.
+            place_batch(&pool, batch_id, [-10, -1, 0, 20]).await;
+            assert!(matches!(
+                registration_batch_for_department(&pool, Some(open_unit)).await,
+                Err(ApiError::Conflict(_))
+            ));
+            place_batch(&pool, batch_id, [1, 5, 6, 20]).await;
+            assert!(matches!(
+                registration_batch_for_department(&pool, Some(open_unit)).await,
+                Err(ApiError::Conflict(_))
+            ));
+            // The last registration day still counts as open.
+            place_batch(&pool, batch_id, [-5, 0, 1, 20]).await;
+            assert!(registration_batch_for_department(&pool, Some(open_unit))
+                .await
+                .is_ok());
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn undecided_applications_are_rejected_once_the_interview_period_ends(pool: PgPool) {
+            let ended = seeded_batch_id(&pool).await;
+            place_batch(&pool, ended, [-60, -40, -39, -1]).await;
+            let running: i64 = sqlx::query_scalar(&format!(
+                "INSERT INTO application_batches (name, registration_start, registration_end, interview_start, interview_end) VALUES ('Batch Berjalan', {JAKARTA_TODAY}, {JAKARTA_TODAY} + 5, {JAKARTA_TODAY} + 6, {JAKARTA_TODAY} + 30) RETURNING id"
+            ))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let unit = department(&pool, "Dept Sweeper").await;
+            let mut ids = Vec::new();
+            for (index, status) in [
+                "submitted",
+                "screening",
+                "interview",
+                "accepted",
+                "rejected",
+            ]
+            .iter()
+            .enumerate()
+            {
+                let who = applicant(&pool, &format!("ended{index}@example.test")).await;
+                ids.push(application(&pool, who, unit, ended, status).await);
+            }
+            let current = applicant(&pool, "running@example.test").await;
+            let running_application = application(&pool, current, unit, running, "submitted").await;
+
+            reject_expired_applications(&pool, None).await;
+
+            async fn status_of(pool: &PgPool, id: i64) -> String {
+                sqlx::query_scalar::<_, String>("SELECT status FROM applications WHERE id = $1")
+                    .bind(id)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap()
+            }
+            let expected = ["rejected", "rejected", "rejected", "accepted", "rejected"];
+            for (id, expected) in ids.iter().zip(expected) {
+                assert_eq!(status_of(&pool, *id).await, expected);
+            }
+            assert_eq!(status_of(&pool, running_application).await, "submitted");
+
+            // Each applicant that was undecided is told why, with the previous status preserved.
+            let notifications: Vec<(String, String, Option<String>)> = sqlx::query_as(
+                "SELECT previous_status, new_status, reason FROM application_status_notifications ORDER BY previous_status",
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            assert_eq!(notifications.len(), 3);
+            assert_eq!(
+                notifications
+                    .iter()
+                    .map(|row| row.0.as_str())
+                    .collect::<Vec<_>>(),
+                ["interview", "screening", "submitted"]
+            );
+            for (_, new_status, reason) in &notifications {
+                assert_eq!(new_status, "rejected");
+                assert!(reason.as_deref().unwrap().contains("Batch 2026"));
+            }
+
+            // Running it again must not notify anyone twice.
+            reject_expired_applications(&pool, None).await;
+            let total: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM application_status_notifications")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(total, 3);
+
+            // The interview period includes its final day: nothing is rejected until the day after.
+            place_batch(&pool, ended, [-60, -40, -39, 0]).await;
+            let late = applicant(&pool, "last-day@example.test").await;
+            let late_application = application(&pool, late, unit, ended, "interview").await;
+            reject_expired_applications(&pool, None).await;
+            assert_eq!(status_of(&pool, late_application).await, "interview");
+        }
     }
 }

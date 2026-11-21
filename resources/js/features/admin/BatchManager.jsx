@@ -14,6 +14,7 @@ const EMPTY_FORM = {
   interview_start: '',
   interview_end: '',
   all_units: true,
+  max_applications: '',
   department_ids: [],
 }
 
@@ -25,6 +26,10 @@ function validateForm(form, batches, editingId) {
   if (rs > re) return 'Tanggal akhir pendaftaran tidak boleh sebelum tanggal mulai.'
   if (is <= re) return 'Seleksi dan wawancara harus dimulai setelah pendaftaran ditutup.'
   if (is > ie) return 'Tanggal akhir wawancara tidak boleh sebelum tanggal mulai.'
+  if (form.max_applications !== '') {
+    const limit = Number(form.max_applications)
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10000) return 'Batas lamaran harus bilangan bulat antara 1 dan 10000, atau dikosongkan jika tidak dibatasi.'
+  }
   if (!form.all_units && !form.department_ids.length) return 'Pilih minimal satu unit kerja atau aktifkan semua unit kerja.'
   const clash = batches.find((batch) => batch.id !== editingId && batch.registration_start <= ie && batch.interview_end >= rs)
   if (clash) {
@@ -87,6 +92,7 @@ export default function BatchManager() {
       interview_start: batch.interview_start,
       interview_end: batch.interview_end,
       all_units: batch.all_units,
+      max_applications: batch.max_applications === null ? '' : String(batch.max_applications),
       department_ids: batch.department_ids,
     })
   }
@@ -114,7 +120,12 @@ export default function BatchManager() {
     }
     setError('')
     try {
-      await saveMutation.mutateAsync({ ...form, name: form.name.trim(), department_ids: form.all_units ? [] : form.department_ids })
+      await saveMutation.mutateAsync({
+        ...form,
+        name: form.name.trim(),
+        max_applications: form.max_applications === '' ? null : Number(form.max_applications),
+        department_ids: form.all_units ? [] : form.department_ids,
+      })
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -170,6 +181,7 @@ export default function BatchManager() {
                   <div><dt>Pendaftaran</dt><dd>{formatBatchRange(batch.registration_start, batch.registration_end)}</dd></div>
                   <div><dt>Seleksi dan wawancara</dt><dd>{formatBatchRange(batch.interview_start, batch.interview_end)}</dd></div>
                   <div><dt>Unit kerja aktif</dt><dd>{batch.all_units ? 'Semua unit kerja' : `${batch.department_ids.length} departemen`}</dd></div>
+                  <div><dt>Batas lamaran per pelamar</dt><dd>{batch.max_applications === null ? 'Tidak dibatasi' : `${batch.max_applications} lamaran`}</dd></div>
                   <div><dt>Lamaran masuk</dt><dd>{batch.application_count}</dd></div>
                 </dl>
               </li>
@@ -195,6 +207,11 @@ export default function BatchManager() {
               <label><span>Mulai</span><input min={form.registration_end} onChange={(event) => setField('interview_start', event.target.value)} required type="date" value={form.interview_start} /></label>
               <label><span>Berakhir</span><input min={form.interview_start} onChange={(event) => setField('interview_end', event.target.value)} required type="date" value={form.interview_end} /></label>
             </fieldset>
+            <label>
+              <span>Batas lamaran per pelamar (opsional)</span>
+              <input max={10000} min={1} onChange={(event) => setField('max_applications', event.target.value)} placeholder="Kosongkan jika tidak dibatasi" step={1} type="number" value={form.max_applications} />
+            </label>
+            <p className="admin-batch-hint">Batas dihitung dari semua lamaran pelamar di batch ini, termasuk yang ditolak.</p>
             <p className="admin-batch-hint">Lamaran yang belum ditindaklanjuti sampai tanggal berakhir seleksi dan wawancara otomatis dianggap ditolak.</p>
             <fieldset>
               <legend>Unit kerja yang dibuka</legend>

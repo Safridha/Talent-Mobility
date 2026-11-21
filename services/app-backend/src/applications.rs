@@ -12,12 +12,13 @@ pub(super) async fn list_applications(
     .fetch_all(&state.pool)
     .await
     .map_err(internal_error)?;
-    let max_applications = sqlx::query_scalar::<_, i32>(
-        "SELECT max_applications FROM applicant_application_limit WHERE id = 1",
+    let max_applications = sqlx::query_scalar::<_, Option<i32>>(
+        "SELECT max_applications FROM application_batches WHERE (NOW() AT TIME ZONE 'Asia/Jakarta')::date BETWEEN registration_start AND registration_end",
     )
     .fetch_optional(&state.pool)
     .await
-    .map_err(internal_error)?;
+    .map_err(internal_error)?
+    .flatten();
     let batch_application_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM applications WHERE applicant_id = $1 AND batch_id = (SELECT id FROM application_batches WHERE (NOW() AT TIME ZONE 'Asia/Jakarta')::date BETWEEN registration_start AND registration_end)",
     )
@@ -436,7 +437,7 @@ pub(super) async fn create_application(
         .map(|_| application_fingerprint(&fields, &documents));
 
     let (position_description, target_department_id) = if let Some(job_id) = &fields.job_id {
-        let job_department_id = sqlx::query_scalar::<_, i64>(
+        let job_department_id = sqlx::query_scalar::<_, Option<i64>>(
             "SELECT department_id FROM job_postings WHERE id = $1 AND status = 'open'",
         )
         .bind(job_id)
@@ -461,16 +462,12 @@ pub(super) async fn create_application(
             let description = description.trim();
             (!description.is_empty()).then(|| description.to_owned())
         });
-        (
-            description,
-            fields
-                .target_department_id
-                .ok_or(ApiError::BadRequest("Unit tujuan tidak ditemukan."))?,
-        )
+        (description, fields.target_department_id)
     };
     // Applications are only accepted while a batch is open for registration, and only for the work
     // units that batch activates.
-    let batch_id = registration_batch_for_department(&state.pool, target_department_id).await?;
+    let (batch_id, max_applications) =
+        registration_batch_for_department(&state.pool, target_department_id).await?;
 
     let mut transaction = state.pool.begin().await.map_err(internal_error)?;
     // Idempotency: a retry or double click with the same key replays the first response. A concurrent
@@ -483,12 +480,6 @@ pub(super) async fn create_application(
             return Ok((replayed_headers(), Json(response)));
         }
     }
-    let max_applications = sqlx::query_scalar::<_, i32>(
-        "SELECT max_applications FROM applicant_application_limit WHERE id = 1",
-    )
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(internal_error)?;
     if let Some(max_applications) = max_applications {
         sqlx::query("SELECT pg_advisory_xact_lock($1)")
             .bind(applicant_id)
